@@ -1,0 +1,16 @@
+# Keil 构建产物
+MOTOR/MDK-ARM/MOTOR/
+RTE/
+DebugConfig/
+*.lst
+*.axf
+*.hex
+
+# Keil 用户本地配置(工程文件 *.uvprojx 保留)
+*.uvoptx
+*.uvguix.*
+
+# VSCode 日志
+.vscode/keil-assistant.log
+.vscode/uv4.log*
+.vscode
