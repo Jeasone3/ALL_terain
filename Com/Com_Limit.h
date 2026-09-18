@@ -16,6 +16,4 @@
     ((val) < (min) ? (min) : ((val) > (max) ? (max) : (val)))
 
 
-
-
 #endif /* __COM_LIMIT_H__ */

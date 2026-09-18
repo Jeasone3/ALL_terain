@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;..\Com</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;..\Com;..\Com\PID</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -659,6 +659,21 @@
               <FileName>Com_Limit.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Com\Com_Limit.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com_PID</GroupName>
+          <Files>
+            <File>
+              <FileName>Com_pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\PID\Com_pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>Com_pid.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\PID\Com_pid.h</FilePath>
             </File>
           </Files>
         </Group>
