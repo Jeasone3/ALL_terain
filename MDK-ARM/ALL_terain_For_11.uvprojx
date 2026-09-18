@@ -678,6 +678,21 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>App/Track</GroupName>
+          <Files>
+            <File>
+              <FileName>Track_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Track_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>Track_Task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Track_Task.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>::CMSIS</GroupName>
         </Group>
       </Groups>
