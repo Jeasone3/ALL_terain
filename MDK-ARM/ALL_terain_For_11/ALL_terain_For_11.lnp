@@ -26,6 +26,8 @@
 "all_terain_for_11\int_track.o"
 "all_terain_for_11\motor.o"
 "all_terain_for_11\com_limit.o"
+"all_terain_for_11\com_pid.o"
+"all_terain_for_11\track_task.o"
 --library_type=microlib --strict --scatter "ALL_terain_For_11\ALL_terain_For_11.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers
