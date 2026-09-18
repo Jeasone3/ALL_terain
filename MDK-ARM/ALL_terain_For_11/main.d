@@ -34,4 +34,6 @@ all_terain_for_11\main.o: ../Core/Inc/tim.h
 all_terain_for_11\main.o: ../Core/Inc/usart.h
 all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdio.h
 all_terain_for_11\main.o: ../Core/Inc/gpio.h
+all_terain_for_11\main.o: ../Int/motor.h
+all_terain_for_11\main.o: ..\Com\Com_Limit.h
 all_terain_for_11\main.o: ../Int/Int_Track.h

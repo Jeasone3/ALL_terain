@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "motor.h"
 #include "Int_Track.h"
 /* USER CODE END Includes */
 
@@ -46,6 +47,10 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
+//电机对象
+  extern Motor_Struct motorLeft;
+  extern Motor_Struct motorRight;
 
 //循迹数组
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
@@ -101,6 +106,12 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  Motor_Init(&motorLeft);
+  Motor_Init(&motorRight);
+
+  Motor_SetSpeed(&motorLeft, 500);
+  Motor_SetSpeed(&motorRight, 500);
+  // Motor_SetSpeed(&motorRight, 500);
   /* USER CODE END 2 */
 
   /* Infinite loop */
