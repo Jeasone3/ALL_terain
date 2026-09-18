@@ -14,3 +14,6 @@ DebugConfig/
 .vscode/keil-assistant.log
 .vscode/uv4.log*
 .vscode
+
+# Claude Code 会话文件
+.claude/
