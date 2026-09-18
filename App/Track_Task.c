@@ -17,14 +17,14 @@ static const float k_default_weights[GRAYSCALE_SENSOR_CHANNELS] = {
 void line_following_init(line_following_t *controller)
 {
     /* PID 参数: 输出量纲为 PWM 增量(±max_speed); 以下为起点, 需上电机实测整定 */
-    pid_real_t pid_params[3] = {270.0f, 0.5f, 50.0f};
+    pid_real_t pid_params[3] = {300.0f, 0.5f, 50.0f};
     PID_init(&controller->pid, PID_POSITION, pid_params,
-             /*max_out=*/1000.0f, /*max_iout=*/80.0f);
+             /*max_out=*/1000.0f, /*max_iout=*/90.0f);
     PID_set_integral_separation(&controller->pid, 3.0f);   /* 近似原"动态积分限幅" */
     PID_set_deriv_filter(&controller->pid, 0.7f);          /* 微分低通, 抗噪 */
 
     /* 单位: PWM 量纲 0-1000(无编码器, 直接驱动占空比) */
-    controller->base_speed = 300;
+    controller->base_speed = 400;
     controller->max_speed  = 1000;
 
     for (uint8_t i = 0; i < GRAYSCALE_SENSOR_CHANNELS; i++) {

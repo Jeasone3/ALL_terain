@@ -13,7 +13,7 @@
 #define LINE_RAW_VALUE   1
 
 /* 偏差死区: |error|<此值时置 0 喂 PID, 抑制 P/I(微分也被压平, 简化处理) */
-#define LINE_DEADBAND    0.6f
+#define LINE_DEADBAND    1.0f
 
 /* 运行中丢线时整体目标降速系数, 防止冲出赛道 */
 #define LINE_LOST_SCALE  0.6f

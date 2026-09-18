@@ -645,6 +645,16 @@
               <FileType>5</FileType>
               <FilePath>..\Int\motor.h</FilePath>
             </File>
+            <File>
+              <FileName>Int_OLED.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Int\Int_OLED.c</FilePath>
+            </File>
+            <File>
+              <FileName>Int_OLED.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\Int_OLED.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
