@@ -10,9 +10,7 @@ DebugConfig/
 *.uvoptx
 *.uvguix.*
 
-# VSCode 日志
-.vscode/keil-assistant.log
-.vscode/uv4.log*
+# VSCode 配置与日志
 .vscode
 
 # Claude Code 会话文件
