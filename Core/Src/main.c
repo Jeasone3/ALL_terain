@@ -27,6 +27,7 @@
 /* USER CODE BEGIN Includes */
 #include "motor.h"
 #include "Int_Track.h"
+#include "Track_Task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -109,25 +110,16 @@ int main(void)
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
 
-  Motor_SetSpeed(&motorLeft, 500);
-  Motor_SetSpeed(&motorRight, 500);
-  // Motor_SetSpeed(&motorRight, 500);
+  line_following_init(&g_line_controller);
+  HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    Read_All_Track(g_sensor_data);
-    for(int i = 0; i < GRAYSCALE_SENSOR_CHANNELS; i++)
-    {
-      printf("%d ", g_sensor_data[i]);
-    }
-
-    printf("\r\n");
-    HAL_Delay(500);
-
-
+    /* 循迹控制已在 TIM4 中断(10ms) 中运行, 主循环空闲 */
+    /* 如需调试, 可在此加低速打印, 但不要阻塞中断 */
 
     /* USER CODE END WHILE */
 

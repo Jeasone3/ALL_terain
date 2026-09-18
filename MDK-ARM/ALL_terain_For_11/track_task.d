@@ -33,7 +33,8 @@ all_terain_for_11\track_task.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_ha
 all_terain_for_11\track_task.o: ../Int/Int_Track.h
 all_terain_for_11\track_task.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
 all_terain_for_11\track_task.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h
-all_terain_for_11\track_task.o: ..\Com\Com_Limit.h
+all_terain_for_11\track_task.o: ../Com/Com_Limit.h
+all_terain_for_11\track_task.o: ../Com/PID/Com_pid.h
 all_terain_for_11\track_task.o: ../Int/motor.h
 all_terain_for_11\track_task.o: ../Core/Inc/tim.h
 all_terain_for_11\track_task.o: ../Core/Inc/gpio.h

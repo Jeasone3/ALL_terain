@@ -32,4 +32,4 @@ all_terain_for_11\motor.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim
 all_terain_for_11\motor.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
 all_terain_for_11\motor.o: ../Core/Inc/tim.h
 all_terain_for_11\motor.o: ../Core/Inc/gpio.h
-all_terain_for_11\motor.o: ..\Com\Com_Limit.h
+all_terain_for_11\motor.o: ../Com/Com_Limit.h
