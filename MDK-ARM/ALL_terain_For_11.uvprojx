@@ -655,6 +655,11 @@
               <FileType>5</FileType>
               <FilePath>..\Int\Int_OLED.h</FilePath>
             </File>
+            <File>
+              <FileName>oledfont.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\oledfont.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
