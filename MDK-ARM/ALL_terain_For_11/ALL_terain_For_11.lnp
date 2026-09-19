@@ -25,6 +25,7 @@
 "all_terain_for_11\system_stm32f1xx.o"
 "all_terain_for_11\int_track.o"
 "all_terain_for_11\motor.o"
+"all_terain_for_11\int_oled.o"
 "all_terain_for_11\com_limit.o"
 "all_terain_for_11\com_pid.o"
 "all_terain_for_11\track_task.o"

@@ -28,6 +28,7 @@
 #include "motor.h"
 #include "Int_Track.h"
 #include "Track_Task.h"
+#include "Int_OLED.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -107,11 +108,16 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  //OLED初始化
+  OLED_Init();
+
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
 
   line_following_init(&g_line_controller);
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
+
+  OLED_ShowStr(0, 0, "eeeeee",1);
   /* USER CODE END 2 */
 
   /* Infinite loop */

@@ -46,6 +46,4 @@ void follow_line(line_following_t* controller, uint16_t* sensor_values,
 void TrackTask_Tick(void);
 
 
-
-
 #endif /* __TRACK_TASK_H__ */

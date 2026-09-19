@@ -41,3 +41,4 @@ all_terain_for_11\main.o: ..\App\Track_Task.h
 all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
 all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h
 all_terain_for_11\main.o: ../Com/PID/Com_pid.h
+all_terain_for_11\main.o: ../Int/Int_OLED.h
