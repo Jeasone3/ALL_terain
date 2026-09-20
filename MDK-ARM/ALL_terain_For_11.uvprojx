@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -693,6 +693,21 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>Com/IIC</GroupName>
+          <Files>
+            <File>
+              <FileName>iic.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\IIC\iic.c</FilePath>
+            </File>
+            <File>
+              <FileName>iic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\IIC\iic.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>App/Track</GroupName>
           <Files>
             <File>
@@ -704,6 +719,21 @@
               <FileName>Track_Task.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\App\Track_Task.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/Delay_us</GroupName>
+          <Files>
+            <File>
+              <FileName>Delay_us.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Delay_us\Delay_us.c</FilePath>
+            </File>
+            <File>
+              <FileName>Delay_us.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Delay_us\Delay_us.h</FilePath>
             </File>
           </Files>
         </Group>
