@@ -3,111 +3,80 @@
 #define MPU6050_WHO_AM_I_VALUE 0x68U
 #define MPU6050_FRAME_LENGTH   14U
 
-static uint8_t mpu6050_ready = 0U;
+/* 供其他模块读取的六轴数据与通信状态；Tick 在 TIM4 中断里更新 */
+Gyro_Accel_Struct g_imu_data = {0};
+uint8_t g_imu_ready = 0;
 
+/* 写一个寄存器；任一 ACK 失败即发停止并返回 0 */
 static uint8_t MPU6050_Write_Reg(uint8_t reg, uint8_t value)
 {
     I2C_Start();
     I2C_SendByte(MPU6050_ADDR_WRITE);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
     I2C_SendByte(reg);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
     I2C_SendByte(value);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
     I2C_Stop();
-    return I2C_HasBusError() ? 0U : 1U;
-
-nack:
-    I2C_Stop();
-    return 0U;
+    return 1;
 }
 
-static uint8_t MPU6050_Read_Regs(uint8_t reg, uint8_t *buffer, uint8_t length)
+/* 连续读 len 字节到 buf；重复起始后 burst read */
+static uint8_t MPU6050_Read_Regs(uint8_t reg, uint8_t *buf, uint8_t len)
 {
-    uint8_t i;
-
-    if (buffer == 0 || length == 0U) return 0U;
+    if (buf == 0 || len == 0) return 0;
 
     I2C_Start();
     I2C_SendByte(MPU6050_ADDR_WRITE);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
     I2C_SendByte(reg);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
 
-    I2C_Start(); /* 重复起始信号，保持当前寄存器地址。 */
+    I2C_Start();                    /* 重复起始，切换为读 */
     I2C_SendByte(MPU6050_ADDR_READ);
-    if (I2C_Wait4Ack() != ACK) goto nack;
+    if (I2C_WaitAck() != ACK) { I2C_Stop(); return 0; }
 
-    for (i = 0U; i < length; ++i)
-    {
-        buffer[i] = I2C_ReadByte();
-        if (i + 1U < length) I2C_ACK();
-        else I2C_NACK();
-    }
+    for (uint8_t i = 0; i < len; i++)
+        buf[i] = I2C_ReadByte(i + 1 < len ? ACK : NACK);
     I2C_Stop();
-    return I2C_HasBusError() ? 0U : 1U;
-
-nack:
-    I2C_Stop();
-    return 0U;
+    return 1;
 }
 
-static uint8_t MPU6050_Read_Reg(uint8_t reg, uint8_t *value)
+/* 高字节在前的补码转 int16（位模式即补码，直接组合即可） */
+static int16_t MPU6050_Sample(uint8_t hi, uint8_t lo)
 {
-    return MPU6050_Read_Regs(reg, value, 1U);
-}
-
-static uint8_t MPU6050_Write_Verified(uint8_t reg, uint8_t value)
-{
-    uint8_t actual;
-    return MPU6050_Write_Reg(reg, value) &&
-           MPU6050_Read_Reg(reg, &actual) && actual == value;
-}
-
-/* 将高字节在前的补码数据转换为有符号采样值。 */
-static int16_t MPU6050_Sample(uint8_t high, uint8_t low)
-{
-    int32_t value = ((int32_t)high << 8) | low;
-    if (value >= 0x8000L) value -= 0x10000L;
-    return (int16_t)value;
+    return (int16_t)(((uint16_t)hi << 8) | lo);
 }
 
 uint8_t Int_MPU6050_Init(void)
 {
-    uint8_t value;
-    uint16_t attempt;
+    uint8_t id;
 
-    mpu6050_ready = 0U;
-    if (!MPU6050_Read_Reg(MPU_DEVICE_ID_REG, &value) ||
-        value != MPU6050_WHO_AM_I_VALUE) return 0U;
+    g_imu_ready = 0;
+    /* 读 WHO_AM_I 确认设备在线 */
+    if (!MPU6050_Read_Regs(MPU_DEVICE_ID_REG, &id, 1) ||
+        id != MPU6050_WHO_AM_I_VALUE)
+        return 0;
 
-    if (!MPU6050_Write_Reg(MPU_PWR_MGMT1_REG, 0x80U)) return 0U;
-    HAL_Delay(100U); /* 等待芯片复位完成后再访问寄存器。 */
+    /* 复位，等待内部寄存器恢复默认 */
+    if (!MPU6050_Write_Reg(MPU_PWR_MGMT1_REG, 0x80)) return 0;
+    HAL_Delay(100);
 
-    for (attempt = 0U; attempt < 100U; ++attempt)
-    {
-        if (MPU6050_Read_Reg(MPU_PWR_MGMT1_REG, &value) &&
-            (value & 0x80U) == 0U) break;
-        HAL_Delay(1U);
-    }
-    if (attempt == 100U) return 0U;
+    /* 时钟源=X 轴陀螺 PLL、唤醒；六轴唤醒；关 FIFO/辅助 IIC；关中断(轮询)
+       DLPF=3(~42Hz)；分频=1→500Hz；陀螺±2000°/s；加速度±2g */
+    if (!MPU6050_Write_Reg(MPU_PWR_MGMT1_REG, 0x01) ||
+        !MPU6050_Write_Reg(MPU_PWR_MGMT2_REG, 0x00) ||
+        !MPU6050_Write_Reg(MPU_USER_CTRL_REG, 0x00) ||
+        !MPU6050_Write_Reg(MPU_FIFO_EN_REG,   0x00) ||
+        !MPU6050_Write_Reg(MPU_INT_EN_REG,    0x00) ||
+        !MPU6050_Write_Reg(MPU_CFG_REG,       0x03) ||
+        !MPU6050_Write_Reg(MPU_SAMPLE_RATE_REG, 0x01) ||
+        !MPU6050_Write_Reg(MPU_GYRO_CFG_REG,  0x18) ||
+        !MPU6050_Write_Reg(MPU_ACCEL_CFG_REG, 0x00))
+        return 0;
 
-    /* 使用 X 轴陀螺仪 PLL 时钟，唤醒全部六轴，关闭 FIFO、辅助 IIC 主机和中断。
-       低通滤波设为 3，对应约 42～44 Hz 带宽，适用于应用层 100 Hz 读取频率。
-       内部采样率为 1 kHz，分频值为 1，输出采样率为 500 Hz。
-       陀螺仪量程为 ±2000°/s，加速度计量程为 ±2g。 */
-    if (!MPU6050_Write_Verified(MPU_PWR_MGMT1_REG, 0x01U) ||
-        !MPU6050_Write_Verified(MPU_PWR_MGMT2_REG, 0x00U) ||
-        !MPU6050_Write_Verified(MPU_USER_CTRL_REG, 0x00U) ||
-        !MPU6050_Write_Verified(MPU_FIFO_EN_REG, 0x00U) ||
-        !MPU6050_Write_Verified(MPU_INT_EN_REG, 0x00U) ||
-        !MPU6050_Write_Verified(MPU_CFG_REG, 0x03U) ||
-        !MPU6050_Write_Verified(MPU_SAMPLE_RATE_REG, 0x01U) ||
-        !MPU6050_Write_Verified(MPU_GYRO_CFG_REG, 0x18U) ||
-        !MPU6050_Write_Verified(MPU_ACCEL_CFG_REG, 0x00U)) return 0U;
-
-    mpu6050_ready = 1U;
-    return 1U;
+    g_imu_ready = 1;
+    return 1;
 }
 
 uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
@@ -115,33 +84,26 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
     uint8_t frame[MPU6050_FRAME_LENGTH];
     Gyro_Accel_Struct sample;
 
-    if (data == 0 || !mpu6050_ready ||
-        !MPU6050_Read_Regs(MPU_ACCEL_XOUTH_REG, frame, MPU6050_FRAME_LENGTH))
-        return 0U;
+    if (data == 0 || !g_imu_ready)
+        return 0;
+    if (!MPU6050_Read_Regs(MPU_ACCEL_XOUTH_REG, frame, MPU6050_FRAME_LENGTH))
+        return 0;
 
-    sample.accel.accel_x = MPU6050_Sample(frame[0], frame[1]);
-    sample.accel.accel_y = MPU6050_Sample(frame[2], frame[3]);
-    sample.accel.accel_z = MPU6050_Sample(frame[4], frame[5]);
-    /* frame[6..7] 为温度数据，六轴结构体不包含温度字段。 */
-    sample.gyro.gyro_x = MPU6050_Sample(frame[8], frame[9]);
+    sample.accel.accel_x = MPU6050_Sample(frame[0],  frame[1]);
+    sample.accel.accel_y = MPU6050_Sample(frame[2],  frame[3]);
+    sample.accel.accel_z = MPU6050_Sample(frame[4],  frame[5]);
+    /* frame[6..7] 是温度，六轴结构体不存 */
+    sample.gyro.gyro_x = MPU6050_Sample(frame[8],  frame[9]);
     sample.gyro.gyro_y = MPU6050_Sample(frame[10], frame[11]);
     sample.gyro.gyro_z = MPU6050_Sample(frame[12], frame[13]);
     *data = sample;
-    return 1U;
+    return 1;
 }
 
-uint8_t Int_MPU6050_Get_Gyro(Gyro_struct *gyro)
+/* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；失败后停止读取，
+   由 main 主循环 1s 后重试 Int_MPU6050_Init 恢复 */
+void Int_MPU6050_Tick(void)
 {
-    Gyro_Accel_Struct data;
-    if (gyro == 0 || !Int_MPU6050_Get_Data(&data)) return 0U;
-    *gyro = data.gyro;
-    return 1U;
-}
-
-uint8_t Int_MPU6050_Get_Accel(Accel_struct *accel)
-{
-    Gyro_Accel_Struct data;
-    if (accel == 0 || !Int_MPU6050_Get_Data(&data)) return 0U;
-    *accel = data.accel;
-    return 1U;
+    if (g_imu_ready)
+        g_imu_ready = Int_MPU6050_Get_Data(&g_imu_data);
 }

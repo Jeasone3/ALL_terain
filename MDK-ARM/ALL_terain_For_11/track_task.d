@@ -38,3 +38,7 @@ all_terain_for_11\track_task.o: ../Com/PID/Com_pid.h
 all_terain_for_11\track_task.o: ../Int/motor.h
 all_terain_for_11\track_task.o: ../Core/Inc/tim.h
 all_terain_for_11\track_task.o: ../Core/Inc/gpio.h
+all_terain_for_11\track_task.o: ..\Int\Int_MPU6050\Int_MPU6050.h
+all_terain_for_11\track_task.o: ..\Com\IIC\iic.h
+all_terain_for_11\track_task.o: ..\Com\Delay_us\Delay_us.h
+all_terain_for_11\track_task.o: ..\Com\IMU_Config\IMU_Config.h

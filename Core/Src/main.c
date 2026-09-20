@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include "motor.h"
 #include "Int_Track.h"
 #include "Track_Task.h"
@@ -59,9 +60,7 @@
 //循迹数组
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 
-/* 调试器中查看这两个全局变量：六轴有符号原始值和通信状态。 */
-Gyro_Accel_Struct g_imu_data = {0};
-uint8_t g_imu_ready = 0;
+/* g_imu_data / g_imu_ready 已移至 Int_MPU6050 模块，TIM4 中断里更新 */
 
 
 
@@ -113,10 +112,7 @@ int main(void)
   MX_TIM4_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
-  /* GPIO 初始化后释放软件 IIC 的两根开漏信号线。 */
-  HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, MPU_SDA_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(MPU_SCL_GPIO_Port, MPU_SCL_Pin, GPIO_PIN_SET);
+  /* 软件 IIC 的 SDA/SCL 已在 MX_GPIO_Init() 中释放为高，此处不重复 */
 
   //OLED初始化
   OLED_Init();
@@ -133,28 +129,28 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t last_imu_read_ms = HAL_GetTick();
-  uint32_t last_imu_retry_ms = last_imu_read_ms;
+  uint32_t last_imu_retry_ms = HAL_GetTick();
+  uint32_t last_print_ms = HAL_GetTick();
   while (1)
   {
-    uint32_t now_ms = HAL_GetTick();
-    if (g_imu_ready != 0U)
+    /* IMU 读取在 TIM4 10ms 中断里完成；主循环只负责通信失败后 1s 重试 Init */
+    if (g_imu_ready == 0U &&
+        (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {
-      if ((uint32_t)(now_ms - last_imu_read_ms) >= 10U)
-      {
-        last_imu_read_ms = now_ms;
-        g_imu_ready = Int_MPU6050_Get_Data(&g_imu_data);
-        if (g_imu_ready == 0U)
-        {
-          last_imu_retry_ms = now_ms;
-        }
-      }
-    }
-    else if ((uint32_t)(now_ms - last_imu_retry_ms) >= 1000U)
-    {
-      last_imu_retry_ms = now_ms;
+      last_imu_retry_ms = HAL_GetTick();
       g_imu_ready = Int_MPU6050_Init();
-      last_imu_read_ms = HAL_GetTick();
+    }
+
+    /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
+    if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
+    {
+      last_print_ms = HAL_GetTick();
+      if (g_imu_ready)
+      {
+        printf("[OK] A:%6d,%6d,%6d\r\n",
+              //  g_imu_data.accel.accel_x, g_imu_data.accel.accel_y, g_imu_data.accel.accel_z);
+               g_imu_data.gyro.gyro_x, g_imu_data.gyro.gyro_y, g_imu_data.gyro.gyro_z);
+      }
     }
 
     /* USER CODE END WHILE */

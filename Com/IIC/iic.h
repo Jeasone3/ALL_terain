@@ -1,12 +1,12 @@
 /**
  * @file iic.h
  * @author Jeason
- * @brief 软件模拟iic
- * @version 0.1
+ * @brief 软件模拟iic（朴素 bit-bang，单从机场景）
+ * @version 0.2
  * @date 2026-09-20
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #ifndef COM_IIC_IIC_H
@@ -15,40 +15,28 @@
 #include "gpio.h"
 #include "Delay_us.h"
 
-//宏定义
+/* SCL=PB4, SDA=PB3，均配置为开漏输出，依赖外部上拉电阻 */
+#define SCL_HIGH  HAL_GPIO_WritePin(MPU_SCL_GPIO_Port, MPU_SCL_Pin, GPIO_PIN_SET)
+#define SCL_LOW   HAL_GPIO_WritePin(MPU_SCL_GPIO_Port, MPU_SCL_Pin, GPIO_PIN_RESET)
+#define SDA_HIGH  HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, MPU_SDA_Pin, GPIO_PIN_SET)
+#define SDA_LOW   HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, MPU_SDA_Pin, GPIO_PIN_RESET)
+#define READ_SDA  HAL_GPIO_ReadPin(MPU_SDA_GPIO_Port, MPU_SDA_Pin)
+
+/* 半周期 2us，SCL 约 250kHz，在 MPU6050 支持的 400kHz 内 */
+#define I2C_DELAY Delay_us(2U)
+
 #define ACK  0
 #define NACK 1
-#define IIC_PORT MPU_SCL_GPIO_Port
-#define SCL_PIN  MPU_SCL_Pin
-#define SDA_PIN  MPU_SDA_Pin
 
-//控制SCL，SDA的输出高低电平
-#define SCL_HIGH  HAL_GPIO_WritePin(IIC_PORT, SCL_PIN, GPIO_PIN_SET)
-#define SCL_LOW   HAL_GPIO_WritePin(IIC_PORT, SCL_PIN, GPIO_PIN_RESET)
-#define SDA_HIGH  HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, SDA_PIN, GPIO_PIN_SET)
-#define SDA_LOW   HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, SDA_PIN, GPIO_PIN_RESET)
-//读入操作
-#define READ_SDA  HAL_GPIO_ReadPin(MPU_SDA_GPIO_Port, SDA_PIN)
-#define READ_SCL  HAL_GPIO_ReadPin(IIC_PORT, SCL_PIN)
-//延时
-#define I2C_DELAY Delay_us(10U)
-
+/* 产生起始 / 重复起始信号 */
 void I2C_Start(void);
+/* 产生停止信号 */
 void I2C_Stop(void);
-//主机发送应答/非应答
-void I2C_ACK(void);
-void I2C_NACK(void);
-
-//主机等待从设备发来应答
-uint8_t I2C_Wait4Ack(void);
-
-//主机发送一个字节
+/* 发送一个字节，MSB first；应答由调用方用 I2C_WaitAck 读取 */
 void I2C_SendByte(uint8_t byte);
-
-//主机读取
-uint8_t I2C_ReadByte(void);
-
-/* 总线电平异常时返回 1；新事务开始时清除上次错误。 */
-uint8_t I2C_HasBusError(void);
+/* 读取一个字节，MSB first；ack=ACK 读完回 ACK，否则回 NACK，末尾释放 SDA */
+uint8_t I2C_ReadByte(uint8_t ack);
+/* 等待从机应答，返回 ACK 或 NACK；从机不应答时 SDA 被上拉为高 → NACK，不阻塞 */
+uint8_t I2C_WaitAck(void);
 
 #endif /* COM_IIC_IIC_H */
