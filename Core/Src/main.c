@@ -29,6 +29,8 @@
 #include "Int_Track.h"
 #include "Track_Task.h"
 #include "Int_OLED.h"
+#include "Delay_us.h"
+#include "Int_MPU6050.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,6 +58,10 @@
 
 //循迹数组
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
+
+/* 调试器中查看这两个全局变量：六轴有符号原始值和通信状态。 */
+Gyro_Accel_Struct g_imu_data = {0};
+uint8_t g_imu_ready = 0;
 
 
 
@@ -96,7 +102,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  Delay_Init();   /* 使能 DWT CYCCNT，软件 IIC 依赖 */
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -108,6 +114,10 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  /* GPIO 初始化后释放软件 IIC 的两根开漏信号线。 */
+  HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, MPU_SDA_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(MPU_SCL_GPIO_Port, MPU_SCL_Pin, GPIO_PIN_SET);
+
   //OLED初始化
   OLED_Init();
 
@@ -115,6 +125,7 @@ int main(void)
   Motor_Init(&motorRight);
 
   line_following_init(&g_line_controller);
+  g_imu_ready = Int_MPU6050_Init();
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
 
   OLED_ShowStr(0, 0, "eeeeee",1);
@@ -122,10 +133,29 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t last_imu_read_ms = HAL_GetTick();
+  uint32_t last_imu_retry_ms = last_imu_read_ms;
   while (1)
   {
-    /* 循迹控制已在 TIM4 中断(10ms) 中运行, 主循环空闲 */
-    /* 如需调试, 可在此加低速打印, 但不要阻塞中断 */
+    uint32_t now_ms = HAL_GetTick();
+    if (g_imu_ready != 0U)
+    {
+      if ((uint32_t)(now_ms - last_imu_read_ms) >= 10U)
+      {
+        last_imu_read_ms = now_ms;
+        g_imu_ready = Int_MPU6050_Get_Data(&g_imu_data);
+        if (g_imu_ready == 0U)
+        {
+          last_imu_retry_ms = now_ms;
+        }
+      }
+    }
+    else if ((uint32_t)(now_ms - last_imu_retry_ms) >= 1000U)
+    {
+      last_imu_retry_ms = now_ms;
+      g_imu_ready = Int_MPU6050_Init();
+      last_imu_read_ms = HAL_GetTick();
+    }
 
     /* USER CODE END WHILE */
 

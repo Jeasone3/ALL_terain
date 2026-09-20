@@ -1,5 +1,5 @@
 /**
- * @file iic.c
+ * @file iic.h
  * @author Jeason
  * @brief 软件模拟iic
  * @version 0.1
@@ -9,8 +9,8 @@
  * 
  */
 
-#ifndef __I2C_H__
-#define __I2C_H__
+#ifndef COM_IIC_IIC_H
+#define COM_IIC_IIC_H
 
 #include "gpio.h"
 #include "Delay_us.h"
@@ -18,19 +18,20 @@
 //宏定义
 #define ACK  0
 #define NACK 1
-#define IIC_PORT GPIOB
+#define IIC_PORT MPU_SCL_GPIO_Port
 #define SCL_PIN  MPU_SCL_Pin
 #define SDA_PIN  MPU_SDA_Pin
 
 //控制SCL，SDA的输出高低电平
-#define SCL_HIGH  HAL_GPIO_WritePin(IIC_PORT,SCL_PIN,GPIO_PIN_SET);
-#define SCL_LOW   HAL_GPIO_WritePin(IIC_PORT, SCL_PIN, GPIO_PIN_RESET);
-#define SDA_HIGH  HAL_GPIO_WritePin(IIC_PORT, SDA_PIN, GPIO_PIN_SET);
-#define SDA_LOW   HAL_GPIO_WritePin(IIC_PORT, SDA_PIN, GPIO_PIN_RESET);
+#define SCL_HIGH  HAL_GPIO_WritePin(IIC_PORT, SCL_PIN, GPIO_PIN_SET)
+#define SCL_LOW   HAL_GPIO_WritePin(IIC_PORT, SCL_PIN, GPIO_PIN_RESET)
+#define SDA_HIGH  HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, SDA_PIN, GPIO_PIN_SET)
+#define SDA_LOW   HAL_GPIO_WritePin(MPU_SDA_GPIO_Port, SDA_PIN, GPIO_PIN_RESET)
 //读入操作
-#define READ_SDA  HAL_GPIO_ReadPin(IIC_PORT, SDA_PIN)
+#define READ_SDA  HAL_GPIO_ReadPin(MPU_SDA_GPIO_Port, SDA_PIN)
+#define READ_SCL  HAL_GPIO_ReadPin(IIC_PORT, SCL_PIN)
 //延时
-#define I2C_DELAY Delay_us(10)
+#define I2C_DELAY Delay_us(10U)
 
 void I2C_Start(void);
 void I2C_Stop(void);
@@ -47,4 +48,7 @@ void I2C_SendByte(uint8_t byte);
 //主机读取
 uint8_t I2C_ReadByte(void);
 
-#endif   
+/* 总线电平异常时返回 1；新事务开始时清除上次错误。 */
+uint8_t I2C_HasBusError(void);
+
+#endif /* COM_IIC_IIC_H */

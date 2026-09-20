@@ -54,7 +54,8 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(TR_GPIO_Port, TR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, BEEP_Pin|MPU_SDA_Pin|MPU_SCL_Pin|BIN1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, BEEP_Pin|BIN1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, MPU_SDA_Pin|MPU_SCL_Pin, GPIO_PIN_SET);   /* I2C 空闲高 */
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, AIN1_Pin|AIN2_Pin, GPIO_PIN_RESET);
@@ -81,11 +82,18 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(TR_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : BEEP_Pin MPU_SDA_Pin MPU_SCL_Pin BIN1_Pin */
-  GPIO_InitStruct.Pin = BEEP_Pin|MPU_SDA_Pin|MPU_SCL_Pin|BIN1_Pin;
+  /*Configure GPIO pins : BEEP_Pin BIN1_Pin (推挽) */
+  GPIO_InitStruct.Pin = BEEP_Pin|BIN1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : MPU_SDA_Pin MPU_SCL_Pin (开漏, 依赖外部上拉) */
+  GPIO_InitStruct.Pin = MPU_SDA_Pin|MPU_SCL_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : IN8_Pin IN7_Pin IN6_Pin IN5_Pin */
