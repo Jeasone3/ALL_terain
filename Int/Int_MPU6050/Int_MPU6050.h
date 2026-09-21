@@ -32,6 +32,10 @@ uint8_t Int_MPU6050_Init(void);
 /* 连续读 14 字节，保证六轴数据来自同一采样帧；失败返回 0 */
 uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
 
+/* 设备静止时调用：采 samples 帧陀螺取均值作为零偏；之后 Get_Data 返回的
+   陀螺值已减零偏。samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
+uint8_t Int_MPU6050_Calibrate(uint16_t samples);
+
 /* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；放定时中断里 */
 void Int_MPU6050_Tick(void);
 

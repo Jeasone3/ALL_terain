@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us;..\Int\Int_MPU6050;..\Com\IMU_Config</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us;..\Int\Int_MPU6050;..\Com\IMU_Config;..\Com\Attitude</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -759,6 +759,21 @@
               <FileName>IMU_Config.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Com\IMU_Config\IMU_Config.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/Attitude</GroupName>
+          <Files>
+            <File>
+              <FileName>Attitude.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Attitude\Attitude.c</FilePath>
+            </File>
+            <File>
+              <FileName>Attitude.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Attitude\Attitude.h</FilePath>
             </File>
           </Files>
         </Group>

@@ -1,5 +1,6 @@
 #include "Track_Task.h"
 #include "Int_MPU6050.h"
+#include "Attitude.h"
 
 //全局变量传感器数据
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
@@ -109,6 +110,7 @@ void TrackTask_Tick(void) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
     if(htim->Instance == TIM4){
         Int_MPU6050_Tick();   /* 六轴读取，10ms 周期 */
+        Attitude_Tick();      /* Mahony 更新四元数，写 g_euler */
         TrackTask_Tick();
     }
 }

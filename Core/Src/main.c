@@ -32,6 +32,7 @@
 #include "Int_OLED.h"
 #include "Delay_us.h"
 #include "Int_MPU6050.h"
+#include "Attitude.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -122,6 +123,14 @@ int main(void)
 
   line_following_init(&g_line_controller);
   g_imu_ready = Int_MPU6050_Init();
+  if (g_imu_ready)
+  {
+    HAL_Delay(50);                /* 等传感器输出稳定 */
+    Int_MPU6050_Calibrate(100);   /* 静止判据通过后采 100 帧校陀螺零偏；
+                                     须在启动 TIM4 前避免与 Tick 抢软件 IIC；
+                                     期间车体静止、电机不转 */
+    Attitude_Init();              /* 四元数复位，姿态归零 */
+  }
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
 
   OLED_ShowStr(0, 0, "eeeeee",1);
@@ -147,9 +156,10 @@ int main(void)
       last_print_ms = HAL_GetTick();
       if (g_imu_ready)
       {
-        printf("[OK] A:%6d,%6d,%6d\r\n",
-              //  g_imu_data.accel.accel_x, g_imu_data.accel.accel_y, g_imu_data.accel.accel_z);
-               g_imu_data.gyro.gyro_x, g_imu_data.gyro.gyro_y, g_imu_data.gyro.gyro_z);
+        printf("[IMU] A:%6d,%6d,%6d G:%6d,%6d,%6d E:%6d,%6d,%6d\r\n",
+                g_imu_data.accel.accel_x, g_imu_data.accel.accel_y, g_imu_data.accel.accel_z,
+                g_imu_data.gyro.gyro_x, g_imu_data.gyro.gyro_y, g_imu_data.gyro.gyro_z,
+                (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
       }
     }
 
