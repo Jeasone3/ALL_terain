@@ -12,12 +12,16 @@
 #include "Int_MPU6050.h"
 #include <math.h>
 
+
+
+
+// ------------------------------Mahony 参数 ------------------------------//
 /* Mahony 参数起点(需上电机实测整定) */
 #define ATT_KP        1.0f          /* 比例反馈，小载体 0.5~2 起步 */
 #define ATT_KI        0.002f        /* 积分反馈，抑制陀螺零偏残差 */
 #define ATT_DT        0.01f         /* TIM4 10ms 固定周期 */
-#define ATT_DEG2RAD   0.01745329f
-#define ATT_RAD2DEG   57.2957795f
+#define ATT_DEG2RAD   0.01745329f       //不要改 度转弧度
+#define ATT_RAD2DEG   57.2957795f       ///弧度转度
 
 /* 输出欧拉角全局 */
 Euler_struct g_euler = {0};
@@ -99,13 +103,14 @@ void Attitude_Tick(void)
     if (!g_imu_ready) return;
 
     /* 取本周期六轴(中断内刚由 Int_MPU6050_Tick 刷新，无竞争)。
-       约定 X前 Y右 Z上(模块水平贴装)。若安装方向不同，在此调整轴序/符号：
-       例如 pitch 反了就翻转 gx 和 ax；roll 反了翻转 gy/ay；yaw 反向翻转 gz */
-    float gx = (float)g_imu_data.gyro.gyro_x / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
-    float gy = (float)g_imu_data.gyro.gyro_y / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
+       实测模块安装: Y 前 X 右 Z 上(与默认 X 前 Y 右相反)，故输入端互换 x/y，
+       使 Mahony 在 (前=Y, 右=X, 上=Z) 体系下运行，pitch/roll 标签才对。
+       若符号也反(如前俯显示负值)，再对对应轴取负 */
+    float gx = (float)g_imu_data.gyro.gyro_y / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
+    float gy = (float)g_imu_data.gyro.gyro_x / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
     float gz = (float)g_imu_data.gyro.gyro_z / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
-    float ax = (float)g_imu_data.accel.accel_x;
-    float ay = (float)g_imu_data.accel.accel_y;
+    float ax = (float)g_imu_data.accel.accel_y;
+    float ay = (float)g_imu_data.accel.accel_x;
     float az = (float)g_imu_data.accel.accel_z;
 
     mahony_update(gx, gy, gz, ax, ay, az);

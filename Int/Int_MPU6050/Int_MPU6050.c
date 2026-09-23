@@ -103,6 +103,12 @@ uint8_t Int_MPU6050_Init(void)
 
 //-------------------------- 校准 --------------------------------//
 
+/* 高字节在前的补码转 int16（位模式即补码，直接组合即可） */
+static int16_t MPU6050_Sample(uint8_t higth, uint8_t low)
+{
+    return (int16_t)(((uint16_t)higth << 8) | low);
+}
+
 /* 校准：静止时取均值，减去零偏 */
 /* 静止判据阈值：前后帧加速度差 < 200 LSB（≈0.012g）视为静止；
    超时 3s 仍抖动则放弃校准，避免死等 */
@@ -179,12 +185,6 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
 }
 
 
-
-/* 高字节在前的补码转 int16（位模式即补码，直接组合即可） */
-static int16_t MPU6050_Sample(uint8_t higth, uint8_t low)
-{
-    return (int16_t)(((uint16_t)higth << 8) | low);
-}
 
 uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
 {

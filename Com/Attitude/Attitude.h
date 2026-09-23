@@ -1,3 +1,15 @@
+/**
+ * @file Attitude.h
+ * @author Jeason
+ * @brief  使用说明：Attitude_Reset 循迹丢线起点 / 定角转弯起点调用，消除累积漂移。
+ *                   Attitude_SetYawOffset 设置旋转角度
+ * @version 0.1
+ * @date 2026-09-21
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
+
 #ifndef __ATTITUDE_H__
 #define __ATTITUDE_H__
 

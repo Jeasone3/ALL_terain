@@ -29,10 +29,13 @@
 #include "motor.h"
 #include "Int_Track.h"
 #include "Track_Task.h"
+#include "Mode_FSM.h"
+#include "IMU_Task.h"
 #include "Int_OLED.h"
 #include "Delay_us.h"
 #include "Int_MPU6050.h"
 #include "Attitude.h"
+#include "Int_Beep.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -121,14 +124,19 @@ int main(void)
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
 
-  line_following_init(&g_line_controller);
-  g_imu_ready = Int_MPU6050_Init();
+  line_following_init(&g_line_controller); //循迹初始化
+  ModeFSM_Init();                          //状态机初始化(默认 NORMAL_TRACK)
+  IMUTask_Init();                          //IMU 角度闭环 PID 初始化
+
+  g_imu_ready = Int_MPU6050_Init();         //获取IMU状态
   if (g_imu_ready)
   {
     HAL_Delay(50);                /* 等传感器输出稳定 */
-    Int_MPU6050_Calibrate(100);   /* 静止判据通过后采 100 帧校陀螺零偏；
-                                     须在启动 TIM4 前避免与 Tick 抢软件 IIC；
-                                     期间车体静止、电机不转 */
+    if (Int_MPU6050_Calibrate(100)) {   /* 校准成功才响；失败(超时)不响=提醒重试 */
+        Int_Beep_On();
+        HAL_Delay(200);
+        Int_Beep_Off();
+    }
     Attitude_Init();              /* 四元数复位，姿态归零 */
   }
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
@@ -156,9 +164,7 @@ int main(void)
       last_print_ms = HAL_GetTick();
       if (g_imu_ready)
       {
-        printf("[IMU] A:%6d,%6d,%6d G:%6d,%6d,%6d E:%6d,%6d,%6d\r\n",
-                g_imu_data.accel.accel_x, g_imu_data.accel.accel_y, g_imu_data.accel.accel_z,
-                g_imu_data.gyro.gyro_x, g_imu_data.gyro.gyro_y, g_imu_data.gyro.gyro_z,
+        printf("E:%6d,%6d,%6d\r\n",
                 (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
       }
     }
@@ -210,6 +216,14 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+  //定时器回调函数
+  void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+    if(htim->Instance == TIM4){
+        ModeFSM_Tick();   /* 状态机按状态调度循迹/IMU/角度闭环(10ms) */
+    }
+  }
+
+
 
 /* USER CODE END 4 */
 

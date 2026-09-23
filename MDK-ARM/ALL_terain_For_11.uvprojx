@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us;..\Int\Int_MPU6050;..\Com\IMU_Config;..\Com\Attitude</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us;..\Int\Int_MPU6050;..\Com\IMU_Config;..\Com\Attitude;..\Int\Int_Beep;..\App\IMU_Task;..\App\Mode_FSM</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -663,6 +663,36 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>Int/MPU6050</GroupName>
+          <Files>
+            <File>
+              <FileName>Int_MPU6050.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Int\Int_MPU6050\Int_MPU6050.c</FilePath>
+            </File>
+            <File>
+              <FileName>Int_MPU6050.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\Int_MPU6050\Int_MPU6050.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Int/Beep</GroupName>
+          <Files>
+            <File>
+              <FileName>Int_Beep.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Int\Int_Beep\Int_Beep.c</FilePath>
+            </File>
+            <File>
+              <FileName>Int_Beep.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\Int_Beep\Int_Beep.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>Com</GroupName>
           <Files>
             <File>
@@ -708,21 +738,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>App/Track</GroupName>
-          <Files>
-            <File>
-              <FileName>Track_Task.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\Track_Task.c</FilePath>
-            </File>
-            <File>
-              <FileName>Track_Task.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\App\Track_Task.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
           <GroupName>Com/Delay_us</GroupName>
           <Files>
             <File>
@@ -734,21 +749,6 @@
               <FileName>Delay_us.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Com\Delay_us\Delay_us.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Int/MPU6050</GroupName>
-          <Files>
-            <File>
-              <FileName>Int_MPU6050.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Int\Int_MPU6050\Int_MPU6050.c</FilePath>
-            </File>
-            <File>
-              <FileName>Int_MPU6050.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Int\Int_MPU6050\Int_MPU6050.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -774,6 +774,51 @@
               <FileName>Attitude.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Com\Attitude\Attitude.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/Track</GroupName>
+          <Files>
+            <File>
+              <FileName>Track_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Track_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>Track_Task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Track_Task.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>APP/IMU_Task</GroupName>
+          <Files>
+            <File>
+              <FileName>IMU_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\IMU_Task\IMU_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>IMU_Task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\IMU_Task\IMU_Task.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>APP/Mode_FSM</GroupName>
+          <Files>
+            <File>
+              <FileName>Mode_FSM.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Mode_FSM\Mode_FSM.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mode_FSM.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Mode_FSM\Mode_FSM.h</FilePath>
             </File>
           </Files>
         </Group>

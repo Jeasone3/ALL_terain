@@ -41,8 +41,12 @@ all_terain_for_11\main.o: ..\App\Track_Task.h
 all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
 all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h
 all_terain_for_11\main.o: ../Com/PID/Com_pid.h
+all_terain_for_11\main.o: ..\App\Mode_FSM\Mode_FSM.h
+all_terain_for_11\main.o: ..\App\IMU_Task\IMU_Task.h
 all_terain_for_11\main.o: ../Int/Int_OLED.h
 all_terain_for_11\main.o: ..\Com\Delay_us\Delay_us.h
 all_terain_for_11\main.o: ..\Int\Int_MPU6050\Int_MPU6050.h
 all_terain_for_11\main.o: ..\Com\IIC\iic.h
 all_terain_for_11\main.o: ..\Com\IMU_Config\IMU_Config.h
+all_terain_for_11\main.o: ..\Com\Attitude\Attitude.h
+all_terain_for_11\main.o: ..\Int\Int_Beep\Int_Beep.h

@@ -37,4 +37,5 @@ typedef struct
     float roll;
 }Euler_struct;
 
+
 #endif /* __IMU_CONFIG_H__ */
