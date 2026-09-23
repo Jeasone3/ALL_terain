@@ -1,5 +1,5 @@
-all_terain_for_11\int_track.o: ..\Int\Int_Track.c
-all_terain_for_11\int_track.o: ..\Int\Int_Track.h
+all_terain_for_11\int_track.o: ..\Int\Int_Track\Int_Track.c
+all_terain_for_11\int_track.o: ..\Int\Int_Track\Int_Track.h
 all_terain_for_11\int_track.o: ../Core/Inc/main.h
 all_terain_for_11\int_track.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\int_track.o: ../Core/Inc/stm32f1xx_hal_conf.h

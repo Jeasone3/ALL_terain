@@ -1,9 +1,9 @@
-all_terain_for_11\attitude.o: ..\Com\Attitude\Attitude.c
-all_terain_for_11\attitude.o: ..\Com\Attitude\Attitude.h
-all_terain_for_11\attitude.o: ..\Com\IMU_Config\IMU_Config.h
+all_terain_for_11\attitude.o: ..\Com\Com_Attitude\Attitude.c
+all_terain_for_11\attitude.o: ..\Com\Com_Attitude\Attitude.h
+all_terain_for_11\attitude.o: ..\Com\Com_IMU_Config\IMU_Config.h
 all_terain_for_11\attitude.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\attitude.o: ..\Int\Int_MPU6050\Int_MPU6050.h
-all_terain_for_11\attitude.o: ..\Com\IIC\iic.h
+all_terain_for_11\attitude.o: ..\Com\Com_IIC\iic.h
 all_terain_for_11\attitude.o: ../Core/Inc/gpio.h
 all_terain_for_11\attitude.o: ../Core/Inc/main.h
 all_terain_for_11\attitude.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -34,5 +34,5 @@ all_terain_for_11\attitude.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\attitude.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\attitude.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\attitude.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\attitude.o: ..\Com\Delay_us\Delay_us.h
+all_terain_for_11\attitude.o: ..\Com\Com_Delay_us\Delay_us.h
 all_terain_for_11\attitude.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h

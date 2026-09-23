@@ -10,6 +10,7 @@
       <TargetName>ALL_terain_For_11</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
+      <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARMCC</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
@@ -339,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int;../Com;../Com/PID;..\App;..\Com\IIC;..\Com\Delay_us;..\Int\Int_MPU6050;..\Com\IMU_Config;..\Com\Attitude;..\Int\Int_Beep;..\App\IMU_Task;..\App\Mode_FSM</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -623,42 +624,182 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Int</GroupName>
+          <GroupName>App/Track_Task</GroupName>
           <Files>
             <File>
-              <FileName>Int_Track.c</FileName>
+              <FileName>Track_Task.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Int\Int_Track.c</FilePath>
+              <FilePath>..\App\Track_Task\Track_Task.c</FilePath>
             </File>
             <File>
-              <FileName>Int_Track.h</FileName>
+              <FileName>Track_Task.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Int\Int_Track.h</FilePath>
+              <FilePath>..\App\Track_Task\Track_Task.h</FilePath>
             </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/IMU_Task</GroupName>
+          <Files>
+            <File>
+              <FileName>IMU_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\IMU_Task\IMU_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>IMU_Task.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\IMU_Task\IMU_Task.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/Mode_FSM</GroupName>
+          <Files>
+            <File>
+              <FileName>Mode_FSM.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Mode_FSM\Mode_FSM.c</FilePath>
+            </File>
+            <File>
+              <FileName>Mode_FSM.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Mode_FSM\Mode_FSM.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/PID</GroupName>
+          <Files>
+            <File>
+              <FileName>Com_pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Com_PID\Com_pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>Com_pid.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_PID\Com_pid.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/Limit</GroupName>
+          <Files>
+            <File>
+              <FileName>Com_Limit.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Com_Limit\Com_Limit.c</FilePath>
+            </File>
+            <File>
+              <FileName>Com_Limit.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_Limit\Com_Limit.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/Delay_us</GroupName>
+          <Files>
+            <File>
+              <FileName>Delay_us.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Com_Delay_us\Delay_us.c</FilePath>
+            </File>
+            <File>
+              <FileName>Delay_us.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_Delay_us\Delay_us.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/Attitude</GroupName>
+          <Files>
+            <File>
+              <FileName>Attitude.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Com_Attitude\Attitude.c</FilePath>
+            </File>
+            <File>
+              <FileName>Attitude.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_Attitude\Attitude.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/IIC</GroupName>
+          <Files>
+            <File>
+              <FileName>iic.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Com\Com_IIC\iic.c</FilePath>
+            </File>
+            <File>
+              <FileName>iic.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_IIC\iic.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Com/IMU_Config</GroupName>
+          <Files>
+            <File>
+              <FileName>IMU_Config.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Com\Com_IMU_Config\IMU_Config.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Int/Motor</GroupName>
+          <Files>
             <File>
               <FileName>motor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Int\motor.c</FilePath>
+              <FilePath>..\Int\Int_Motor\motor.c</FilePath>
             </File>
             <File>
               <FileName>motor.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Int\motor.h</FilePath>
+              <FilePath>..\Int\Int_Motor\motor.h</FilePath>
             </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Int/Track</GroupName>
+          <Files>
+            <File>
+              <FileName>Int_Track.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Int\Int_Track\Int_Track.c</FilePath>
+            </File>
+            <File>
+              <FileName>Int_Track.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\Int_Track\Int_Track.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Int/OLED</GroupName>
+          <Files>
             <File>
               <FileName>Int_OLED.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\Int\Int_OLED.c</FilePath>
+              <FilePath>..\Int\Int_OLED\Int_OLED.c</FilePath>
             </File>
             <File>
               <FileName>Int_OLED.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Int\Int_OLED.h</FilePath>
+              <FilePath>..\Int\Int_OLED\Int_OLED.h</FilePath>
             </File>
             <File>
               <FileName>oledfont.h</FileName>
               <FileType>5</FileType>
-              <FilePath>..\Int\oledfont.h</FilePath>
+              <FilePath>..\Int\Int_OLED\oledfont.h</FilePath>
             </File>
           </Files>
         </Group>
@@ -689,136 +830,6 @@
               <FileName>Int_Beep.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Int\Int_Beep\Int_Beep.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com</GroupName>
-          <Files>
-            <File>
-              <FileName>Com_Limit.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Com\Com_Limit.c</FilePath>
-            </File>
-            <File>
-              <FileName>Com_Limit.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\Com_Limit.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com_PID</GroupName>
-          <Files>
-            <File>
-              <FileName>Com_pid.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Com\PID\Com_pid.c</FilePath>
-            </File>
-            <File>
-              <FileName>Com_pid.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\PID\Com_pid.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com/IIC</GroupName>
-          <Files>
-            <File>
-              <FileName>iic.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Com\IIC\iic.c</FilePath>
-            </File>
-            <File>
-              <FileName>iic.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\IIC\iic.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com/Delay_us</GroupName>
-          <Files>
-            <File>
-              <FileName>Delay_us.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Com\Delay_us\Delay_us.c</FilePath>
-            </File>
-            <File>
-              <FileName>Delay_us.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\Delay_us\Delay_us.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com/IMU_Config</GroupName>
-          <Files>
-            <File>
-              <FileName>IMU_Config.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\IMU_Config\IMU_Config.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>Com/Attitude</GroupName>
-          <Files>
-            <File>
-              <FileName>Attitude.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\Com\Attitude\Attitude.c</FilePath>
-            </File>
-            <File>
-              <FileName>Attitude.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\Com\Attitude\Attitude.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>App/Track</GroupName>
-          <Files>
-            <File>
-              <FileName>Track_Task.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\Track_Task.c</FilePath>
-            </File>
-            <File>
-              <FileName>Track_Task.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\App\Track_Task.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>APP/IMU_Task</GroupName>
-          <Files>
-            <File>
-              <FileName>IMU_Task.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\IMU_Task\IMU_Task.c</FilePath>
-            </File>
-            <File>
-              <FileName>IMU_Task.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\App\IMU_Task\IMU_Task.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>APP/Mode_FSM</GroupName>
-          <Files>
-            <File>
-              <FileName>Mode_FSM.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\Mode_FSM\Mode_FSM.c</FilePath>
-            </File>
-            <File>
-              <FileName>Mode_FSM.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\App\Mode_FSM\Mode_FSM.h</FilePath>
             </File>
           </Files>
         </Group>

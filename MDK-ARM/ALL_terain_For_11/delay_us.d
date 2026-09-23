@@ -1,5 +1,5 @@
-all_terain_for_11\delay_us.o: ..\Com\Delay_us\Delay_us.c
-all_terain_for_11\delay_us.o: ..\Com\Delay_us\Delay_us.h
+all_terain_for_11\delay_us.o: ..\Com\Com_Delay_us\Delay_us.c
+all_terain_for_11\delay_us.o: ..\Com\Com_Delay_us\Delay_us.h
 all_terain_for_11\delay_us.o: ../Core/Inc/main.h
 all_terain_for_11\delay_us.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\delay_us.o: ../Core/Inc/stm32f1xx_hal_conf.h

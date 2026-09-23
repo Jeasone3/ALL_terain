@@ -1,6 +1,6 @@
 all_terain_for_11\int_mpu6050.o: ..\Int\Int_MPU6050\Int_MPU6050.c
 all_terain_for_11\int_mpu6050.o: ..\Int\Int_MPU6050\Int_MPU6050.h
-all_terain_for_11\int_mpu6050.o: ..\Com\IIC\iic.h
+all_terain_for_11\int_mpu6050.o: ..\Com\Com_IIC\iic.h
 all_terain_for_11\int_mpu6050.o: ../Core/Inc/gpio.h
 all_terain_for_11\int_mpu6050.o: ../Core/Inc/main.h
 all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -32,5 +32,5 @@ all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_h
 all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\int_mpu6050.o: ..\Com\Delay_us\Delay_us.h
-all_terain_for_11\int_mpu6050.o: ..\Com\IMU_Config\IMU_Config.h
+all_terain_for_11\int_mpu6050.o: ..\Com\Com_Delay_us\Delay_us.h
+all_terain_for_11\int_mpu6050.o: ..\Com\Com_IMU_Config\IMU_Config.h

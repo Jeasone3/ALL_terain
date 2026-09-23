@@ -1,5 +1,5 @@
-all_terain_for_11\iic.o: ..\Com\IIC\iic.c
-all_terain_for_11\iic.o: ..\Com\IIC\iic.h
+all_terain_for_11\iic.o: ..\Com\Com_IIC\iic.c
+all_terain_for_11\iic.o: ..\Com\Com_IIC\iic.h
 all_terain_for_11\iic.o: ../Core/Inc/gpio.h
 all_terain_for_11\iic.o: ../Core/Inc/main.h
 all_terain_for_11\iic.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -31,4 +31,4 @@ all_terain_for_11\iic.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h
 all_terain_for_11\iic.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\iic.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\iic.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\iic.o: ..\Com\Delay_us\Delay_us.h
+all_terain_for_11\iic.o: ..\Com\Com_Delay_us\Delay_us.h

@@ -1,5 +1,5 @@
-all_terain_for_11\com_pid.o: ..\Com\PID\Com_pid.c
-all_terain_for_11\com_pid.o: ..\Com\PID\Com_PID.h
+all_terain_for_11\com_pid.o: ..\Com\Com_PID\Com_pid.c
+all_terain_for_11\com_pid.o: ..\Com\Com_PID\Com_PID.h
 all_terain_for_11\com_pid.o: ../Core/Inc/main.h
 all_terain_for_11\com_pid.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\com_pid.o: ../Core/Inc/stm32f1xx_hal_conf.h

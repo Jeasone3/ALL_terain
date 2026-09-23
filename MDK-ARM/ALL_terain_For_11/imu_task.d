@@ -30,11 +30,11 @@ all_terain_for_11\imu_task.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\imu_task.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\imu_task.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\imu_task.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\imu_task.o: ../Com/PID/Com_pid.h
-all_terain_for_11\imu_task.o: ../Com/Com_Limit.h
-all_terain_for_11\imu_task.o: ../Int/motor.h
+all_terain_for_11\imu_task.o: ..\Com\Com_PID\Com_pid.h
+all_terain_for_11\imu_task.o: ..\Com\Com_Limit\Com_Limit.h
+all_terain_for_11\imu_task.o: ..\Int\Int_Motor\motor.h
 all_terain_for_11\imu_task.o: ../Core/Inc/tim.h
 all_terain_for_11\imu_task.o: ../Core/Inc/gpio.h
-all_terain_for_11\imu_task.o: ..\Com\Attitude\Attitude.h
-all_terain_for_11\imu_task.o: ..\Com\IMU_Config\IMU_Config.h
+all_terain_for_11\imu_task.o: ..\Com\Com_Attitude\Attitude.h
+all_terain_for_11\imu_task.o: ..\Com\Com_IMU_Config\IMU_Config.h
 all_terain_for_11\imu_task.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h

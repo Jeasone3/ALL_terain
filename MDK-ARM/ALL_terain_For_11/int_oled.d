@@ -1,5 +1,5 @@
-all_terain_for_11\int_oled.o: ..\Int\Int_OLED.c
-all_terain_for_11\int_oled.o: ..\Int\Int_OLED.h
+all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.c
+all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.h
 all_terain_for_11\int_oled.o: ../Core/Inc/i2c.h
 all_terain_for_11\int_oled.o: ../Core/Inc/main.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -31,4 +31,4 @@ all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\int_oled.o: ..\Int\oledfont.h
+all_terain_for_11\int_oled.o: ..\Int\Int_OLED\oledfont.h

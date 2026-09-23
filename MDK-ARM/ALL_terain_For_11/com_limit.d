@@ -1,5 +1,5 @@
-all_terain_for_11\com_limit.o: ..\Com\Com_Limit.c
-all_terain_for_11\com_limit.o: ..\Com\Com_Limit.h
+all_terain_for_11\com_limit.o: ..\Com\Com_Limit\Com_Limit.c
+all_terain_for_11\com_limit.o: ..\Com\Com_Limit\Com_Limit.h
 all_terain_for_11\com_limit.o: ../Core/Inc/main.h
 all_terain_for_11\com_limit.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\com_limit.o: ../Core/Inc/stm32f1xx_hal_conf.h
