@@ -1,3 +1,13 @@
+/**
+ * @file Mode_FSM.c
+ * @author your name (you@domain.com)
+ * @brief  调度器状态机
+ * @version 0.1
+ * @date 2026-09-29
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
 #include "Mode_FSM.h"
 #include "Track_Task.h"    /* follow_line, g_line_controller, LINE_RAW_VALUE */
 #include "Int_Track.h"     /* Read_All_Track, GRAYSCALE_SENSOR_CHANNELS */
@@ -88,6 +98,11 @@ static uint8_t is_turn_done(void)
 }
 
 /* FORWARD 完成: 固定帧数到(FORWARD 本身直行穿过路口, 无 settle) */
+/**
+ * @brief 在十字路口，判断是否完成直行，如果大于等于固定帧数就是完成直行
+ * 
+ * @return uint8_t 
+ */
 static uint8_t is_forward_done(void)
 {
     return g_mode_fsm.state_frames >= FORWARD_HOLD_FRAMES;
@@ -99,6 +114,9 @@ void ModeFSM_Tick(void)
     /* A. 进转弯态: 前 SETTLE_FRAMES 帧(100ms) 向前直行走到路口中心, 再开始转弯.
      *    settling 期间读 IMU 让 yaw 收敛, ForwardTick 保持当前航向直行.
      * B. 切回循迹: 无延时, 转弯完成立刻循迹 */
+    /**
+     * @brief 状态延时，如果小于SETTLE_FRAMES，那么就向前直行，否则就进入下一个状态
+     */
     uint8_t settling = (g_mode_fsm.state_frames < SETTLE_FRAMES);
 
     switch (g_mode_fsm.state)
@@ -122,13 +140,17 @@ void ModeFSM_Tick(void)
     case STATE_TURN_RIGHT:
         /* 非循迹态: 读 IMU + 姿态解算 */
         Int_MPU6050_Tick();
-        Attitude_Tick();
+        Attitude_Tick(); //姿态解算
         if (settling) {
             Temp_Turn_Forward();   /* A: 向前直行 100ms 走到路口中心(固定 target=0) */
         } else {
             IMUTask_TurnTick();      /* 原地差速转弯 */
         }
         g_mode_fsm.state_frames++;
+        /**
+         * @brief 如果小于SETTLE_FRAMES，并且转弯完成，那么就进入 循迹态
+         * 
+         */
         if (!settling && is_turn_done()) enter_state(STATE_NORMAL_TRACK, 0.0f);
         break;
 
@@ -149,3 +171,14 @@ void ModeFSM_Init(void)
     g_mode_fsm.target_yaw   = 0.0f;
     g_mode_fsm.state_frames = 0u;
 }
+
+  /**
+   * @brief 定时器中断开启调度器
+   * 
+   * @param htim 
+   */
+  void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+    if(htim->Instance == TIM4){
+        ModeFSM_Tick();   /* 状态机按状态调度循迹/IMU/角度闭环(10ms) */
+    }
+  }

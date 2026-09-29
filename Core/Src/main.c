@@ -216,13 +216,6 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-  //定时器回调函数
-  void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-    if(htim->Instance == TIM4){
-        ModeFSM_Tick();   /* 状态机按状态调度循迹/IMU/角度闭环(10ms) */
-    }
-  }
-
 
 
 /* USER CODE END 4 */

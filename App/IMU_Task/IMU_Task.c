@@ -9,9 +9,9 @@
 extern Motor_Struct motorLeft;
 extern Motor_Struct motorRight;
 
-/* 转弯 PID (量纲: yaw 误差度 -> PWM ±1000) */
+/* 转弯 PID (量纲: yaw 误差度 -> PWM ±1000) 转弯PID对象 */
 static pid_type_def s_turn_pid;
-/* 直行 PID (量纲: yaw 度 -> PWM 差速) */
+/* 直行 PID (量纲: yaw 度 -> PWM 差速) 角度环执行PID对象 */
 static pid_type_def s_fwd_pid;
 
 /* 当前目标 yaw(度), 由 IMUTask_SetTarget 设定 */
@@ -25,7 +25,7 @@ static float s_target_yaw = 0.0f;
 /* 直行参数 */
 #define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       400.0f   /* 纠偏差速限幅 */
-#define FWD_DEADBAND      10.0f     /* |yaw-target|<此值不纠偏, 防抖 */
+#define FWD_DEADBAND      10.0f     /* |yaw-target|<此值不纠偏, 防抖  死区 */
 
 void IMUTask_Init(void)
 {
@@ -50,6 +50,10 @@ void IMUTask_SetTarget(float target)
     PID_clear(&s_fwd_pid);
 }
 
+/**
+ * @brief 角度控制转弯，原地差速转弯
+ * 
+ */
 void IMUTask_TurnTick(void)
 {
     /* PID_calc 内部 err = set - ref = target - yaw
@@ -62,32 +66,46 @@ void IMUTask_TurnTick(void)
     Motor_SetSpeed(&motorRight, R);
 }
 
-void IMUTask_ForwardTick(void)
-{
-    /* 直行纠偏(原版): 保持 s_target_yaw 航向直行. FORWARD 态用(target=0).
-     * 车偏右 yaw<0 -> err=target-yaw>0 -> out>0 -> L=base-out 减速, R=base+out 加速 -> 左转回正 ✓
-     * 死区: |yaw-target|<10° 置 yaw=target 使 err=0, 不纠偏防抖 */
-    float yaw = g_euler.yaw;
-    if (fabsf(s_target_yaw - yaw) < FWD_DEADBAND) {
-        yaw = s_target_yaw;
-    }
-    float out  = PID_calc(&s_fwd_pid, yaw, s_target_yaw);
-    float base = FWD_BASE_SPEED;
-    int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
-    int16_t R = (int16_t)Com_Limit(base + out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
-    Motor_SetSpeed(&motorLeft,  L);
-    Motor_SetSpeed(&motorRight, R);
-}
 
 /* 临时转弯前直行: 固定 target=0 保持当前航向直行, 用于 TURN 态 settling 期间
  * 向前走到路口中心. 不读 s_target_yaw(那是转弯目标 ±90, 读它会变弧形转弯而非直行). */
+/**
+ * @brief 角度闭环，因为此时小车已经之别到拐弯点，向前走循迹丢线，所以需要角度闭环
+ */
 void Temp_Turn_Forward(void)
 {
     float yaw = g_euler.yaw;
     if (fabsf(yaw) < FWD_DEADBAND) {
         yaw = 0.0f;
     }
-    float out  = PID_calc(&s_fwd_pid, yaw, 0.0f);
+    float out  = PID_calc(&s_fwd_pid, yaw, 0.0f); 
+    float base = FWD_BASE_SPEED;
+    /**
+     * @brief 当 yaw 为正（例如右偏）时，PID算出的 out 为正，此时左轮减速(base - out)，右轮加速(base + out)，机器人向左转以纠正右偏
+     *          差速控制
+     * 
+     */
+    int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);//yaw角 左转为- ，右转为正
+    int16_t R = (int16_t)Com_Limit(base + out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+    Motor_SetSpeed(&motorLeft,  L);
+    Motor_SetSpeed(&motorRight, R);
+}
+
+/**
+ * @brief 角度环直行
+ * 
+ */
+void IMUTask_ForwardTick(void)
+{
+    /* 直行纠偏(原版): 保持 s_target_yaw 航向直行. FORWARD 态用(target=0).
+     * 车偏右 yaw<0 -> err=target-yaw>0 -> out>0 -> L=base-out 减速, R=base+out 加速 -> 左转回正 ✓
+     * 死区: |yaw-target|<10° 置 yaw=target 使 err=0, 不纠偏防抖 */
+    float yaw = g_euler.yaw;
+    //死区控制
+    if (fabsf(s_target_yaw - yaw) < FWD_DEADBAND) {
+        yaw = s_target_yaw;
+    }
+    float out  = PID_calc(&s_fwd_pid, yaw, s_target_yaw);
     float base = FWD_BASE_SPEED;
     int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
     int16_t R = (int16_t)Com_Limit(base + out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
