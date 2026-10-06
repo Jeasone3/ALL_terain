@@ -28,12 +28,12 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 ModeFSM_t g_mode_fsm;
 
 /* 转弯完成容差(度): |yaw - target| < 此值判完成 */
-#define TURN_DONE_TOLERANCE   5.0f
-/* FORWARD 固定持续帧数(10ms/帧, 50 = 500ms) */
+#define TURN_DONE_TOLERANCE   7.0f
+/* FORWARD 固定持续帧数(10ms/帧, 50 = 500ms)  针对十字路口*/
 #define FORWARD_HOLD_FRAMES   10u
 /* 切换状态后稳定帧数(10ms*10=100ms): 期间停车, 防立刻动作时序错乱
  * A.进转弯/直行态: 姿态收敛+机械稳定; B.切回循迹: 传感器稳定防误触发 */
-#define SETTLE_FRAMES         10u
+#define SETTLE_FRAMES         40u
 
 /* ==================== 触发判据(简单版, 后期加持续帧确认防误触发) ====================
  * g_sensor_data[0..7] 对应 IN1..IN8, 权重 -5,-4,-2,-1,1,2,4,5; LINE_RAW_VALUE=1 在线上.

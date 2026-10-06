@@ -66,7 +66,7 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 
 /* g_imu_data / g_imu_ready 已移至 Int_MPU6050 模块，TIM4 中断里更新 */
 
-
+extern ModeFSM_t g_mode_fsm;
 
 /* USER CODE END PV */
 
@@ -120,12 +120,14 @@ int main(void)
 
   //OLED初始化
   OLED_Init();
-
+  //电机对象初始化
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
-
+  
   line_following_init(&g_line_controller); //循迹初始化
+  
   ModeFSM_Init();                          //状态机初始化(默认 NORMAL_TRACK)
+  
   IMUTask_Init();                          //IMU 角度闭环 PID 初始化
 
   g_imu_ready = Int_MPU6050_Init();         //获取IMU状态
@@ -141,7 +143,8 @@ int main(void)
   }
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
 
-  OLED_ShowStr(0, 0, "eeeeee",1);
+
+  OLED_ShowStr(0, 0, "Jeason FSM", 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -158,20 +161,40 @@ int main(void)
       g_imu_ready = Int_MPU6050_Init();
     }
 
-    /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
-    if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
-    {
-      last_print_ms = HAL_GetTick();
-      if (g_imu_ready)
-      {
-        printf("E:%6d,%6d,%6d\r\n",
-                (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
-      }
-    }
+    // /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
+    // if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
+    // {
+    //   last_print_ms = HAL_GetTick();
+    //   if (g_imu_ready)
+    //   {
+    //     printf("E:%6d,%6d,%6d\r\n",
+    //             (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
+    //   }
+    // }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* ---- OLED 周期性刷新 200ms ---- */
+    static uint32_t last_oled_ms = 0;
+    if ((uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
+    {
+      last_oled_ms = HAL_GetTick();
+
+      OLED_ShowStr(0, 2, "State:", 1);
+      switch (g_mode_fsm.state)
+      {
+        case STATE_NORMAL_TRACK: OLED_ShowStr(48, 2, "NORMAL_TRACK", 1); break;
+        case STATE_CROSS:        OLED_ShowStr(48, 2, "CROSS      ", 1); break;
+        case STATE_TURN_LEFT:    OLED_ShowStr(48, 2, "TURN_LEFT  ", 1); break;
+        case STATE_TURN_RIGHT:   OLED_ShowStr(48, 2, "TURN_RIGHT ", 1); break;
+        case STATE_FORWARD:      OLED_ShowStr(48, 2, "FORWARD    ", 1); break;
+        default:                 OLED_ShowStr(48, 2, "UNKNOWN    ", 1); break;
+      }
+
+      OLED_ShowStr(0, 4, "Yaw:", 1);
+      OLED_ShowNum(32, 4, (int32_t)g_mode_fsm.target_yaw, 2, 1);
+    }
   }
   /* USER CODE END 3 */
 }
