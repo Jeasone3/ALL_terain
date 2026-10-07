@@ -23,6 +23,9 @@ void IMUTask_TurnTick(void);
 /* 直行纠偏一帧: base±out, |yaw-target|<10° 死区不纠偏防抖 */
 void IMUTask_ForwardTick(void);
 
+/* 保持已设置的目标航向，指定低速 PWM 用于路口确认和驶离。 */
+void IMUTask_ForwardTickWithSpeed(float base_speed);
+
 /* 临时转弯前直行(固定 target=0): TURN 态 settling 期间向前走到路口中心 */
 void Temp_Turn_Forward(void);
 

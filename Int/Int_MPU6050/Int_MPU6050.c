@@ -11,7 +11,7 @@ Gyro_Accel_Struct g_imu_data = {0};
  * @brief IMU 通信状态 0 不能通讯，1=正常
  * 
  */
-uint8_t g_imu_ready = 0; 
+volatile uint8_t g_imu_ready = 0;
 
 
 /* 陀螺零偏：Calibrate 静止取均值后写入，Get_Data 里减掉。初值 0 = 未校准，

@@ -24,7 +24,7 @@
 
 /* 六轴原始值与通信状态；由 Int_MPU6050_Tick 在 TIM4 中断里更新，其他模块可直接读 */
 extern Gyro_Accel_Struct g_imu_data;
-extern uint8_t g_imu_ready;
+extern volatile uint8_t g_imu_ready;
 
 /* 成功返回 1；设备不存在、IIC 错误或配置失败返回 0 */
 uint8_t Int_MPU6050_Init(void);

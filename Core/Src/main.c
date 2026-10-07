@@ -61,12 +61,7 @@
   extern Motor_Struct motorLeft;
   extern Motor_Struct motorRight;
 
-//循迹数组
-extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
-
-/* g_imu_data / g_imu_ready 已移至 Int_MPU6050 模块，TIM4 中断里更新 */
-
-extern ModeFSM_t g_mode_fsm;
+/* 状态机和 IMU 共享数据由各模块管理，显示通过快照读取 */
 
 /* USER CODE END PV */
 
@@ -130,7 +125,7 @@ int main(void)
   
   IMUTask_Init();                          //IMU 角度闭环 PID 初始化
 
-  g_imu_ready = Int_MPU6050_Init();         //获取IMU状态
+  Int_MPU6050_Init();                      //模块内部维护 IMU 通信状态
   if (g_imu_ready)
   {
     HAL_Delay(50);                /* 等传感器输出稳定 */
@@ -141,7 +136,7 @@ int main(void)
     }
     Attitude_Init();              /* 四元数复位，姿态归零 */
   }
-  HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
+  HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍，中断里调度状态机 */
 
 
   OLED_ShowStr(0, 0, "Jeason FSM", 1);
@@ -150,7 +145,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
-  uint32_t last_print_ms = HAL_GetTick();
+  uint32_t last_oled_ms = 0;
   while (1)
   {
     /* IMU 读取在 TIM4 10ms 中断里完成；主循环只负责通信失败后 1s 重试 Init */
@@ -158,42 +153,50 @@ int main(void)
         (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {
       last_imu_retry_ms = HAL_GetTick();
-      g_imu_ready = Int_MPU6050_Init();
+      Int_MPU6050_Init();
     }
 
-    // /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
-    // if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
-    // {
-    //   last_print_ms = HAL_GetTick();
-    //   if (g_imu_ready)
-    //   {
-    //     printf("E:%6d,%6d,%6d\r\n",
-    //             (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
-    //   }
-    // }
+    /* 中断只记录诊断帧；每轮最多输出四条，避免主循环一直排空队列 */
+    for (uint8_t i = 0; i < 4U; i++)
+    {
+      ModeFSM_DebugFrame frame;
+      if (!ModeFSM_PopDebugFrame(&frame)) break;
+      printf("J,%lu,%02X,%u,%u,%u,%u,%lu,%d,%u,%u\r\n",
+             (unsigned long)frame.tick_ms, (unsigned int)frame.raw_mask,
+             (unsigned int)frame.state, (unsigned int)frame.left_votes,
+             (unsigned int)frame.right_votes, (unsigned int)frame.event,
+             (unsigned long)frame.event_count, (int)frame.yaw_ddeg,
+             (unsigned int)frame.fault, (unsigned int)frame.imu_ready);
+    }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* ---- OLED 周期性刷新 200ms ---- */
-    static uint32_t last_oled_ms = 0;
-    if ((uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
+    /* 每 200ms 从同一快照显示状态，短暂的路口事件通过串口日志观察 */
+    if ((uint32_t)(HAL_GetTick() - last_oled_ms) >= 200U)
     {
+      ModeFSM_t snapshot;
+      char text[22];
       last_oled_ms = HAL_GetTick();
+      ModeFSM_GetSnapshot(&snapshot);
 
       OLED_ShowStr(0, 2, "State:", 1);
-      switch (g_mode_fsm.state)
+      switch (snapshot.state)
       {
-        case STATE_NORMAL_TRACK: OLED_ShowStr(48, 2, "NORMAL_TRACK", 1); break;
-        case STATE_CROSS:        OLED_ShowStr(48, 2, "CROSS      ", 1); break;
-        case STATE_TURN_LEFT:    OLED_ShowStr(48, 2, "TURN_LEFT  ", 1); break;
-        case STATE_TURN_RIGHT:   OLED_ShowStr(48, 2, "TURN_RIGHT ", 1); break;
-        case STATE_FORWARD:      OLED_ShowStr(48, 2, "FORWARD    ", 1); break;
-        default:                 OLED_ShowStr(48, 2, "UNKNOWN    ", 1); break;
+        case STATE_NORMAL_TRACK:     OLED_ShowStr(48, 2, "NORMAL_TRACK ", 1); break;
+        case STATE_CROSS:            OLED_ShowStr(48, 2, "CROSS        ", 1); break;
+        case STATE_TURN_LEFT:        OLED_ShowStr(48, 2, "TURN_LEFT    ", 1); break;
+        case STATE_TURN_RIGHT:       OLED_ShowStr(48, 2, "TURN_RIGHT   ", 1); break;
+        case STATE_FORWARD:          OLED_ShowStr(48, 2, "FORWARD      ", 1); break;
+        case STATE_JUNCTION_PENDING: OLED_ShowStr(48, 2, "PENDING      ", 1); break;
+        case STATE_APPROACH_TURN:    OLED_ShowStr(48, 2, "APPROACH     ", 1); break;
+        case STATE_FAULT_STOP:       OLED_ShowStr(48, 2, "FAULT_STOP   ", 1); break;
+        default:                     OLED_ShowStr(48, 2, "UNKNOWN      ", 1); break;
       }
 
-      OLED_ShowStr(0, 4, "Yaw:", 1);
-      OLED_ShowNum(32, 4, (int32_t)g_mode_fsm.target_yaw, 2, 1);
+      /* 用带符号字符串显示目标角，避免数字接口的字号和无符号转换问题 */
+      snprintf(text, sizeof(text), "Target:%+4d         ", (int)snapshot.target_yaw);
+      OLED_ShowStr(0, 4, (unsigned char *)text, 1);
     }
   }
   /* USER CODE END 3 */
