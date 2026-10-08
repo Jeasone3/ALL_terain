@@ -33,7 +33,7 @@ ModeFSM_t g_mode_fsm;
 #define FORWARD_HOLD_FRAMES   10u
 /* 切换状态后稳定帧数(10ms*10=100ms): 期间停车, 防立刻动作时序错乱
  * A.进转弯/直行态: 姿态收敛+机械稳定; B.切回循迹: 传感器稳定防误触发 */
-#define SETTLE_FRAMES         40u
+#define SETTLE_FRAMES         80u
 
 /* ==================== 触发判据(简单版, 后期加持续帧确认防误触发) ====================
  * g_sensor_data[0..7] 对应 IN1..IN8, 权重 -5,-4,-2,-1,1,2,4,5; LINE_RAW_VALUE=1 在线上.
@@ -64,7 +64,7 @@ static uint8_t all8_on(void)
  * 
  * @param new_state 如果不是 STATE_NORMAL_TRACK, 则进入非循迹态
  * @param target_yaw 要转的期望角度
- */
+ */         
 static void enter_state(Run_State new_state, float target_yaw)
 {
     /* 离开 NORMAL_TRACK 进入非循迹态: 归0 yaw 作角度基准, 设目标, 清 PID */
