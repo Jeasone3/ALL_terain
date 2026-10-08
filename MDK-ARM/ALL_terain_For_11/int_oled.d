@@ -1,5 +1,8 @@
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.c
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.h
+all_terain_for_11\int_oled.o: ..\Com\Com_OLED\oled.h
+all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
 all_terain_for_11\int_oled.o: ../Core/Inc/i2c.h
 all_terain_for_11\int_oled.o: ../Core/Inc/main.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -9,14 +12,12 @@ all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f1xx.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f103xe.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Include/core_cm3.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Include/cmsis_version.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
 all_terain_for_11\int_oled.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc_ex.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio_ex.h
@@ -31,4 +32,3 @@ all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\int_oled.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-all_terain_for_11\int_oled.o: ..\Int\Int_OLED\oledfont.h

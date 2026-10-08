@@ -112,6 +112,20 @@ typedef struct {
     uint8_t imu_ready;          /* 模块通信状态；为 1 不代表普通循迹态的 yaw 是新数据。 */
 } ModeFSM_DebugFrame;
 
+/* 显示使用的诊断副本；不作为控制输入。周期计数来自 DWT，不是名义帧时间。
+ * 角度只有 yaw_valid=1 时可用，yaw_fresh=0 表示这一帧未更新。
+ * 左右证据年龄仅在候选阶段有效，255 表示未取得或不适用。 */
+typedef struct {
+    ModeFSM_t fsm;
+    uint32_t tick_ms, yaw_tick_ms, advance_frames;
+    uint32_t control_last_cycles, control_max_cycles, control_overruns;
+    uint32_t interval_max_cycles, late_intervals;
+    int16_t yaw_ddeg, pwm_left, pwm_right;
+    uint8_t yaw_valid, yaw_fresh, imu_ready;
+    uint8_t left_age, right_age, left_fresh, right_fresh;
+    uint8_t center_gap, narrow_frames, turn_done;
+} ModeFSM_Diagnostics;
+
 /* 定义在 Mode_FSM.c；volatile 保留必要读写，但不能代替快照接口的短临界区。 */
 extern volatile ModeFSM_t g_mode_fsm;
 
@@ -124,6 +138,7 @@ void ModeFSM_Tick(void);
 /* 前台取得整个状态对象的一致副本；snapshot 必须指向调用者的有效结构体。
  * 内部仅复制期间屏蔽中断，并恢复原来的屏蔽状态，返回后再显示副本。 */
 void ModeFSM_GetSnapshot(ModeFSM_t *snapshot);
+void ModeFSM_GetDiagnostics(ModeFSM_Diagnostics *snapshot);
 /* 前台取出最旧的一条日志，成功返回 1，队列为空或地址为空返回 0。
  * 串口打印放在返回后执行，不能在控制中断中排队等待打印。 */
 uint8_t ModeFSM_PopDebugFrame(ModeFSM_DebugFrame *frame);

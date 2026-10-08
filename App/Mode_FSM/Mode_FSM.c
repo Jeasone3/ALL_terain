@@ -19,6 +19,7 @@
 #include "Int_MPU6050.h"/* 本帧 IMU 数据读取与通信状态 */
 #include "Attitude.h"/* 姿态基准重置、姿态解算和当前欧拉角 */
 #include "IMU_Task.h"/* 保持航向、定角转弯及停车接口 */
+#include "motor.h"/* 只读取最终 PWM 指令，诊断不写电机输出 */
 #include <math.h>
 
 /* 数组由 Int_Track.c 定义；这里只声明并使用，不重复分配存储空间。
@@ -54,6 +55,13 @@ static uint32_t s_advance_frames;
 static float s_turn_target;
 /* 每次 ModeFSM_Tick 增加 MODEFSM_TICK_MS；这是合成节拍时间，不是独立墙钟。 */
 static uint32_t s_tick_ms;
+/* 观测数据不参与控制决策。电机字段记录的是 PWM 指令，不是编码器速度。 */
+extern Motor_Struct motorLeft, motorRight;
+static volatile ModeFSM_Diagnostics s_diagnostics;
+static uint8_t s_yaw_valid, s_yaw_fresh;
+static uint32_t s_yaw_tick_ms;
+static uint32_t s_previous_cycle;
+static uint8_t s_have_previous_cycle;
 
 /* 中断生产日志、前台消费日志。队列满时丢弃新帧，不能等待前台来腾空间。 */
 static ModeFSM_DebugFrame s_debug[DEBUG_CAPACITY];
@@ -189,14 +197,18 @@ static uint8_t update_imu(void)
 {
     Int_MPU6050_Tick();
     if (!g_imu_ready) {
+        s_yaw_valid = 0u;
         fault_stop(MODE_FAULT_IMU);
         return 0u;
     }
     Attitude_Tick();
     if (!isfinite(g_euler.yaw) || fabsf(g_euler.yaw) > 360.0f) {
+        s_yaw_valid = 0u;
         fault_stop(MODE_FAULT_IMU);
         return 0u;
     }
+    s_yaw_valid = s_yaw_fresh = 1u;
+    s_yaw_tick_ms = s_tick_ms;
     return 1u;
 }
 
@@ -350,6 +362,7 @@ static void start_candidate(uint8_t mask)
 {
     clear_evidence();
     Attitude_Reset();
+    s_yaw_valid = 0u;
     IMUTask_SetTarget(0.0f);
     enter_state(STATE_JUNCTION_PENDING, 0.0f);
     g_mode_fsm.state_frames = 1u;
@@ -395,6 +408,7 @@ static void push_debug(void)
  */
 void ModeFSM_Tick(void)
 {
+    s_yaw_fresh = 0u;
     uint8_t mask = read_mask(); /* 当前帧原始数据生成的在线位图，并非历史滤波位图。 */
     g_mode_fsm.raw_mask = mask;
     s_tick_ms += MODEFSM_TICK_MS; /* 按调用次数累计，不能用于测量中断实际耗时或漏拍。 */
@@ -484,6 +498,34 @@ void ModeFSM_Tick(void)
         break;
     }
     push_debug(); /* 包括辅助函数切入故障的帧，最终状态仍会进入日志。 */
+    /* 在控制完成后发布诊断，前台不会拼接不同帧的计数与电机输出。 */
+    s_diagnostics.fsm = g_mode_fsm;
+    s_diagnostics.tick_ms = s_tick_ms;
+    s_diagnostics.yaw_tick_ms = s_yaw_tick_ms;
+    s_diagnostics.yaw_valid = s_yaw_valid;
+    s_diagnostics.yaw_fresh = s_yaw_fresh;
+    s_diagnostics.yaw_ddeg = s_yaw_valid ? (int16_t)(g_euler.yaw * 10.0f) : 0;
+    s_diagnostics.imu_ready = g_imu_ready;
+    s_diagnostics.pwm_left = motorLeft.speed;
+    s_diagnostics.pwm_right = motorRight.speed;
+    s_diagnostics.advance_frames = s_advance_frames;
+    s_diagnostics.center_gap = s_center_gap;
+    s_diagnostics.narrow_frames = s_narrow_frames;
+    s_diagnostics.turn_done = s_turn_done;
+    s_diagnostics.left_age = s_diagnostics.right_age = 255u;
+    s_diagnostics.left_fresh = s_diagnostics.right_fresh = 0u;
+    if (g_mode_fsm.state == STATE_JUNCTION_PENDING) {
+        uint32_t left_age = g_mode_fsm.state_frames - s_left_frame;
+        uint32_t right_age = g_mode_fsm.state_frames - s_right_frame;
+        if (s_left_seen) {
+            s_diagnostics.left_age = (uint8_t)(left_age > 254u ? 254u : left_age);
+            s_diagnostics.left_fresh = left_age <= JUNCTION_PAIR_GAP_FRAMES;
+        }
+        if (s_right_seen) {
+            s_diagnostics.right_age = (uint8_t)(right_age > 254u ? 254u : right_age);
+            s_diagnostics.right_fresh = right_age <= JUNCTION_PAIR_GAP_FRAMES;
+        }
+    }
 }
 
 /**
@@ -494,7 +536,7 @@ void ModeFSM_Tick(void)
  */
 void ModeFSM_Init(void)
 {
-    ModeFSM_t initial = {0};
+    ModeFSM_t initial = {.state = STATE_NORMAL_TRACK};
     uint32_t primask = __get_PRIMASK();
     __disable_irq();
     g_mode_fsm = initial;
@@ -502,6 +544,12 @@ void ModeFSM_Init(void)
     s_turn_target = 0.0f;
     s_tick_ms = 0u;
     s_debug_head = s_debug_tail = 0u;
+    {
+        ModeFSM_Diagnostics empty = {.fsm = {.state = STATE_NORMAL_TRACK}};
+        s_diagnostics = empty;
+    }
+    s_yaw_valid = s_yaw_fresh = s_have_previous_cycle = 0u;
+    s_yaw_tick_ms = s_previous_cycle = 0u;
     __set_PRIMASK(primask);
 }
 
@@ -518,6 +566,18 @@ void ModeFSM_GetSnapshot(ModeFSM_t *snapshot)
     primask = __get_PRIMASK();
     __disable_irq();
     *snapshot = g_mode_fsm;
+    __set_PRIMASK(primask);
+}
+
+/* 与控制状态一样，仅复制期间屏蔽中断；DWT 换算和字符串处理均在前台。 */
+void ModeFSM_GetDiagnostics(ModeFSM_Diagnostics *snapshot)
+{
+    uint32_t primask;
+    if (snapshot == 0) return;
+    primask = __get_PRIMASK();
+    __disable_irq();
+    *snapshot = s_diagnostics;
+    snapshot->imu_ready = g_imu_ready;
     __set_PRIMASK(primask);
 }
 
@@ -547,7 +607,23 @@ uint8_t ModeFSM_PopDebugFrame(ModeFSM_DebugFrame *frame)
  * 10ms 周期由 tim.c 的实际定时器配置决定，不是 MODEFSM_TICK_MS 宏单独决定的。 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Instance == TIM4)
+    if (htim->Instance == TIM4) {
+        uint32_t begin = DWT->CYCCNT;
+        uint32_t period = (SystemCoreClock / 1000u) * MODEFSM_TICK_MS;
+        if (s_have_previous_cycle) {
+            uint32_t interval = begin - s_previous_cycle;
+            if (interval > s_diagnostics.interval_max_cycles)
+                s_diagnostics.interval_max_cycles = interval;
+            /* 允许 10% 的到达抖动；这是到达间隔异常数，不等于精确漏拍数。 */
+            if (interval > period + period / 10u) ++s_diagnostics.late_intervals;
+        }
+        s_previous_cycle = begin;
+        s_have_previous_cycle = 1u;
         ModeFSM_Tick();
+        s_diagnostics.control_last_cycles = DWT->CYCCNT - begin;
+        if (s_diagnostics.control_last_cycles > s_diagnostics.control_max_cycles)
+            s_diagnostics.control_max_cycles = s_diagnostics.control_last_cycles;
+        if (s_diagnostics.control_last_cycles >= period) ++s_diagnostics.control_overruns;
+    }
     
 }

@@ -32,6 +32,7 @@
 #include "Mode_FSM.h"
 #include "IMU_Task.h"
 #include "Int_OLED.h"
+#include "OLED_Debug.h"
 #include "Delay_us.h"
 #include "Int_MPU6050.h"
 #include "Attitude.h"
@@ -114,7 +115,7 @@ int main(void)
   /* 软件 IIC 的 SDA/SCL 已在 MX_GPIO_Init() 中释放为高，此处不重复 */
 
   //OLED初始化
-  OLED_Init();
+  (void)IntOLED_Init(HAL_GetTick());
   //电机对象初始化
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
@@ -139,13 +140,12 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍，中断里调度状态机 */
 
 
-  OLED_ShowStr(0, 0, "Jeason FSM", 1);
+  OLED_Debug_Init(IntOLED_GetDevice(), HAL_GetTick());
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
-  uint32_t last_oled_ms = 0;
   while (1)
   {
     /* IMU 读取在 TIM4 10ms 中断里完成；主循环只负责通信失败后 1s 重试 Init */
@@ -161,6 +161,7 @@ int main(void)
     {
       ModeFSM_DebugFrame frame;
       if (!ModeFSM_PopDebugFrame(&frame)) break;
+      OLED_Debug_OnFrame(&frame); /* 同一记录分发给历史和串口，不重复消费队列。 */
       printf("J,%lu,%02X,%u,%u,%u,%u,%lu,%d,%u,%u\r\n",
              (unsigned long)frame.tick_ms, (unsigned int)frame.raw_mask,
              (unsigned int)frame.state, (unsigned int)frame.left_votes,
@@ -172,32 +173,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* 每 200ms 从同一快照显示状态，短暂的路口事件通过串口日志观察 */
-    if ((uint32_t)(HAL_GetTick() - last_oled_ms) >= 200U)
-    {
-      ModeFSM_t snapshot;
-      char text[22];
-      last_oled_ms = HAL_GetTick();
-      ModeFSM_GetSnapshot(&snapshot);
-
-      OLED_ShowStr(0, 2, "State:", 1);
-      switch (snapshot.state)
-      {
-        case STATE_NORMAL_TRACK:     OLED_ShowStr(48, 2, "NORMAL_TRACK ", 1); break;
-        case STATE_CROSS:            OLED_ShowStr(48, 2, "CROSS        ", 1); break;
-        case STATE_TURN_LEFT:        OLED_ShowStr(48, 2, "TURN_LEFT    ", 1); break;
-        case STATE_TURN_RIGHT:       OLED_ShowStr(48, 2, "TURN_RIGHT   ", 1); break;
-        case STATE_FORWARD:          OLED_ShowStr(48, 2, "FORWARD      ", 1); break;
-        case STATE_JUNCTION_PENDING: OLED_ShowStr(48, 2, "PENDING      ", 1); break;
-        case STATE_APPROACH_TURN:    OLED_ShowStr(48, 2, "APPROACH     ", 1); break;
-        case STATE_FAULT_STOP:       OLED_ShowStr(48, 2, "FAULT_STOP   ", 1); break;
-        default:                     OLED_ShowStr(48, 2, "UNKNOWN      ", 1); break;
-      }
-
-      /* 用带符号字符串显示目标角，避免数字接口的字号和无符号转换问题 */
-      snprintf(text, sizeof(text), "Target:%+4d         ", (int)snapshot.target_yaw);
-      OLED_ShowStr(0, 4, (unsigned char *)text, 1);
-    }
+    /* 绘图、按键、分页发送均在前台；TIM4 不等待 OLED 或串口。 */
+    OLED_Debug_Tick(HAL_GetTick());
   }
   /* USER CODE END 3 */
 }

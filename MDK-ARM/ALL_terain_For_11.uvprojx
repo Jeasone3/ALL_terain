@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task;..\Com\Com_OLED;..\App\OLED_Debug</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -835,6 +835,22 @@
         </Group>
         <Group>
           <GroupName>::CMSIS</GroupName>
+        </Group>
+        <Group>
+          <GroupName>Com/Com_OLED</GroupName>
+          <Files>
+            <File><FileName>oled.c</FileName><FileType>1</FileType><FilePath>..\Com\Com_OLED\oled.c</FilePath></File>
+            <File><FileName>oled_font.c</FileName><FileType>1</FileType><FilePath>..\Com\Com_OLED\oled_font.c</FilePath></File>
+            <File><FileName>oled.h</FileName><FileType>5</FileType><FilePath>..\Com\Com_OLED\oled.h</FilePath></File>
+            <File><FileName>oled_font.h</FileName><FileType>5</FileType><FilePath>..\Com\Com_OLED\oled_font.h</FilePath></File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/OLED_Debug</GroupName>
+          <Files>
+            <File><FileName>OLED_Debug.c</FileName><FileType>1</FileType><FilePath>..\App\OLED_Debug\OLED_Debug.c</FilePath></File>
+            <File><FileName>OLED_Debug.h</FileName><FileType>5</FileType><FilePath>..\App\OLED_Debug\OLED_Debug.h</FilePath></File>
+          </Files>
         </Group>
       </Groups>
     </Target>
