@@ -49,7 +49,7 @@ static uint8_t s_left_seen, s_right_seen;
 static uint32_t s_left_frame, s_right_frame;
 /* 分别统计连续窄线、连续中心丢线、连续角度到位；条件中断后相应计数清零。 */
 static uint8_t s_narrow_frames, s_center_gap, s_turn_done;
-/* 候选与转前推进累计的前进帧数；切换到 APPROACH_TURN 时继续累计。 */
+/* 单侧确认后的独立推进帧数；候选期不计入，进入 APPROACH_TURN 时清零。 */
 static uint32_t s_advance_frames;
 /* 已选择的转弯目标：左转 +90°、右转 -90°，相对于进入候选时的航向基准。 */
 static float s_turn_target;
@@ -162,7 +162,7 @@ static void clear_evidence(void)
  * @param state 接下来要运行的状态；switch 通常要到下一帧才执行这个新分支。
  * @param target 状态机记录的目标航向，不会在本函数中自动写入 IMU 控制器。
  * IMU 控制器的内部目标要显式调用 IMUTask_SetTarget 设置。
- * s_advance_frames 不随普通状态切换清零，以便候选和追加推进合并计算。
+ * s_advance_frames 单独记录确认后的推进；confirm_junction 明确清零。
  */
 static void enter_state(Run_State state, float target)
 {
@@ -182,6 +182,23 @@ static void enter_state(Run_State state, float target)
 /* 记录具体故障并立即停车。FAULT_STOP 每帧继续发停车命令，不自动恢复旧动作。 */
 static void fault_stop(ModeFSM_Fault fault)
 {
+    /* 必须在 enter_state 清计时、IMUTask_Stop 清 PWM 之前捕获。
+     * HEADING_ERROR 的来源是候选/推进，不能误读为 TURN 分支超时。 */
+    if (!s_diagnostics.fault_capture_valid) {
+        s_diagnostics.fault_state = (uint8_t)g_mode_fsm.state;
+        s_diagnostics.fault_frames = g_mode_fsm.state_frames;
+        s_diagnostics.fault_mask = g_mode_fsm.raw_mask;
+        s_diagnostics.fault_pwm_left = motorLeft.speed;
+        s_diagnostics.fault_pwm_right = motorRight.speed;
+        s_diagnostics.fault_yaw_valid = s_yaw_valid && isfinite(g_euler.yaw) &&
+                                       fabsf(g_euler.yaw) < 3276.0f;
+        s_diagnostics.fault_yaw_ddeg = s_diagnostics.fault_yaw_valid ?
+                                     (int16_t)(g_euler.yaw * 10.0f) : 0;
+        s_diagnostics.fault_target_ddeg = isfinite(g_mode_fsm.target_yaw) &&
+                                         fabsf(g_mode_fsm.target_yaw) < 3276.0f ?
+                                         (int16_t)(g_mode_fsm.target_yaw * 10.0f) : 0;
+        s_diagnostics.fault_capture_valid = 1u;
+    }
     g_mode_fsm.fault = fault;
     enter_state(STATE_FAULT_STOP, g_mode_fsm.target_yaw);
     IMUTask_Stop();
@@ -216,18 +233,21 @@ static uint8_t update_imu(void)
  * @brief 对候选和转前推进检查航向、中心线；调用前先通过 update_imu。
  * 两个阶段都以进入候选时的 0° 相对航向前进，偏差超过上限就停车。
  * IN4/IN5 同时离线时累计 s_center_gap；任意一路恢复就归零。
- * 该检查用于候选和追加推进，不代表普通循迹阶段也采用同样的丢线保护。
+ * require_center=1 只用于未确认候选。确认转弯后探头可能越过横线，
+ * 推进阶段允许短程无中心线，但保持 IMU/航向保护且有固定推进上限。
  * @return 正常为 1；故障为 0，并且已经停车。
  */
-static uint8_t check_approach(uint8_t mask)
+static uint8_t check_approach(uint8_t mask, uint8_t require_center)
 {
     if (fabsf(angle_error(0.0f, g_euler.yaw)) > JUNCTION_MAX_HEADING_ERROR) {
         fault_stop(MODE_FAULT_HEADING);
         return 0u;
     }
-    if ((mask & CENTER_MASK) == 0u) ++s_center_gap;
+    if ((mask & CENTER_MASK) == 0u) {
+        if (s_center_gap < 255u) ++s_center_gap;
+    }
     else s_center_gap = 0u;
-    if (s_center_gap >= JUNCTION_CENTER_GAP_FRAMES) {
+    if (require_center && s_center_gap >= JUNCTION_CENTER_GAP_FRAMES) {
         fault_stop(MODE_FAULT_CENTER_LOST);
         return 0u;
     }
@@ -297,14 +317,13 @@ static void confirm_junction(Junction_Event event)
         enter_state(STATE_CROSS, 0.0f);
     } else {
         s_turn_target = event == JUNCTION_LEFT ? 90.0f : -90.0f;
-        /* 三目运算选择转弯目标：左侧取 +90°，右侧取 -90°。
-         * 候选和转前推进同为低速，累计到总帧数，不再追加旧的 400ms。
-         * 默认确认和总推进均为 12 帧，所以单侧确认后通常直接开始转弯；
-         * 以后调大总推进帧数时，才进入 APPROACH_TURN 补足剩余推进。 */
-        if (s_advance_frames >= JUNCTION_ADVANCE_FRAMES)
-            begin_turn();
-        else
-            enter_state(STATE_APPROACH_TURN, 0.0f);
+        /* 确认方向与车轴位置是两件事。先保存待转目标，但仍保持 0° 推进；
+         * 到推进阶段结束，begin_turn 才把 ±90° 写入实际角度控制器。
+         * 不把候选期前进误算为已经走到拐角。 */
+        s_advance_frames = 0u;
+        s_center_gap = 0u;
+        IMUTask_SetTarget(0.0f);
+        enter_state(STATE_APPROACH_TURN, 0.0f);
     }
 }
 
@@ -319,7 +338,7 @@ static void pending_tick(uint8_t mask)
 {
     uint8_t left, right;
     /* || 有短路特性：IMU 检查失败时不再检查航向，直接返回；检查函数已经停车。 */
-    if (!update_imu() || !check_approach(mask)) return;
+    if (!update_imu() || !check_approach(mask, 1u)) return;
 
     vote_features(mask);
     /* 必须连续看到窄线；夹入一帧宽线或丢线，就要重新计数。 */
@@ -339,9 +358,8 @@ static void pending_tick(uint8_t mask)
         return;
     }
     /* 持续低速前进才能让另一侧探头经过横线；此阶段保持原航向，不运行循迹 PID。
-     * s_advance_frames 统计已经输出的前进帧数，后面的转前推进接着用它。 */
+     * 候选前进用于收集证据，不计入确认后的定位推进时间。 */
     IMUTask_ForwardTickWithSpeed(JUNCTION_BASE_PWM);
-    ++s_advance_frames;
     /* 十字优先：只要左右证据都还新鲜，就不要求同一帧出现八路全亮。
      * 单侧证据则等完整窗口后分类；窗口内持续存在的分支会不断刷新证据时间。 */
     if (left && right) {
@@ -439,13 +457,15 @@ void ModeFSM_Tick(void)
         break;
 
     case STATE_APPROACH_TURN:
-        /* 只补足候选阶段尚未完成的推进，同样检查中心线和航向。
-         * 当前帧完成前进输出后，begin_turn 设置目标，下一帧才执行转弯分支。 */
-        if (!update_imu() || !check_approach(mask)) break;
+        /* 已确认左右分支：先让驱动轮轴靠近拐角，再原地旋转。
+         * 探头先越过横线后中心可能全零，因此这里不按中心丢线停车。
+         * 始终检查 IMU 与 15° 航向；推进只有指定帧数，不会无期限直行。
+         * 最后一帧仍输出前进命令，设置转弯目标后下一帧才开始旋转。 */
         ++g_mode_fsm.state_frames;
-        IMUTask_ForwardTickWithSpeed(JUNCTION_BASE_PWM);
+        if (!update_imu() || !check_approach(mask, 0u)) break;
+        IMUTask_ForwardTickWithSpeed(TURN_APPROACH_BASE_PWM);
         ++s_advance_frames;
-        if (s_advance_frames >= JUNCTION_ADVANCE_FRAMES) begin_turn();
+        if (s_advance_frames >= TURN_APPROACH_FRAMES) begin_turn();
         break;
 
     case STATE_TURN_LEFT:

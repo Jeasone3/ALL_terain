@@ -172,9 +172,12 @@ static void render(void)
         row(3, "VOTE L:%u R:%u", (unsigned)f->left_votes, (unsigned)f->right_votes);
         row(4, "FRESH:%u/%u AGE:%u/%u", (unsigned)s_view.left_fresh, (unsigned)s_view.right_fresh,
             (unsigned)s_view.left_age, (unsigned)s_view.right_age);
-        row(5, "CENTER:%u/%u", (unsigned)s_view.center_gap, (unsigned)JUNCTION_CENTER_GAP_FRAMES);
+        if (f->state == STATE_JUNCTION_PENDING)
+            row(5, "CENTER:%u/%u", (unsigned)s_view.center_gap, (unsigned)JUNCTION_CENTER_GAP_FRAMES);
+        else
+            row(5, "CENTER:%u OBS", (unsigned)s_view.center_gap);
         row(6, "LINE:%u TURN:%u", (unsigned)s_view.narrow_frames, (unsigned)s_view.turn_done);
-        row(7, "ADV:%lu/%u", (unsigned long)s_view.advance_frames, (unsigned)JUNCTION_ADVANCE_FRAMES);
+        row(7, "ADV:%lu/%u", (unsigned long)s_view.advance_frames, (unsigned)TURN_APPROACH_FRAMES);
     } else if (s_page == 2u) {
         uint8_t i, count = s_hold ? s_frozen_count : s_count;
         uint8_t head = s_hold ? s_frozen_head : s_head;
@@ -194,12 +197,30 @@ static void render(void)
     } else if (s_page == 3u) {
         row(0, "FAULT 4/5 %s", s_hold ? "HOLD" : "LIVE");
         row(1, "F:%u %s", (unsigned)f->fault, fault_name((uint8_t)f->fault));
-        row(2, "S:%s N:%lu", state_name((uint8_t)f->state), (unsigned long)f->state_frames);
-        row(3, "G:%s", gray);
-        row(4, "IMU:%u Y:%s", (unsigned)s_view.imu_ready, s_view.yaw_fresh ? "FRESH" : "STALE");
-        row(5, "Y:%s T:%s", yaw, target);
+        if (s_view.fault_capture_valid) {
+            /* 控制器在发停车命令前锁存现场；之后车体移动不会覆盖故障证据。
+             * IMU 状态仍取当前快照，不能把通信恢复误当作故障样本有效。
+             * PRE 是停车前最后一次 PWM 指令，不是车轮实际速度。 */
+            gray_text(s_view.fault_mask, gray);
+            if (s_view.fault_yaw_valid)
+                angle_text(s_view.fault_yaw_ddeg, yaw, sizeof(yaw));
+            else
+                (void)snprintf(yaw, sizeof(yaw), "--");
+            angle_text(s_view.fault_target_ddeg, target, sizeof(target));
+            row(2, "AT:%s N:%lu", state_name(s_view.fault_state), (unsigned long)s_view.fault_frames);
+            row(3, "G:%s", gray);
+            row(4, "IMU:%u Y:%s", (unsigned)s_view.imu_ready,
+                s_view.fault_yaw_valid ? "FAULT-SAMPLE" : "INVALID");
+            row(5, "Y:%s T:%s", yaw, target);
+            row(7, "PRE:%+5d/%+5d", (int)s_view.fault_pwm_left, (int)s_view.fault_pwm_right);
+        } else {
+            row(2, "S:%s N:%lu", state_name((uint8_t)f->state), (unsigned long)f->state_frames);
+            row(3, "G:%s", gray);
+            row(4, "IMU:%u Y:%s", (unsigned)s_view.imu_ready, s_view.yaw_fresh ? "FRESH" : "STALE");
+            row(5, "Y:%s T:%s", yaw, target);
+            row(7, "I2C:%lu DROP:%lu", (unsigned long)oled.error_count, (unsigned long)f->debug_dropped);
+        }
         row(6, "EV:%s #%lu", event_name((uint8_t)f->last_event), (unsigned long)f->event_count);
-        row(7, "I2C:%lu DROP:%lu", (unsigned long)oled.error_count, (unsigned long)f->debug_dropped);
     } else {
         row(0, "PERF 5/5 %s", s_hold ? "HOLD" : "LIVE");
         row(1, "CPU:%luMHz", (unsigned long)mhz);

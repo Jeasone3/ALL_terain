@@ -25,7 +25,9 @@ static float s_target_yaw = 0.0f;
 /* 直行参数 */
 #define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       400.0f   /* 纠偏差速限幅 */
-#define FWD_DEADBAND      10.0f     /* |yaw-target|<此值不纠偏, 防抖  死区 */
+/* 航向保护默认 15°，不能等偏差达到 10° 才开始纠偏。
+ * 使用较小死区，在候选和驶离阶段提前修正；实际增益仍需实车整定。 */
+#define FWD_DEADBAND      2.0f      /* 仅抑制小于 2° 的微小角度波动 */
 
 void IMUTask_Init(void)
 {
@@ -94,7 +96,7 @@ void IMUTask_TurnTick(void)
 static void forward_tick(float target, float base_speed)
 {
     float error = heading_error(target, g_euler.yaw);
-    /* 死区: yaw 误差小于 ±FWD_DEADBAND 时不纠偏，防止抖动 */
+    /* 目标减实测得到误差；小偏差归零，大于死区就开始纠偏。 */
     if (fabsf(error) < FWD_DEADBAND) {
         error = 0.0f;
     }
@@ -102,13 +104,10 @@ static void forward_tick(float target, float base_speed)
     float base = Com_Limit(base_speed, 0.0f, MOTOR_MAX_SPEED);
     /* 低速驶离时只前进纠偏，差速不能大到让某一轮反转。 */
     out = Com_Limit(out, -base, base);
-    /**
-     * @brief 当 yaw 为正（例如右偏）时，PID算出的 out 为正，此时左轮减速(base - out)，右轮加速(base + out)，机器人向左转以纠正右偏
-     *          差速控制
-     * 
-     */
-
-    int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);//yaw角 左转为- ，右转为正
+    /* 按本工程的约定：正误差要求 yaw 增大，左轮减速、右轮加速。
+     * 实测 yaw 已偏正且目标为 0 时，误差为负，输出相反差速让 yaw 减小。
+     * 该符号是否匹配真实 MPU 安装和电机接线，必须在车上观察确认。 */
+    int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
     int16_t R = (int16_t)Com_Limit(base + out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
     Motor_SetSpeed(&motorLeft,  L);
     Motor_SetSpeed(&motorRight, R);

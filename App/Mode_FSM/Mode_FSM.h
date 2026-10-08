@@ -22,15 +22,18 @@
 #define JUNCTION_PAIR_GAP_FRAMES         8u
 /* 候选中连续 3 帧恢复普通窄线就取消；任一帧不满足窄线条件会重新计数。 */
 #define JUNCTION_CANCEL_LINE_FRAMES     3u
-/* 候选或转前推进中，IN4/IN5 连续 3 帧都离线就停车；不是全部状态的丢线阈值。 */
+/* 尚未确认的候选中，IN4/IN5 连续 3 帧都离线就停车。
+ * 已确认转弯后的推进允许探头越过横线，不能继续用此条件停车。 */
 #define JUNCTION_CENTER_GAP_FRAMES       3u
 /* 候选和推进沿进入时的相对 0° 前进，航向误差绝对值超过 15° 就停车。 */
 #define JUNCTION_MAX_HEADING_ERROR      15.0f
-/* 候选与转前推进合计输出 12 帧低速前进，再开始单侧转弯。
- * 同速条件下才按帧合并；PWM 并非实际车速，该数值不直接代表距离。
- * 默认与确认窗口相同，所以 APPROACH_TURN 通常无需追加推进。 */
-#define JUNCTION_ADVANCE_FRAMES         12u
-/* 候选、转前推进、驶离使用的基础 PWM；角度环会在此基础上产生左右差速。 */
+/* 单侧分支确认后，额外保持进入航向推进 40 帧（400ms），再开始原地转弯。
+ * 不包含前面 12 帧确认过程。车上没有编码器，只能用时间近似车轴位置：
+ * 转弯偏早可调大，已经越过拐角可调小；必须结合探头到轮轴距离实测。
+ * 400ms 与 PWM400 沿用投票方案之前的转前推进起点，不能保证精确到达拐角。 */
+#define TURN_APPROACH_FRAMES            40u
+#define TURN_APPROACH_BASE_PWM         400.0f
+/* 候选和驶离使用的基础 PWM，转前定位推进使用上面的独立速度。 */
 #define JUNCTION_BASE_PWM               250.0f
 /* 驶离分支到第 5 帧才允许累计恢复窄线，防止在路口内部立即切回循迹。 */
 #define JUNCTION_EXIT_MIN_FRAMES         5u
@@ -55,7 +58,7 @@ typedef enum {
     STATE_TURN_RIGHT,       /* 3：使用 IMU 转到相对 -90°，与左转共用完成判断。 */
     STATE_FORWARD,              /* 4：保持已选航向驶离并找线，窄线稳定后恢复循迹。 */
     STATE_JUNCTION_PENDING,   /* 5：低速保持进入时的航向，三帧投票并关联左右证据。 */
-    STATE_APPROACH_TURN,        /* 6：补足候选尚未完成的总推进帧数，目标仍为 0°。 */
+    STATE_APPROACH_TURN,        /* 6：确认转弯后独立推进到拐角附近，目标仍为 0°。 */
     STATE_FAULT_STOP            /* 7：锁存停车；IMU 恢复通信也不自动继续旧动作。 */
 } Run_State;
 
@@ -73,7 +76,7 @@ typedef enum {
     MODE_FAULT_NONE = 0,       /* 0：无故障。 */
     MODE_FAULT_IMU,            /* 1：通信失败，或姿态输出为非数值、无穷大、明显越界。 */
     MODE_FAULT_HEADING,        /* 2：候选或推进期间偏离进入航向超过上限。 */
-    MODE_FAULT_CENTER_LOST,    /* 3：候选或推进期间中心线连续缺失。 */
+    MODE_FAULT_CENTER_LOST,    /* 3：尚未确认的候选期间中心线连续缺失。 */
     MODE_FAULT_AMBIGUOUS,      /* 4：确认期限到达，左右均无新鲜有效证据。 */
     MODE_FAULT_TURN_TIMEOUT,   /* 5：正式转弯达到上限仍未连续角度到位。 */
     MODE_FAULT_EXIT_TIMEOUT,   /* 6：驶离达到上限仍未连续找到普通窄线。 */
@@ -124,6 +127,11 @@ typedef struct {
     uint8_t yaw_valid, yaw_fresh, imu_ready;
     uint8_t left_age, right_age, left_fresh, right_fresh;
     uint8_t center_gap, narrow_frames, turn_done;
+    /* 首次故障发生时冻结，后续停车采样不能覆盖事故现场。
+     * PRE PWM 是发停车命令之前的最后指令，通常来自上一控制帧。 */
+    uint32_t fault_frames;
+    int16_t fault_yaw_ddeg, fault_target_ddeg, fault_pwm_left, fault_pwm_right;
+    uint8_t fault_state, fault_mask, fault_capture_valid, fault_yaw_valid;
 } ModeFSM_Diagnostics;
 
 /* 定义在 Mode_FSM.c；volatile 保留必要读写，但不能代替快照接口的短临界区。 */

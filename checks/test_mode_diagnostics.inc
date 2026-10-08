@@ -29,6 +29,22 @@ static int test_diagnostic_freshness_and_evidence(void)
     ModeFSM_GetDiagnostics(&d);
     CHECK(d.yaw_valid == 0u && d.fsm.fault == MODE_FAULT_IMU);
     CHECK(d.pwm_left == 0 && d.pwm_right == 0);
+    CHECK(d.fault_capture_valid == 1u && d.fault_yaw_valid == 0u);
+    CHECK(d.fault_state == STATE_JUNCTION_PENDING && d.fault_mask == 0x0fu);
+
+    reset_fixture();
+    step(0x0fu, 0.0f);
+    step(0x0fu, 20.0f);
+    ModeFSM_GetDiagnostics(&d);
+    CHECK(d.fsm.fault == MODE_FAULT_HEADING && d.fsm.state == STATE_FAULT_STOP);
+    CHECK(d.fault_capture_valid == 1u && d.fault_yaw_valid == 1u);
+    CHECK(d.fault_state == STATE_JUNCTION_PENDING && d.fault_frames == 2u);
+    CHECK(d.fault_yaw_ddeg == 200 && d.fault_target_ddeg == 0);
+    CHECK(d.fault_pwm_left == 250 && d.fault_pwm_right == 250);
+    CHECK(d.pwm_left == 0 && d.pwm_right == 0);
+    step(0x00u, 50.0f);
+    ModeFSM_GetDiagnostics(&d);
+    CHECK(d.fault_mask == 0x0fu && d.fault_yaw_ddeg == 200 && d.fault_frames == 2u);
     return 1;
 }
 
