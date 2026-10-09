@@ -126,7 +126,7 @@ void ModeFSM_Tick(void)
         Read_All_Track(g_sensor_data);
         follow_line(&g_line_controller, g_sensor_data, LINE_RAW_VALUE);
         /* 触发判据: 8全亮(十字)优先, 再左右4亮 */
-        if      (all8_on())        enter_state(STATE_CROSS,       0.0f);
+        if      (all8_on())        enter_state(STATE_CROSS,       0.0f);  //这里必须先检测十字路口，否则会误判为转弯。
         else if (left4_all_on())   enter_state(STATE_TURN_LEFT,  +90.0f);
         else if (right4_all_on())  enter_state(STATE_TURN_RIGHT, -90.0f);
         break;
