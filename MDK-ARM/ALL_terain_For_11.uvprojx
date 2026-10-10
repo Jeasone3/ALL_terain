@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task;..\App\Route;..\App\Debug_Log</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -665,6 +665,36 @@
               <FileName>Mode_FSM.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\App\Mode_FSM\Mode_FSM.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/Route</GroupName>
+          <Files>
+            <File>
+              <FileName>Route.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Route\Route.c</FilePath>
+            </File>
+            <File>
+              <FileName>Route.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Route\Route.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App/Debug_Log</GroupName>
+          <Files>
+            <File>
+              <FileName>Debug_Log.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\Debug_Log\Debug_Log.c</FilePath>
+            </File>
+            <File>
+              <FileName>Debug_Log.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\Debug_Log\Debug_Log.h</FilePath>
             </File>
           </Files>
         </Group>

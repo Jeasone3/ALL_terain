@@ -44,6 +44,7 @@ all_terain_for_11\main.o: ..\Com\Com_PID\Com_pid.h
 all_terain_for_11\main.o: ..\App\Mode_FSM\Mode_FSM.h
 all_terain_for_11\main.o: ..\App\IMU_Task\IMU_Task.h
 all_terain_for_11\main.o: ..\Int\Int_OLED\Int_OLED.h
+all_terain_for_11\main.o: ..\App\Debug_Log\Debug_Log.h
 all_terain_for_11\main.o: ..\Com\Com_Delay_us\Delay_us.h
 all_terain_for_11\main.o: ..\Int\Int_MPU6050\Int_MPU6050.h
 all_terain_for_11\main.o: ..\Com\Com_IIC\iic.h

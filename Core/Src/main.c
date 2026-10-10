@@ -32,6 +32,7 @@
 #include "Mode_FSM.h"
 #include "IMU_Task.h"
 #include "Int_OLED.h"
+#include "Debug_Log.h"
 #include "Delay_us.h"
 #include "Int_MPU6050.h"
 #include "Attitude.h"
@@ -66,7 +67,7 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 
 /* g_imu_data / g_imu_ready 已移至 Int_MPU6050 模块，TIM4 中断里更新 */
 
-extern ModeFSM_t g_mode_fsm;
+/* 运动与日志由 TIM4 更新；DebugLog_Display 在主循环复制完整快照并显示。 */
 
 /* 主循环更新，通信状态可在调试器中直接查看。 */
 static volatile OLED_Status g_oled_status = OLED_NOT_INITIALIZED;
@@ -85,8 +86,11 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
+  * @brief 初始化外设、运动控制器与传感器，再进入前台显示和通信恢复循环。
+  * @param 无。
+  * @return 程序正常运行时不返回。
+  * @note TIM4 启动后独占运动控制；主循环每 100 ms 显示状态和日志，并重试通信。
+  *       OLED 格式化和 I2C 通信在恢复中断后执行，重连只重绘屏幕，不清除日志或故障现场。
   */
 int main(void)
 {
@@ -133,7 +137,7 @@ int main(void)
   
   line_following_init(&g_line_controller); //循迹初始化
   
-  ModeFSM_Init();                          //状态机初始化(默认 NORMAL_TRACK)
+  ModeFSM_Init();                          //运动状态机与 Route 初始化，默认循迹
   
   IMUTask_Init();                          //IMU 角度闭环 PID 初始化
 
@@ -148,12 +152,13 @@ int main(void)
     }
     Attitude_Init();              /* 四元数复位，姿态归零 */
   }
-  HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
+  HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入口 */
 
 
   if (oled_ready != 0U)
   {
-    OLED_PrintLine(0, "Jeason FSM");
+    g_oled_status = DebugLog_Display();
+    oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
   }
   /* USER CODE END 2 */
 
@@ -161,10 +166,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
   uint32_t last_oled_retry_ms = HAL_GetTick();
-  uint32_t last_print_ms = HAL_GetTick();
+  // uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
   while (1)
   {
-    /* IMU 读取在 TIM4 10ms 中断里完成；主循环只负责通信失败后 1s 重试 Init */
+    /* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
     if (g_imu_ready == 0U &&
         (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {
@@ -186,7 +191,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* OLED 初始化失败后每 1s 重试，成功后重新绘制标题。 */
+    /* OLED 初始化失败后每 1s 重试，成功后重绘全部八行并保留日志。 */
     if (oled_ready == 0U &&
         (uint32_t)(HAL_GetTick() - last_oled_retry_ms) >= 1000U) 
     {
@@ -195,51 +200,35 @@ int main(void)
       if (g_oled_status == OLED_OK)
       {
         oled_ready = 1U;
-        OLED_PrintLine(0, "Jeason FSM");
+        g_oled_status = DebugLog_Display();
+        oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
       }
     }
 
-    /* 每 100ms 绘制一帧，再统一刷新；通信失败下个周期重试。 */
+    /* 每 100 ms 显示五行状态与三条最近日志；通信失败转入一秒重连流程。 */
     static uint32_t last_oled_ms = 0;
     if (oled_ready != 0U &&
         (uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
     {
-      Run_State display_state;
-      float display_target_yaw;
-      const char *state_name;
-      const volatile ModeFSM_t *fsm = &g_mode_fsm;
-      uint32_t saved_primask;
-
       last_oled_ms = HAL_GetTick();
-
-      /* 只在读取两个字段时屏蔽中断，格式化与 I2C 通信保持中断开启。 */
-      saved_primask = __get_PRIMASK();
-      __disable_irq();
-      display_state = fsm->state;
-      display_target_yaw = fsm->target_yaw;
-      __set_PRIMASK(saved_primask);
-
-      switch (display_state)
+      /* 临界区只复制现场；八行格式化和 I2C 刷新由日志模块在前台完成。 */
+      g_oled_status = DebugLog_Display();
+      if (g_oled_status != OLED_OK)
       {
-        case STATE_NORMAL_TRACK: state_name = "NORMAL_TRACK"; break;
-        case STATE_CROSS:        state_name = "CROSS"; break;
-        case STATE_TURN_LEFT:    state_name = "TURN_LEFT"; break;
-        case STATE_TURN_RIGHT:   state_name = "TURN_RIGHT"; break;
-        case STATE_FORWARD:     state_name = "FORWARD"; break;
-        default:                state_name = "UNKNOWN"; break;
+        /* 刷新失败也进入一秒重连流程，OLED 重新上电后需要恢复初始化命令。 */
+        oled_ready = 0U;
+        last_oled_retry_ms = HAL_GetTick();
       }
-
-      OLED_PrintLine(2, "State:%s", state_name);
-      OLED_PrintLine(4, "Target:%.1f", (double)display_target_yaw);
-      g_oled_status = OLED_Update();
     }
   }
   /* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
+  * @brief 配置 HSE 和 PLL，使系统及控制定时器使用既定时钟。
+  * @param 无。
+  * @return 无。
+  * @note 在初始化定时器前调用；配置失败进入 Error_Handler，不能在控制中断中调用。
   */
 void SystemClock_Config(void)
 {
@@ -282,8 +271,10 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
+  * @brief 处理 HAL 外设初始化等系统级错误，禁止继续执行失效的初始化流程。
+  * @param 无。
+  * @return 无，进入等待循环。
+  * @note 屏蔽中断后不返回；运行时运动故障由 ModeFSM 单独处理并输出停车。
   */
 void Error_Handler(void)
 {
@@ -297,11 +288,11 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
+  * @brief 提供 HAL 参数断言失败的调试入口。
+  * @param file 发生断言的源文件名称。
+  * @param line 发生断言的行号，从 1 开始。
+  * @return 无。
+  * @note 仅 USE_FULL_ASSERT 开启时编译；可在此设置断点查看 file 和 line。
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {

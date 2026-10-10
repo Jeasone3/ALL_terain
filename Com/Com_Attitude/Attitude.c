@@ -11,10 +11,6 @@
 #include "Attitude.h"
 #include "Int_MPU6050.h"
 #include <math.h>
-
-
-
-
 // ------------------------------Mahony 参数 ------------------------------//
 /* Mahony 参数起点(需上电机实测整定) */
 #define ATT_KP        1.0f          /* 比例反馈，小载体 0.5~2 起步 */
@@ -31,29 +27,62 @@ static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
 static float s_yaw_offset = 0.0f;   /* 输出 yaw = raw_yaw - s_yaw_offset */
 
+/**
+ * @brief 初始化姿态解算器，使内部状态和对外欧拉角从同一零基准开始。
+ * @param 无。
+ * @return 无。
+ * @note 在 IMU 初始化、静止校准后调用一次；不读取传感器，不驱动电机。
+ *       与 Attitude_Reset 使用同一复位操作，避免内部四元数和 g_euler 不一致。
+ */
 void Attitude_Init(void)
 {
-    q0 = 1.0f; q1 = q2 = q3 = 0.0f;
-    exInt = eyInt = ezInt = 0.0f;
-    s_yaw_offset = 0.0f;
-    g_euler.yaw = g_euler.pitch = g_euler.roll = 0.0f;
+    Attitude_Reset();
 }
 
+/**
+ * @brief 重置四元数、PI 积分和航向偏置，并同步清零输出欧拉角。
+ * @param 无。
+ * @return 无。
+ * @note 在建立新动作的相对角度基准时调用；复位后 yaw、pitch、roll 立即为 0°。
+ *       复位不能代替采样，状态机须先获得新一帧有效 IMU 数据再运行角度 PID。
+ *       与 Attitude_Tick 在同一控制上下文调用，避免输出被异步更新。
+ */
 void Attitude_Reset(void)
 {
     q0 = 1.0f; q1 = q2 = q3 = 0.0f;
     exInt = eyInt = ezInt = 0.0f;
-    s_yaw_offset = 0.0f;             /* 重置后输出 yaw = 0 */
+    s_yaw_offset = 0.0f;
+    /* 立即清除外部旧角度，不能等下一次解算才更新，否则新动作可能使用上一动作反馈。 */
+    g_euler.yaw = g_euler.pitch = g_euler.roll = 0.0f;
 }
 
+/**
+ * @brief 重新建立姿态基准，把当前时刻的对外 yaw 设为指定角度。
+ * @param deg 当前方向对应的输出 yaw，单位为度；传 0 等同于零航向基准。
+ * @return 无。
+ * @note 保留原接口语义：重置四元数和积分，再设置输出偏置，而非只平移旧四元数。
+ *       yaw 立即为 deg、pitch/roll 立即为 0°；之后输出为原始 yaw 加 deg。
+ *       不采样传感器，应在控制上下文调用并等待新一帧有效数据后执行 PID。
+ */
 void Attitude_SetYawOffset(float deg)
 {
-    q0 = 1.0f; q1 = q2 = q3 = 0.0f;
-    exInt = eyInt = ezInt = 0.0f;
+    Attitude_Reset();
     s_yaw_offset = -deg;             /* raw=0 → 输出 = 0 - (-deg) = deg */
+    g_euler.yaw = deg;
 }
 
-/* 6 轴 Mahony 更新：gx/gy/gz 陀螺 rad/s，ax/ay/az 加速度(任意单位，内部归一化) */
+/**
+ * @brief 使用六轴 Mahony 算法更新内部四元数，融合角速度与重力方向。
+ * @param gx 车体系前向轴角速度，单位 rad/s。
+ * @param gy 车体系右向轴角速度，单位 rad/s。
+ * @param gz 车体系向上轴角速度，单位 rad/s；沿用现有 yaw 方向约定。
+ * @param ax 车体系前向加速度，任意同量纲单位，内部归一化。
+ * @param ay 车体系右向加速度，与 ax 使用同一量纲。
+ * @param az 车体系向上加速度，与 ax 使用同一量纲。
+ * @return 无。
+ * @note 固定以 10 ms 积分，更新四元数和重力误差积分，不直接改 g_euler。
+ *       加速度三轴全零时跳过重力校正；六轴算法没有绝对航向参考，yaw 仍会漂移。
+ */
 static void mahony_update(float gx, float gy, float gz,
                           float ax, float ay, float az)
 {
@@ -98,6 +127,14 @@ static void mahony_update(float gx, float gy, float gz,
     q0 *= recipNorm; q1 *= recipNorm; q2 *= recipNorm; q3 *= recipNorm;
 }
 
+/**
+ * @brief 用本周期 IMU 数据解算一帧姿态，并同步写出 yaw、pitch、roll。
+ * @param 无。
+ * @return 无。
+ * @note 在同一 10 ms 控制入口中紧跟成功的 Int_MPU6050_Tick 调用；ready=0 时不更新。
+ *       循迹模式可暂停本函数；不能用旧的 ready 值代替上层对本周期采样成功的检查。
+ *       保留当前模块安装映射：传感器 Y 为前、X 为右、Z 为上，不翻转任何轴符号。
+ */
 void Attitude_Tick(void)
 {
     if (!g_imu_ready) return;

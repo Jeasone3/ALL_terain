@@ -26,6 +26,8 @@
 "all_terain_for_11\track_task.o"
 "all_terain_for_11\imu_task.o"
 "all_terain_for_11\mode_fsm.o"
+"all_terain_for_11\route.o"
+"all_terain_for_11\debug_log.o"
 "all_terain_for_11\com_pid.o"
 "all_terain_for_11\com_limit.o"
 "all_terain_for_11\delay_us.o"

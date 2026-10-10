@@ -30,6 +30,7 @@ all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
+all_terain_for_11\mode_fsm.o: ..\App\Route\Route.h
 all_terain_for_11\mode_fsm.o: ..\App\Track_Task\Track_Task.h
 all_terain_for_11\mode_fsm.o: ..\Int\Int_Track\Int_Track.h
 all_terain_for_11\mode_fsm.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
@@ -45,3 +46,5 @@ all_terain_for_11\mode_fsm.o: ..\Com\Com_Delay_us\Delay_us.h
 all_terain_for_11\mode_fsm.o: ..\Com\Com_IMU_Config\IMU_Config.h
 all_terain_for_11\mode_fsm.o: ..\Com\Com_Attitude\Attitude.h
 all_terain_for_11\mode_fsm.o: ..\App\IMU_Task\IMU_Task.h
+all_terain_for_11\mode_fsm.o: ..\App\Debug_Log\Debug_Log.h
+all_terain_for_11\mode_fsm.o: ..\Int\Int_OLED\Int_OLED.h
