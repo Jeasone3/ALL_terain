@@ -29,11 +29,15 @@ ModeFSM_t g_mode_fsm;
 
 /* 转弯完成容差(度): |yaw - target| < 此值判完成 */
 #define TURN_DONE_TOLERANCE   7.0f
-/* FORWARD 固定持续帧数(10ms/帧, 50 = 500ms)  针对十字路口*/
-#define FORWARD_HOLD_FRAMES   10u
+/* FORWARD 固定持续帧数(10ms/帧, 100 = 1000ms)  针对十字路口*/
+#define FORWARD_HOLD_FRAMES   1000u
 /* 切换状态后稳定帧数(10ms*10=100ms): 期间停车, 防立刻动作时序错乱
  * A.进转弯/直行态: 姿态收敛+机械稳定; B.切回循迹: 传感器稳定防误触发 */
 #define SETTLE_FRAMES         80u
+/* 转弯确认帧数(10ms/帧): left4/right4_all_on 须连续此帧数才确认转弯.
+ * 路口横线扫过的过渡帧(单侧先亮)不会持续此帧数, 从而不被误判为转弯;
+ * 2帧=20ms: 需 < 真转弯入口持续帧数, > 过渡帧数(通常1帧) */
+#define TURN_CONFIRM_FRAMES   2u
 
 /* ==================== 触发判据(简单版, 后期加持续帧确认防误触发) ====================
  * g_sensor_data[0..7] 对应 IN1..IN8, 权重 -5,-4,-2,-1,1,2,4,5; LINE_RAW_VALUE=1 在线上.
@@ -83,6 +87,8 @@ static void enter_state(Run_State new_state, float target_yaw)
     g_mode_fsm.state        = new_state;
     g_mode_fsm.target_yaw   = target_yaw;
     g_mode_fsm.state_frames = 0u;
+    g_mode_fsm.left4_frames  = 0u;   /* 进新状态清转弯确认计数 */
+    g_mode_fsm.right4_frames = 0u;
 }
 
 
@@ -125,10 +131,17 @@ void ModeFSM_Tick(void)
         /* 循迹态: 直接循迹, 不读 IMU 省 CPU; B: 无延时立刻循迹 */
         Read_All_Track(g_sensor_data);
         follow_line(&g_line_controller, g_sensor_data, LINE_RAW_VALUE);
-        /* 触发判据: 8全亮(十字)优先, 再左右4亮 */
-        if      (all8_on())        enter_state(STATE_CROSS,       0.0f);  //这里必须先检测十字路口，否则会误判为转弯。
-        else if (left4_all_on())   enter_state(STATE_TURN_LEFT,  +90.0f);
-        else if (right4_all_on())  enter_state(STATE_TURN_RIGHT, -90.0f);
+        /* 触发判据: 8全亮(十字)立即触发优先; 左右4亮须连续 TURN_CONFIRM_FRAMES 帧确认,
+         * 防路口横线扫过的过渡帧(单侧先亮)在 all8 全亮帧到来前抢先触发转弯.
+         * 确认期间车仍循迹直行, 不动作 */
+        if (all8_on()) {
+            enter_state(STATE_CROSS, 0.0f);   /* 十字立即触发, 不需确认 */
+        } else {
+            if (left4_all_on())  g_mode_fsm.left4_frames++;  else g_mode_fsm.left4_frames  = 0u;
+            if (right4_all_on()) g_mode_fsm.right4_frames++; else g_mode_fsm.right4_frames = 0u;
+            if      (g_mode_fsm.left4_frames  >= TURN_CONFIRM_FRAMES) enter_state(STATE_TURN_LEFT,  +90.0f);
+            else if (g_mode_fsm.right4_frames >= TURN_CONFIRM_FRAMES) enter_state(STATE_TURN_RIGHT, -90.0f);
+        }
         break;
 
     case STATE_CROSS:

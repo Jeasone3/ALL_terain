@@ -31,6 +31,8 @@ typedef struct {
     Run_State  state;          /* 当前状态 */
     float      target_yaw;     /* 进入转弯/直行时目标 yaw(度) */
     uint32_t   state_frames;   /* 当前状态已运行帧数(10ms/帧) */
+    uint8_t    left4_frames;   /* left4_all_on 连续帧计数(转弯确认, 防路口横线过渡帧误触发) */
+    uint8_t    right4_frames;  /* right4_all_on 连续帧计数(转弯确认) */
 } ModeFSM_t;
 
 /* 全局状态机对象 */
