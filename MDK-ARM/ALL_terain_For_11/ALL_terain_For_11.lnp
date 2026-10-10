@@ -34,6 +34,8 @@
 "all_terain_for_11\motor.o"
 "all_terain_for_11\int_track.o"
 "all_terain_for_11\int_oled.o"
+"all_terain_for_11\oled_port.o"
+"all_terain_for_11\oledfont.o"
 "all_terain_for_11\int_mpu6050.o"
 "all_terain_for_11\int_beep.o"
 --library_type=microlib --strict --scatter "ALL_terain_For_11\ALL_terain_For_11.sct"

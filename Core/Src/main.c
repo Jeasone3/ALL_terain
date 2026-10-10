@@ -68,6 +68,9 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 
 extern ModeFSM_t g_mode_fsm;
 
+/* 主循环更新，通信状态可在调试器中直接查看。 */
+static volatile OLED_Status g_oled_status = OLED_NOT_INITIALIZED;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -118,8 +121,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* 软件 IIC 的 SDA/SCL 已在 MX_GPIO_Init() 中释放为高，此处不重复 */
 
-  //OLED初始化
-  OLED_Init();
+  /* OLED 失败只记录状态，后续在主循环重试，不中止控制系统初始化。 */
+  g_oled_status = OLED_Init();
+  uint8_t oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
+
+
+
   //电机对象初始化
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
@@ -144,12 +151,16 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim4);   /* 启动 TIM4 10ms 节拍, 中断里触发 TrackTask_Tick */
 
 
-  OLED_ShowStr(0, 0, "Jeason FSM", 1);
+  if (oled_ready != 0U)
+  {
+    OLED_PrintLine(0, "Jeason FSM");
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
+  uint32_t last_oled_retry_ms = HAL_GetTick();
   uint32_t last_print_ms = HAL_GetTick();
   while (1)
   {
@@ -175,25 +186,52 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* ---- OLED 周期性刷新 200ms ---- */
-    static uint32_t last_oled_ms = 0;
-    if ((uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
+    /* OLED 初始化失败后每 1s 重试，成功后重新绘制标题。 */
+    if (oled_ready == 0U &&
+        (uint32_t)(HAL_GetTick() - last_oled_retry_ms) >= 1000U) 
     {
+      last_oled_retry_ms = HAL_GetTick();
+      g_oled_status = OLED_Init();
+      if (g_oled_status == OLED_OK)
+      {
+        oled_ready = 1U;
+        OLED_PrintLine(0, "Jeason FSM");
+      }
+    }
+
+    /* 每 100ms 绘制一帧，再统一刷新；通信失败下个周期重试。 */
+    static uint32_t last_oled_ms = 0;
+    if (oled_ready != 0U &&
+        (uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
+    {
+      Run_State display_state;
+      float display_target_yaw;
+      const char *state_name;
+      const volatile ModeFSM_t *fsm = &g_mode_fsm;
+      uint32_t saved_primask;
+
       last_oled_ms = HAL_GetTick();
 
-      OLED_ShowStr(0, 2, "State:", 1);
-      switch (g_mode_fsm.state)
+      /* 只在读取两个字段时屏蔽中断，格式化与 I2C 通信保持中断开启。 */
+      saved_primask = __get_PRIMASK();
+      __disable_irq();
+      display_state = fsm->state;
+      display_target_yaw = fsm->target_yaw;
+      __set_PRIMASK(saved_primask);
+
+      switch (display_state)
       {
-        case STATE_NORMAL_TRACK: OLED_ShowStr(48, 2, "NORMAL_TRACK", 1); break;
-        case STATE_CROSS:        OLED_ShowStr(48, 2, "CROSS      ", 1); break;
-        case STATE_TURN_LEFT:    OLED_ShowStr(48, 2, "TURN_LEFT  ", 1); break;
-        case STATE_TURN_RIGHT:   OLED_ShowStr(48, 2, "TURN_RIGHT ", 1); break;
-        case STATE_FORWARD:      OLED_ShowStr(48, 2, "FORWARD    ", 1); break;
-        default:                 OLED_ShowStr(48, 2, "UNKNOWN    ", 1); break;
+        case STATE_NORMAL_TRACK: state_name = "NORMAL_TRACK"; break;
+        case STATE_CROSS:        state_name = "CROSS"; break;
+        case STATE_TURN_LEFT:    state_name = "TURN_LEFT"; break;
+        case STATE_TURN_RIGHT:   state_name = "TURN_RIGHT"; break;
+        case STATE_FORWARD:     state_name = "FORWARD"; break;
+        default:                state_name = "UNKNOWN"; break;
       }
 
-      OLED_ShowStr(0, 4, "Yaw:", 1);
-      OLED_ShowNum(32, 4, (int32_t)g_mode_fsm.target_yaw, 2, 1);
+      OLED_PrintLine(2, "State:%s", state_name);
+      OLED_PrintLine(4, "Target:%.1f", (double)display_target_yaw);
+      g_oled_status = OLED_Update();
     }
   }
   /* USER CODE END 3 */
