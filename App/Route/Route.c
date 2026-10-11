@@ -9,21 +9,21 @@
 #include "Track_Task.h"            /* LINE_RAW_VALUE：传感器在线时的原始电平 */
 
 /* 10 ms 一帧；下面的距离由时间近似，上车后按实际车速校准。 */
-#define ROUTE_CONFIRM_FRAMES       3u
+#define ROUTE_CONFIRM_FRAMES       3u      /* 路口连续三帧在线即确认 */
 #define ROUTE_CROSS_CONFIRM_FRAMES 2u  /* 十字路口连续两帧在线即确认 */
-#define ROUTE_APPROACH_FRAMES      80u  /* 转弯前移 800 ms，保留当前测试起点 */
-#define ROUTE_CROSSING_FRAMES      10u  /* 十字路口直行 100 ms */
+#define ROUTE_APPROACH_FRAMES      90u  /* 转弯前移 1000 ms，保留当前测试起点 */
+#define ROUTE_CROSSING_FRAMES      500u  /* 十字路口直行 100 ms    调试所用*/     
 
 volatile Route_t g_route;
 
 /* 候选连续帧只负责确认；锁存保证未离开路口时不重复触发。 */
-static RouteJunction s_junction_candidate;
+static RouteJunction s_junction_candidate; /* 连续帧确认的路口类型 */
 static uint8_t s_junction_frames; /* 连续帧计数 */
-static uint8_t s_junction_latched; 
-static uint8_t s_line_candidate; 
-static uint8_t s_line_frames;
-static RouteJunction s_turn_direction;
-static uint32_t s_turn_count_before;
+static uint8_t s_junction_latched; // 路口锁存，防止未离开时重复触发
+static uint8_t s_line_candidate; // 连续帧确认的引导线状态
+static uint8_t s_line_frames; // 连续帧计数
+static RouteJunction s_turn_direction; // 转弯方向
+static uint32_t s_turn_count_before; // 转弯前计数
 
 /**
  * @brief 从一帧八路灰度中识别路口类型，并判断是否存在引导线。
@@ -86,7 +86,8 @@ static void update_junction(RouteJunction raw_junction)
         return;
     }
 
-    g_route.junction = s_junction_candidate;
+    g_route.junction = s_junction_candidate;//路口类型
+
     if (s_junction_candidate == JUNCTION_NONE) {
         s_junction_latched = 0u;
     } else if (!s_junction_latched) {
@@ -152,7 +153,7 @@ static void select_route_action(RouteJunction junction)
         g_route.state = ROUTE_APPROACH;
         g_route.state_frames = 0u;
         Car_ImuForward();
-    } else if (junction == JUNCTION_CROSS) {  //十字路口直接进入穿越状态，持续 100 ms 后恢复循迹。
+    } else if (junction == JUNCTION_CROSS) {  //十字路口直接进入穿越状态，持续 后恢复循迹。
         g_route.state = ROUTE_CROSSING;
         g_route.state_frames = 0u;
         Car_ImuForward();
@@ -211,13 +212,14 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     RouteJunction raw_junction;
 
     /* 事件只保持一个控制帧，稳定检测值与路口锁存保留。 */
-    g_route.junction_event = 0u;
+    g_route.junction_event = 0u; //本帧确认了一个新路口事件
     g_route.line_found_event = 0u;
     g_route.line_lost_event = 0u;
+    //
     if (sensor_data != 0) {
         raw_junction = classify_sensor_frame(sensor_data, &raw_line);
-        update_junction(raw_junction);
-        update_line(raw_line);
+        update_junction(raw_junction); //滤波，防止细线划痕抖动误判，更新路口类型和事件
+        update_line(raw_line); //判断时候丢线
     }
 
     /* 条件监测在所有模式中保留；只在确认后的状态变化帧记录一次。 */
@@ -235,7 +237,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         DebugLog_Write(level, "LINE_OFF");
     }
 
-    /* 手动请求、停车、故障和关闭自动路线都取消未完成步骤，但不自动恢复运动。 */
+    /* 手动请求、停车、故障和关闭自动路线     都取消未完成步骤，但不自动恢复运动。 */
     if (external_command || !g_route.enabled ||
         g_mode_fsm.status != CAR_RUNNING) {
         cancel_route_step();

@@ -1,3 +1,13 @@
+/**
+ * @file IMU_Task.c
+ * @author your name (you@domain.com)
+ * @brief 角度PID控制任务：转弯和直行，独立的 PID 历史状态。
+ * @version 0.1
+ * @date 2026-10-11
+ * 
+ * @copyright Copyright (c) 2026
+ * 
+ */
 #include "IMU_Task.h"
 #include "Com_pid.h"
 #include "Com_Limit.h"
@@ -105,6 +115,7 @@ float IMUTask_GetError(void)
  */
 void IMUTask_TurnTick(void)
 {
+    //保证最短角度差，避免跨越 ±180° 时绕远路。
     float error = IMUTask_GetError();
 
     /* PID 内部仍用 set-ref。把最短角差换成等效反馈，使它实际使用 error；

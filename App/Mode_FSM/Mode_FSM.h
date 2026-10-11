@@ -15,12 +15,14 @@ typedef enum {
     MODE_IMU                       /* IMU 角度 PID 控制电机 */
 } CarMode;
 
+/* IMU 子状态，用于 MODE_IMU 模式。 */
 typedef enum {
     IMU_FORWARD = 0,               /* 保持目标航向直行 */
     IMU_TURN_LEFT,                 /* 相对动作起点左转 90° */
     IMU_TURN_RIGHT                 /* 相对动作起点右转 90° */
 } ImuState;
 
+// 运行状态，用于 MODE_TRACK 模式。
 typedef enum {
     CAR_RUNNING = 0,
     CAR_STOPPED,
@@ -34,17 +36,22 @@ typedef enum {
     CAR_FAULT_COMMAND              /* 转后模式参数不合法 */
 } CarFault;
 
+//状态机对象，用于保存当前状态
 typedef struct {
     CarMode mode;                  /* 当前大模式 */
     ImuState imu_state;             /* IMU 子状态；循迹时不使用 */
+
     CarStatus status;               /* 运行、停车或故障 */
     CarFault fault;                 /* 故障原因，显式新动作可重新尝试 */
+
     CarMode after_turn_mode;        /* 开始转弯时指定的后续模式 */
     float target_yaw;               /* 相对动作起点的目标角度，单位：度 */
+
     uint32_t state_frames;          /* 当前动作已执行帧数，每帧 10 ms */
     uint32_t turn_count;            /* 已完成转弯总数，上层比较前后值获取完成事件 */
     uint32_t command_id;            /* 已接受指令序号，用于调试动作切换 */
-    uint8_t imu_valid;              /* 1：本控制帧取得有限 IMU 角度；循迹、停止或读取失败为 0 */
+    uint8_t imu_valid;              /* 1：本控制帧取得有限 IMU 角度；循迹、
+                                        0:停止或读取失败*/
 } ModeFSM_t;
 
 /* 中断内维护，外部读取请用 ModeFSM_GetSnapshot，禁止直接修改字段。 */
@@ -65,6 +72,8 @@ void ModeFSM_Init(void);
  * @note 仅由 TIM4 每 10 ms 调用一次；禁止主循环重复调用。
  */
 void ModeFSM_Tick(void);
+
+//-----------------------------------------------Car_* 接口：提交请求，下一控制帧生效。---------------------------------/
 
 /**
  * @brief 提交循迹请求，由灰度传感器和循迹 PID 自动跟线。
@@ -106,6 +115,8 @@ void Car_TurnRight90(CarMode next_mode);
  */
 void Car_Stop(void);
 
+
+//-----------------------------------------------状态机快照接口：短暂屏蔽中断，保证一致性。----------------------------/
 /**
  * @brief 取得一致的运动状态副本，供主循环显示或上层读取。
  * @param snapshot 接收副本的指针；传入空指针时不执行复制。

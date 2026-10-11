@@ -2667,7 +2667,7 @@ Image Symbol Table
     PendSV_Handler                           0x080041e1   Thumb Code     2  stm32f1xx_it.o(i.PendSV_Handler)
     Read_All_Track                           0x0800420d   Thumb Code    40  int_track.o(i.Read_All_Track)
     Route_Init                               0x08004239   Thumb Code    54  route.o(i.Route_Init)
-    Route_Tick                               0x08004291   Thumb Code   342  route.o(i.Route_Tick)
+    Route_Tick                               0x08004291   Thumb Code   344  route.o(i.Route_Tick)
     SVC_Handler                              0x08004425   Thumb Code     2  stm32f1xx_it.o(i.SVC_Handler)
     SysTick_Handler                          0x08004427   Thumb Code     8  stm32f1xx_it.o(i.SysTick_Handler)
     SystemClock_Config                       0x0800442f   Thumb Code   102  main.o(i.SystemClock_Config)
@@ -3056,17 +3056,17 @@ Image component sizes
        464         30          0          0          0       1131   gpio.o
        200         28          0          0         84       1677   i2c.o
        464         26          0          0          0       2767   iic.o
-       732        144         24          4        168       4594   imu_task.o
+       732        144         24          4        168       4598   imu_task.o
         40         10          0          0          0        905   int_beep.o
       1056         46          0          8         12       6030   int_mpu6050.o
        496         58         31         17       1024       4927   int_oled.o
         44          4         64          0         16       1257   int_track.o
        448         28          0          8          0     500890   main.o
-      1152        186          0          4         28      19050   mode_fsm.o
+      1152        186          0          4         28      19054   mode_fsm.o
        256          8          8         64          0       2346   motor.o
         96          4          0          0          0       1658   oled_port.o
          0          0       3114          0          0        677   oledfont.o
-       890        154          0         12         12       5884   route.o
+       890        152          0         12         12       5884   route.o
         36          8        304          0       1024        804   startup_stm32f103xe.o
        192         36          0          9          0       6513   stm32f1xx_hal.o
        304         22          0          0          0      29447   stm32f1xx_hal_cortex.o
@@ -3084,7 +3084,7 @@ Image component sizes
        188         22          0          0         72       1670   usart.o
 
     ----------------------------------------------------------------------
-     21230       1676       3732        172       2896     668121   Object Totals
+     21230       1674       3732        172       2896     668129   Object Totals
          0          0         32          0          0          0   (incl. Generated)
         28          0          5          8          0          0   (incl. Padding)
 
@@ -3160,9 +3160,9 @@ Image component sizes
 
       Code (inc. data)   RO Data    RW Data    ZI Data      Debug   
 
-     27068       1904       3732        176       2896     661293   Grand Totals
-     27068       1904       3732        176       2896     661293   ELF Image Totals
-     27068       1904       3732        176          0          0   ROM Totals
+     27068       1902       3732        176       2896     661301   Grand Totals
+     27068       1902       3732        176       2896     661301   ELF Image Totals
+     27068       1902       3732        176          0          0   ROM Totals
 
 ==============================================================================
 
