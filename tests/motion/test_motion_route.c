@@ -596,6 +596,35 @@ static void test_faults_and_recovery(void)
 }
 
 /**
+ * @brief 用真实直行 PID 验证 2° 死区的两侧边界和纠偏方向。
+ * @param 无。
+ * @return 无。
+ * @note 每个输入前重新设置目标并清除 PID 历史，避免微分残留影响死区断言。
+ *       误差恰好为 +/-2° 时必须开始纠偏；死区内原始角差仍可供状态观察。
+ */
+static void test_real_pid_forward_deadband(void)
+{
+    static const float errors[] = {-2.01f, -2.0f, -1.99f, 0.0f, 1.99f, 2.0f, 2.01f};
+    unsigned i;
+    begin_case("real PID 2-degree forward deadband", 0u);
+    for (i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+        float error = errors[i];
+        IMUTask_SetTarget(0.0f);
+        g_euler.yaw = -error;
+        CHECK(CLOSE(IMUTask_GetError(), error));
+        IMUTask_ForwardTick();
+        if (fabsf(error) < 2.0f) {
+            CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+        } else if (error > 0.0f) {
+            CHECK(motorLeft.speed < 400 && motorRight.speed > 400);
+        } else {
+            CHECK(motorLeft.speed > 400 && motorRight.speed < 400);
+        }
+    }
+    puts("PASS real PID 2-degree forward deadband boundaries and motor signs");
+}
+
+/**
  * @brief 用真实 IMU PID 验证跨 +/-180 度时走最短角差及左右输出符号。
  * @param 无。
  * @return 无。
@@ -745,8 +774,12 @@ static void test_route_steps(void)
         CHECK(g_route.state == ROUTE_APPROACH);
         CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.imu_state == IMU_FORWARD);
         CHECK(g_mode_fsm.state_frames == 1u && s_resets == 1u);
-        ticks(79u);
-        CHECK(g_mode_fsm.state_frames == 80u && g_mode_fsm.imu_state == IMU_FORWARD);
+        ticks(88u);
+        CHECK(g_mode_fsm.state_frames == 89u && g_mode_fsm.imu_state == IMU_FORWARD);
+        CHECK(g_route.state == ROUTE_APPROACH);
+        tick();
+        CHECK(g_mode_fsm.state_frames == 90u && g_mode_fsm.imu_state == IMU_FORWARD);
+        /* Route 读取上一帧已完成的计数；完成第 90 帧后，下一帧才开始转弯。 */
         tick();
         CHECK(g_route.state == ROUTE_TURN);
         CHECK(g_mode_fsm.imu_state == (direction == 0u ? IMU_TURN_LEFT : IMU_TURN_RIGHT));
@@ -769,8 +802,12 @@ static void test_route_steps(void)
     CHECK(!g_route.line_found && !g_route.line_found_event);
     tick();
     CHECK(g_route.line_found && g_route.line_found_event && !g_route.junction_event);
-    ticks(8u);
-    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 10u);
+    ticks(497u);
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 499u);
+    CHECK(g_route.state == ROUTE_CROSSING);
+    tick();
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 500u);
+    /* 第 500 帧完成之前保持直行，下一帧收到穿越完成后的循迹请求。 */
     tick();
     CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
     CHECK(g_mode_fsm.turn_count == 0u && s_resets == 1u);
@@ -800,7 +837,7 @@ static void test_route_interrupts(void)
     begin_case("external command interrupts approach deadline", 1u);
     set_sensors(0x0Fu);
     ticks(3u);
-    ticks(79u);
+    ticks(89u);
     Car_Track();
     tick();
     CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
@@ -1001,6 +1038,7 @@ static void test_fault_log_lifecycle(void)
  */
 int main(void)
 {
+    test_real_pid_forward_deadband();
     test_default_and_mailbox();
     test_turn_handoffs();
     test_turn_filter_and_timeout();

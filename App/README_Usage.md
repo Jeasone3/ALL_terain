@@ -1,6 +1,6 @@
 **小车状态机与 OLED 日志使用指南**
 
-本指南对应当前工程代码。动作执行、路线选择与 OLED 显示已经接通；下面的示例供你选择使用，没有自动修改 `main.c` 的启动行为。
+本指南对应当前工程代码。动作执行、路线选择与 OLED 显示已经接通；当前 `main.c` 已启用上电 IMU 直行约 10 秒后停车的测试，其他启动示例供你替换使用。
 
 **1. 先理解各模块的职责**
 
@@ -33,15 +33,19 @@ flowchart TD
 
 **2. 当前上电后会做什么**
 
-`main.c` 已初始化电机、循迹、状态机、日志、IMU 和 OLED，随后启动 TIM4。默认进入 `MODE_TRACK`，`Route` 自动决策默认开启，因此定时器启动后小车会开始循迹。
+`main.c` 的 `IMU_STRAIGHT_TEST_ENABLE` 当前为 `1u`。上电后初始化外设并等待静止校准，校准成功蜂鸣后关闭 Route 自动决策、提交一次 IMU 直行请求，再启动 TIM4。小车保持首帧接受动作时的朝向，约 `IMU_STRAIGHT_TEST_MS = 10000u` 毫秒后提交一次停车请求。前台轮询和控制帧可能带来少量停车延迟。
+
+初始化或校准失败时保持停车，日志显示 `IMU_INIT` 或 `CAL_FAIL`。测试期间读取失败仍由运动层进入 IMU 故障；前台通信重试不会自动重启本次测试，已有故障现场不会被定时停车覆盖。保持小车在上电校准期间静止，观察 OLED 的 `FWD`、`Y/T/E`、`I` 和左右轮 PWM；此启动流程尚需板上验证。
+
+将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u` 后恢复默认自动循迹路线，2°直行死区仍保留。`ModeFSM_Init()` 的初始模式是 `MODE_TRACK`，`Route` 默认开启。下面的路线描述适用于关闭启动测试后：
 
 当前示例路线：
 
-- 左路口：连续三帧确认 → IMU 保持航向前移 80 帧 → 左转 90° → 自动接循迹。
-- 右路口：连续三帧确认 → IMU 保持航向前移 80 帧 → 右转 90° → 自动接循迹。
-- 十字路口：连续三帧确认 → IMU 保持航向直行 10 帧 → 自动接循迹。
+- 左路口：连续三帧确认 → IMU 保持航向前移 90 帧 → 左转 90° → 自动接循迹。
+- 右路口：连续三帧确认 → IMU 保持航向前移 90 帧 → 右转 90° → 自动接循迹。
+- 十字路口：连续两帧确认 → IMU 保持航向直行 500 帧 → 自动接循迹。
 
-一帧为 10 ms，所以 80 帧约 0.8 秒，10 帧约 0.1 秒。这是按时间近似前移，不能直接换算为固定厘米数，仍需根据实际车速校准。
+一帧为 10 ms，所以 90 帧约 0.9 秒，500 帧约 5 秒。这是按时间近似前移，不能直接换算为固定厘米数，仍需根据实际车速校准。Route 源码的部分时间注释与数值不同，以实际帧数为准。
 
 路口判断按八路灰度的 IN1 至 IN8：左四路同时在线为左路口，右四路同时在线为右路口，八路同时在线优先判为十字。在线电平由 `Track_Task.h` 的 `LINE_RAW_VALUE` 决定，当前为 1；OLED 上的 `G` 已换算为“1 表示在线”。
 
@@ -92,7 +96,7 @@ Route_Enable(0);  /* 只监测条件，由你的上层代码决定动作。 */
 HAL_TIM_Base_Start_IT(&htim4);
 ```
 
-要先经过 `ModeFSM_Init()`、`IMUTask_Init()` 和传感器初始化，再提交请求；`ModeFSM_Init()` 会清空请求邮箱。以下每次只选择一组。
+要先经过 `ModeFSM_Init()`、`IMUTask_Init()` 和传感器初始化，再提交请求；`ModeFSM_Init()` 会清空请求邮箱。使用下面的其他启动示例前，先将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u`，避免测试请求和定时停车逻辑干扰。以下每次只选择一组。
 
 ```c
 /* 方案 A：纯循迹，不自动安排路口转弯。 */
@@ -118,7 +122,7 @@ Route_Enable(0);
 Car_Stop();
 ```
 
-要恢复当前默认自动循迹路线，可以删除你加的启动测试代码，或选择 `Route_Enable(1); Car_Track();` 这一组。
+当前恢复默认自动循迹路线只需将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u`，并确保没有另加启动请求。自行编写的启动代码也可选择 `Route_Enable(1); Car_Track();` 这一组。
 
 **6. 动作请求的时序必须理解**
 
@@ -290,18 +294,21 @@ DebugLog_Write(LOG_ERROR, "USER_ERR");
 
 | 文件与参数 | 当前值 | 用途 |
 | --- | --- | --- |
-| `Route.c` 的 `ROUTE_CONFIRM_FRAMES` | 3 帧 | 确认路口及有线/无线条件 |
-| `Route.c` 的 `ROUTE_APPROACH_FRAMES` | 80 帧 | 转前前移时长，约 0.8 秒 |
-| `Route.c` 的 `ROUTE_CROSSING_FRAMES` | 10 帧 | 十字路口穿越时长，约 0.1 秒 |
+| `main.c` 的 `IMU_STRAIGHT_TEST_ENABLE` | 1 | 开启上电 IMU 直行测试，改为 0 恢复默认路线 |
+| `main.c` 的 `IMU_STRAIGHT_TEST_MS` | 10000 ms | 测试计时到期后提交一次停车请求 |
+| `Route.c` 的 `ROUTE_CONFIRM_FRAMES` | 3 帧 | 确认左右路口及有线/无线条件 |
+| `Route.c` 的 `ROUTE_CROSS_CONFIRM_FRAMES` | 2 帧 | 确认十字路口 |
+| `Route.c` 的 `ROUTE_APPROACH_FRAMES` | 90 帧 | 转前前移时长，约 0.9 秒 |
+| `Route.c` 的 `ROUTE_CROSSING_FRAMES` | 500 帧 | 十字路口穿越时长，约 5 秒 |
 | `Mode_FSM.c` 的 `TURN_DONE_TOLERANCE` | 7° | 误差绝对值小于此值才累计完成帧 |
 | `Mode_FSM.c` 的 `TURN_DONE_FRAMES` | 3 帧 | 连续满足容差才完成 |
 | `Mode_FSM.c` 的 `TURN_TIMEOUT_FRAMES` | 300 帧 | 转弯 3 秒超时停车 |
 | `IMU_Task.c` 的 `FWD_BASE_SPEED` | 400 | IMU 直行基础 PWM |
-| `IMU_Task.c` 的 `FWD_DEADBAND` | 10° | 小误差送入直行 PID 前归零 |
+| `IMU_Task.c` 的 `FWD_DEADBAND` | 2° | 绝对值小于 2°的误差送入直行 PID 前归零 |
 | `Track_Task.c` 中初始化的 `base_speed` | 400 | 循迹基础 PWM |
 | `Track_Task.h` 的 `LINE_LOST_SCALE` | 0.6 | 循迹丢线时输出降速比例 |
 
-目前 IMU 直行保留原来的 10°死区，因此小于 10°的角度误差不会产生新的误差纠偏输入，并不能保证很小的航向偏差也被主动纠正。上车观察 `Y/E` 再决定是否调整，先确认方向、电平与时序。
+目前 IMU 直行使用 2°死区：误差绝对值小于 2°时输入归零，恰好 2°和更大的误差继续进入 PID。已有微分历史会按原滤波系数衰减，死区内不保证两轮 PWM 立即相等。上车观察 `Y/E` 与左右轮 PWM，确认方向、电平与时序后再整定控制参数。
 
 循迹丢线会沿用最近偏差并降速，目前不会自动停车。日志的 `W LINE_OFF` 表示丢线提醒，停车条件需要上层另行规定。
 

@@ -30,6 +30,7 @@
 #include "Int_Track.h"
 #include "Track_Task.h"
 #include "Mode_FSM.h"
+#include "Route.h"
 #include "IMU_Task.h"
 #include "Int_OLED.h"
 #include "Debug_Log.h"
@@ -46,6 +47,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：上电测试 IMU 直行；0：恢复默认自动路线 */
+#define IMU_STRAIGHT_TEST_MS      10000u  /* 直行测试时长，单位：毫秒 */
 
 /* USER CODE END PD */
 
@@ -97,6 +101,12 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+  uint8_t imu_calibrated = 0u;
+#if IMU_STRAIGHT_TEST_ENABLE
+  uint32_t imu_test_start_ms = 0u;
+  uint8_t imu_test_running = 0u;
+#endif
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -138,6 +148,12 @@ int main(void)
   line_following_init(&g_line_controller); //循迹初始化
   
   ModeFSM_Init();                          //运动状态机与 Route 初始化，默认循迹
+
+
+  #if IMU_STRAIGHT_TEST_ENABLE
+  Route_Enable(0u);                        /* 测试期间只保留灰度检测，不安排自动路线动作。 */
+  #endif
+
   
   IMUTask_Init();                          //IMU 角度闭环 PID 初始化
 
@@ -145,14 +161,33 @@ int main(void)
   if (g_imu_ready)
   {
     HAL_Delay(50);                /* 等传感器输出稳定 */
-    if (Int_MPU6050_Calibrate(100)) {   /* 校准成功才响；失败(超时)不响=提醒重试 */
+    imu_calibrated = Int_MPU6050_Calibrate(100);
+    if (imu_calibrated != 0u) {   /* 校准成功才响；失败(超时)不响=提醒重试 */
         Int_Beep_On();
         HAL_Delay(200);
         Int_Beep_Off();
     }
     Attitude_Init();              /* 四元数复位，姿态归零 */
   }
-  HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入口 */
+
+
+
+  #if IMU_STRAIGHT_TEST_ENABLE
+  if (imu_calibrated != 0u && g_imu_ready != 0u)
+  {
+    Car_ImuForward();             /* 只提交一次，首帧以当前朝向为零度基准。 */
+    imu_test_start_ms = HAL_GetTick();
+    imu_test_running = 1u;
+  }
+  else
+  {
+    DebugLog_Write(LOG_ERROR, g_imu_ready != 0u ? "CAL_FAIL" : "IMU_INIT");
+    Car_Stop();                   /* 初始化或校准失败时，阻止默认循迹开始运动。 */
+  }
+#endif
+
+
+HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入口 */
 
 
   if (oled_ready != 0U)
@@ -169,7 +204,32 @@ int main(void)
   // uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
   while (1)
   {
-    /* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
+
+
+    #if IMU_STRAIGHT_TEST_ENABLE
+    if (imu_test_running != 0u)
+    {
+      /* 原子检查运行状态并提交停车；已有故障保持原状，不被定时停车清除。 */
+      uint32_t saved_primask = __get_PRIMASK();
+      __disable_irq();
+
+      if (g_mode_fsm.status != CAR_RUNNING)
+      {
+        imu_test_running = 0u;
+      }
+      else if ((uint32_t)(HAL_GetTick() - imu_test_start_ms) >= IMU_STRAIGHT_TEST_MS)
+      {
+        Car_Stop();               /* 下一控制帧输出零 PWM；本次测试不自动重启。 */
+        imu_test_running = 0u;
+      }
+
+      __set_PRIMASK(saved_primask);
+    }
+#endif
+
+
+
+/* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
     if (g_imu_ready == 0U &&
         (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {

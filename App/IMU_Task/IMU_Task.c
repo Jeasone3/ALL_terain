@@ -33,9 +33,9 @@ static float s_target_yaw = 0.0f;
 #define TURN_MAX_OUT      800.0f
 #define TURN_MAX_IOUT     50.0f
 /* 直行参数 */
-#define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
+#define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       400.0f    /* 纠偏差速限幅 */
-#define FWD_DEADBAND      10.0f     /* 最短角差绝对值小于此值时，送入 PID 的误差归零 */
+#define FWD_DEADBAND      1.0f      /* 死区 */
 
 /**
  * @brief 计算从当前航向转到目标航向的最短角差，避免跨越 ±180° 时绕远路。
@@ -74,7 +74,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 直行 PID 起点: Kp=30, Ki=0, Kd=5; 需实测整定 */
-    pid_real_t fwd_params[3] = {30.0f, 0.0f, 5.0f};
+    pid_real_t fwd_params[3] = {200.0f, 0.6f, 8.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 
@@ -133,7 +133,7 @@ void IMUTask_TurnTick(void)
  * @brief 执行给定航向的一帧直行控制，统一普通直行和旧的临时前移逻辑。
  * @param target 本帧保持的目标 yaw，单位为度；不改全局动作目标。
  * @return 无。
- * @note 使用直行 PID 与 400 的基础 PWM；保留 10° 死区和 ±400 纠偏限幅。
+ * @note 使用直行 PID 与 400 的基础 PWM；采用 2° 死区和 ±400 纠偏限幅。
  *       死区仅令 PID 输入误差归零，已有微分历史仍按原滤波系数衰减。
  *       会写两轮电机，调用前必须保证 IMU 有效及控制器互斥。
  */
