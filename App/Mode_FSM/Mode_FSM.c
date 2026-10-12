@@ -359,6 +359,9 @@ void ModeFSM_Tick(void)
     // 增加状态帧计数
     g_mode_fsm.state_frames++;
 
+
+
+    //执行动作
     // 根据当前模式执行不同的控制任务
     if (g_mode_fsm.mode == MODE_TRACK)
     {

@@ -74,7 +74,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 直行 PID 起点: Kp=30, Ki=0, Kd=5; 需实测整定 */
-    pid_real_t fwd_params[3] = {200.0f, 0.6f, 8.0f};
+    pid_real_t fwd_params[3] = {60.0f, 0.0f, 30.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 

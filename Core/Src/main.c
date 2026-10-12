@@ -48,7 +48,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：上电测试 IMU 直行；0：恢复默认自动路线 */
+#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：上电测试 IMU 直行；0：恢复默认自动路线 */
 #define IMU_STRAIGHT_TEST_MS      10000u  /* 直行测试时长，单位：毫秒 */
 
 /* USER CODE END PD */
