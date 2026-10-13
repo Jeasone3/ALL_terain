@@ -48,8 +48,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：上电测试 IMU 直行；0：恢复默认自动路线 */
-#define IMU_STRAIGHT_TEST_MS      10000u  /* 直行测试时长，单位：毫秒 */
+/* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
+#define TRACK_ONLY_TEST_ENABLE    1u     /* 1：上电后持续只循迹；0：按下面的开关选择启动模式 */
+#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：上电测试 IMU 直行，仅在纯循迹测试关闭时生效 */
+#define IMU_STRAIGHT_TEST_MS      20000u  /* 直行测试时长，单位：毫秒 */
 
 /* USER CODE END PD */
 
@@ -102,7 +104,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   uint8_t imu_calibrated = 0u;
-#if IMU_STRAIGHT_TEST_ENABLE
+#if IMU_STRAIGHT_TEST_ENABLE && !TRACK_ONLY_TEST_ENABLE
   uint32_t imu_test_start_ms = 0u;
   uint8_t imu_test_running = 0u;
 #endif
@@ -150,7 +152,7 @@ int main(void)
   ModeFSM_Init();                          //运动状态机与 Route 初始化，默认循迹
 
 
-  #if IMU_STRAIGHT_TEST_ENABLE
+  #if TRACK_ONLY_TEST_ENABLE || IMU_STRAIGHT_TEST_ENABLE
   Route_Enable(0u);                        /* 测试期间只保留灰度检测，不安排自动路线动作。 */
   #endif
 
@@ -172,7 +174,10 @@ int main(void)
 
 
 
-  #if IMU_STRAIGHT_TEST_ENABLE
+  #if TRACK_ONLY_TEST_ENABLE
+  Car_Track();                    /* 只提交一次，由 TIM4 持续执行灰度循迹 PID，不受 IMU 校准结果限制。 */
+  DebugLog_Write(LOG_INFO, "TRACK_TEST");
+  #elif IMU_STRAIGHT_TEST_ENABLE
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
     Car_ImuForward();             /* 只提交一次，首帧以当前朝向为零度基准。 */
@@ -206,7 +211,7 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
   {
 
 
-    #if IMU_STRAIGHT_TEST_ENABLE
+    #if IMU_STRAIGHT_TEST_ENABLE && !TRACK_ONLY_TEST_ENABLE
     if (imu_test_running != 0u)
     {
       /* 原子检查运行状态并提交停车；已有故障保持原状，不被定时停车清除。 */

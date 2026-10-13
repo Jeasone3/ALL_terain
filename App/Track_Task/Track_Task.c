@@ -27,8 +27,8 @@ static const float k_default_weights[GRAYSCALE_SENSOR_CHANNELS] = {
 
 void line_following_init(line_following_t *controller)
 {
-    /* PID 参数: 输出量纲为 PWM 增量(±max_speed); 以下为起点, 需上电机实测整定 */
-    pid_real_t pid_params[3] = {220.0f, 2.0f, 60.0f};
+    /* 快速小幅抖动的试车起点：降低比例纠偏，关闭积分，保留原微分参数；需实车整定。 */
+    pid_real_t pid_params[3] = {130.0f, 0.0f, 100.0f};
     PID_init(&controller->pid, PID_POSITION, pid_params,
              /*max_out=*/1000.0f, /*max_iout=*/90.0f);
     PID_set_integral_separation(&controller->pid, 3.0f);   /* 近似原"动态积分限幅" */

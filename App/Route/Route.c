@@ -11,7 +11,7 @@
 /* 10 ms 一帧；下面的距离由时间近似，上车后按实际车速校准。 */
 #define ROUTE_CONFIRM_FRAMES       3u      /* 路口连续三帧在线即确认 */
 #define ROUTE_CROSS_CONFIRM_FRAMES 2u  /* 十字路口连续两帧在线即确认 */
-#define ROUTE_APPROACH_FRAMES      90u  /* 转弯前移 1000 ms，保留当前测试起点 */
+#define ROUTE_APPROACH_FRAMES      50u  /* 转弯前移 1000 ms，保留当前测试起点 */
 #define ROUTE_CROSSING_FRAMES      500u  /* 十字路口直行 100 ms    调试所用*/     
 
 volatile Route_t g_route;
