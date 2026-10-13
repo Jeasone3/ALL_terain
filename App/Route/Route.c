@@ -1,7 +1,7 @@
 /**
  * @file Route.c
- * @brief 条件监测和示例路线：循迹发现路口后，独立安排前移、转弯或穿越。
- * @note 后期路径规划只需替换路线选择策略，运动层仍通过 Car_* 接口执行动作。
+ * @brief 条件监测、默认自动路线和用户自定义规划入口。
+ * @note 项目动作与自动开关由用户在 PathPlan_Tick 中自行安排，不预设动作顺序。
  */
 #include "Route.h"
 #include "Mode_FSM.h"
@@ -11,10 +11,12 @@
 /* 10 ms 一帧；下面的距离由时间近似，上车后按实际车速校准。 */
 #define ROUTE_CONFIRM_FRAMES       3u      /* 路口连续三帧在线即确认 */
 #define ROUTE_CROSS_CONFIRM_FRAMES 2u  /* 十字路口连续两帧在线即确认 */
-#define ROUTE_APPROACH_FRAMES      90u  /* 转弯前移 1000 ms，保留当前测试起点 */
-#define ROUTE_CROSSING_FRAMES      500u  /* 十字路口直行 100 ms    调试所用*/     
+#define ROUTE_APPROACH_FRAMES      80u     /* 默认转弯前移约 900 ms，需上车标定 */
+#define ROUTE_CROSSING_FRAMES      500u    /* 备用穿越步骤约 5 秒；默认十字已不使用 */
 
 volatile Route_t g_route;
+/* 一个地图阶段变量：默认新十字加一，项目内是否推进由你自己决定。 */
+volatile uint32_t g_project_stage;
 
 /* 候选连续帧只负责确认；锁存保证未离开路口时不重复触发。 */
 static RouteJunction s_junction_candidate; /* 连续帧确认的路口类型 */
@@ -142,23 +144,63 @@ static void cancel_route_step(void)
  * @brief 根据新路口选择示例动作，集中保留未来路径规划的替换入口。
  * @param junction 已经连续帧确认、且本帧首次上报的路口类型。
  * @return 无。
- * @note 当前测试策略：左右路口先 IMU 前移再转弯，十字路口 IMU 直行穿越。
+ * @note 默认策略：左右路口先 IMU 前移再转弯，新十字只推进项目阶段并继续巡线。
  *       以后可在这里查询规划路线决定左、右或直行；不直接操作 PID 和电机。
  */
 static void select_route_action(RouteJunction junction)
 {
-    //循迹态识别到转弯，先进入前移状态，等待 800 ms 后再发起转弯动作；十字路口直接进入穿越状态。
+    /* 默认左右路口先前移约 900 ms 再转弯；新十字只把项目阶段加一。 */
     if (junction == JUNCTION_LEFT || junction == JUNCTION_RIGHT) {
         s_turn_direction = junction;
         g_route.state = ROUTE_APPROACH;
         g_route.state_frames = 0u;
         Car_ImuForward();
-    } else if (junction == JUNCTION_CROSS) {  //十字路口直接进入穿越状态，持续 后恢复循迹。
-        g_route.state = ROUTE_CROSSING;
-        g_route.state_frames = 0u;
-        Car_ImuForward();
+    } else if (junction == JUNCTION_CROSS) {
+        /* 入口仅在新路口事件上调用，锁存期间不重复加一，不切换运动模式。 */
+        if (g_project_stage != UINT32_MAX) {
+            ++g_project_stage;
+            DebugLog_Write(LOG_INFO, "STAGE_NEXT");
+        }
     }
 }
+
+//----------------------------------------路径规划---------------------------------
+/**
+ * @brief 用户自己编写项目动作的入口，不内置直行、转弯或自动交接流程。
+ * @param 无。
+ * @return 无。
+ * @note TIM4 每 10 ms 调用一次，关闭默认自动决策后仍调用；主动停车后也可继续检查条件。
+ *       外部请求优先帧、空传感器输入或运动故障时跳过，不自动覆盖人工动作或恢复故障。
+ *       每次切换动作只发一个 Car_* 请求，不使用 HAL_Delay 等待动作完成。
+ */
+static void PathPlan_Tick(void)
+{
+    /*
+     * 你的项目代码写在这里：
+     * 1. 用 g_project_stage、灰度事件、动作帧数或转弯完成计数判断条件。
+     * 2. 自己开始安排动作前调用 Route_Enable(0u)，再提交一个 Car_* 请求。
+     * 3. 后续动作、转向、停车和阶段推进都由你自己的条件决定。
+     * 4. 项目结束想恢复自动巡线时，调用 Car_Track() 和 Route_Enable(1u)。
+     * 此函数当前留空，默认不会自动执行任何项目动作，也不会修改你的开关。
+     */
+
+    //  if (g_project_stage == 1u && g_route.junction_event &&
+    //      g_route.junction == JUNCTION_CROSS) {
+    //     Route_Enable(0u);
+    //     Car_TurnLeft90(MODE_TRACK);
+    //     DebugLog_Write(LOG_INFO, "PROJECT_LEFT");
+    //     Route_Enable(1u);
+    // }
+
+}
+
+
+
+
+
+
+
+
 
 /**
  * @brief 初始化条件确认计数、事件和路线步骤，默认开启示例自动决策。
@@ -183,6 +225,7 @@ void Route_Init(void)
     s_line_frames = 0u;
     s_turn_direction = JUNCTION_NONE;
     s_turn_count_before = 0u;
+    g_project_stage = 0u;
 }
 
 /**
@@ -210,6 +253,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 {
     uint8_t raw_line;
     RouteJunction raw_junction;
+    uint8_t auto_was_enabled;
 
     /* 事件只保持一个控制帧，稳定检测值与路口锁存保留。 */
     g_route.junction_event = 0u; //本帧确认了一个新路口事件
@@ -237,8 +281,15 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         DebugLog_Write(level, "LINE_OFF");
     }
 
-    /* 手动请求、停车、故障和关闭自动路线     都取消未完成步骤，但不自动恢复运动。 */
-    if (external_command || !g_route.enabled ||
+    /* 先调你的规划函数。默认开关只控制后面的自动决策，不控制这个入口。 */
+    auto_was_enabled = g_route.enabled;
+    if (sensor_data != 0 && external_command == 0u &&
+        g_mode_fsm.status != CAR_FAULT) {
+        PathPlan_Tick();
+    }
+
+    /* 从关闭态恢复自动的这一帧，先接受你的动作；下一帧才执行默认决策。 */
+    if (external_command || !auto_was_enabled || !g_route.enabled ||
         g_mode_fsm.status != CAR_RUNNING) {
         cancel_route_step();
         return;
@@ -259,7 +310,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         break;
 
     case ROUTE_APPROACH:
-        g_route.state_frames = g_mode_fsm.state_frames;//同步前移状态帧数，确保转弯动作在 800 ms 后发起。
+        g_route.state_frames = g_mode_fsm.state_frames; /* 默认前移计时约 900 ms。 */
         if (g_route.state_frames >= ROUTE_APPROACH_FRAMES) {
             /* 转弯另发动作，运动层在此刻建立新的角度起点。 */
             s_turn_count_before = g_mode_fsm.turn_count;

@@ -33,8 +33,8 @@ static float s_target_yaw = 0.0f;
 #define TURN_MAX_OUT      800.0f
 #define TURN_MAX_IOUT     50.0f
 /* 直行参数 */
-#define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
-#define FWD_MAX_OUT       400.0f    /* 纠偏差速限幅 */
+#define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
+#define FWD_MAX_OUT       900.0f    /* 纠偏差速限幅 */
 #define FWD_DEADBAND      1.0f      /* 死区 */
 
 /**
@@ -74,7 +74,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 直行 PID 起点: Kp=30, Ki=0, Kd=5; 需实测整定 */
-    pid_real_t fwd_params[3] = {60.0f, 0.0f, 30.0f};
+    pid_real_t fwd_params[3] = {60.0f, 0.0f, .0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 

@@ -13,8 +13,9 @@
 #include "Debug_Log.h"
 #include <math.h>
 
-#define TURN_DONE_TOLERANCE 7.0f /* 转弯完成误差，单位：度 */
-#define TURN_DONE_FRAMES 3u      /* 转弯完成确认帧数,超时->????? */
+#define TURN_DONE_TOLERANCE 5.0f /* 转弯完成误差，单位：度 */
+//这两个参数的作用
+#define TURN_DONE_FRAMES 6u      /* 转弯完成确认帧数,超时->????? */
 #define TURN_TIMEOUT_FRAMES 300u /* 300 × 10 ms = 3 秒，上车后校准 */
 
 // 循迹数组
@@ -361,7 +362,7 @@ void ModeFSM_Tick(void)
 
 
 
-    //执行动作
+    //执行
     // 根据当前模式执行不同的控制任务
     if (g_mode_fsm.mode == MODE_TRACK)
     {

@@ -460,11 +460,11 @@ static void test_turn_handoffs(void)
                 CHECK(g_mode_fsm.imu_state == IMU_FORWARD);
                 CHECK(CLOSE(g_mode_fsm.target_yaw, target));
                 CHECK(s_imu_reads == imu_before + 1u && s_track_pid_calls == 0u);
-                CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+                CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
                 /* 角度反馈与目标相差完整一圈时也应保持直行。 */
                 s_sample_yaw = target + 360.0f;
                 tick();
-                CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+                CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
             } else {
                 CHECK(s_imu_reads == imu_before);
                 CHECK(s_track_pid_calls >= 1u);
@@ -542,7 +542,7 @@ static void test_faults_and_recovery(void)
     s_sample_yaw = 15.0f;
     Car_ImuForward();
     tick();
-    CHECK(motorLeft.speed == 800 && motorRight.speed == 0);
+    CHECK(motorLeft.speed == 900 && motorRight.speed == 100);
     g_euler.yaw = 0.0f;
     s_sample_ok = 0u;
     pid_before = s_pid_calls;
@@ -596,32 +596,32 @@ static void test_faults_and_recovery(void)
 }
 
 /**
- * @brief 用真实直行 PID 验证 2° 死区的两侧边界和纠偏方向。
+ * @brief 用真实直行 PID 验证当前 1° 死区的两侧边界和纠偏方向。
  * @param 无。
  * @return 无。
  * @note 每个输入前重新设置目标并清除 PID 历史，避免微分残留影响死区断言。
- *       误差恰好为 +/-2° 时必须开始纠偏；死区内原始角差仍可供状态观察。
+ *       误差恰好为 +/-1° 时必须开始纠偏；死区内原始角差仍可供状态观察。
  */
 static void test_real_pid_forward_deadband(void)
 {
-    static const float errors[] = {-2.01f, -2.0f, -1.99f, 0.0f, 1.99f, 2.0f, 2.01f};
+    static const float errors[] = {-1.01f, -1.0f, -0.99f, 0.0f, 0.99f, 1.0f, 1.01f};
     unsigned i;
-    begin_case("real PID 2-degree forward deadband", 0u);
+    begin_case("real PID 1-degree forward deadband", 0u);
     for (i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
         float error = errors[i];
         IMUTask_SetTarget(0.0f);
         g_euler.yaw = -error;
         CHECK(CLOSE(IMUTask_GetError(), error));
         IMUTask_ForwardTick();
-        if (fabsf(error) < 2.0f) {
-            CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+        if (fabsf(error) < 1.0f) {
+            CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
         } else if (error > 0.0f) {
-            CHECK(motorLeft.speed < 400 && motorRight.speed > 400);
+            CHECK(motorLeft.speed < 500 && motorRight.speed > 500);
         } else {
-            CHECK(motorLeft.speed > 400 && motorRight.speed < 400);
+            CHECK(motorLeft.speed > 500 && motorRight.speed < 500);
         }
     }
-    puts("PASS real PID 2-degree forward deadband boundaries and motor signs");
+    puts("PASS real PID 1-degree forward deadband boundaries and motor signs");
 }
 
 /**
@@ -648,12 +648,12 @@ static void test_real_pid_angle_wrap(void)
     g_euler.yaw = -170.0f;
     IMUTask_ForwardTick();
     CHECK(motorLeft.speed > motorRight.speed);
-    CHECK(motorLeft.speed + motorRight.speed == 800);
+    CHECK(motorLeft.speed + motorRight.speed == 1000);
     IMUTask_SetTarget(-170.0f);
     g_euler.yaw = 170.0f;
     IMUTask_ForwardTick();
     CHECK(motorLeft.speed < motorRight.speed);
-    CHECK(motorLeft.speed + motorRight.speed == 800);
+    CHECK(motorLeft.speed + motorRight.speed == 1000);
     IMUTask_SetTarget(10000.0f);
     g_euler.yaw = 0.0f;
     CHECK(CLOSE(IMUTask_GetError(), -80.0f));
@@ -756,7 +756,7 @@ static void test_route_conditions(void)
 }
 
 /**
- * @brief 验证默认左右前移与十字穿越步骤的准确帧数和动作衔接。
+ * @brief 验证默认左右前移转弯，以及新十字只推进阶段而保持巡线。
  * @param 无。
  * @return 无。
  * @note 前移是独立 IMU 动作；转弯再次复位基准，同一路口持续存在不能重复发起。
@@ -792,28 +792,23 @@ static void test_route_steps(void)
         CHECK(g_route.state == ROUTE_FOLLOW);
         CHECK(g_mode_fsm.command_id == command_after_turn && g_mode_fsm.turn_count == 1u);
     }
-    begin_case("default cross route timing", 1u);
+    begin_case("default cross advances stage without changing motion", 1u);
     set_sensors(0xFFu);
     tick();
     CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
     tick();
-    CHECK(g_route.state == ROUTE_CROSSING && g_mode_fsm.imu_state == IMU_FORWARD);
-    CHECK(g_route.junction_event && g_mode_fsm.state_frames == 1u);
+    CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_route.junction_event && g_mode_fsm.state_frames == 2u);
+    CHECK(g_project_stage == 1u);
     CHECK(!g_route.line_found && !g_route.line_found_event);
     tick();
     CHECK(g_route.line_found && g_route.line_found_event && !g_route.junction_event);
-    ticks(497u);
-    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 499u);
-    CHECK(g_route.state == ROUTE_CROSSING);
-    tick();
-    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 500u);
-    /* 第 500 帧完成之前保持直行，下一帧收到穿越完成后的循迹请求。 */
-    tick();
+    ticks(500u);
     CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
-    CHECK(g_mode_fsm.turn_count == 0u && s_resets == 1u);
-    ticks(5u);
-    CHECK(g_mode_fsm.mode == MODE_TRACK);
-    puts("PASS independent approach, turns and cross timing");
+    CHECK(g_mode_fsm.turn_count == 0u && s_resets == 0u);
+    CHECK(g_mode_fsm.command_id == 0u && s_imu_reads == 0u);
+    CHECK(g_project_stage == 1u);
+    puts("PASS independent approach, turns and one-shot cross stage advance");
 }
 
 /**
@@ -846,6 +841,8 @@ static void test_route_interrupts(void)
     CHECK(g_mode_fsm.mode == MODE_TRACK);
 
     begin_case("disabled route keeps active IMU action", 1u);
+    Car_ImuForward();
+    tick();
     set_sensors(0xFFu);
     ticks(2u);
     Route_Enable(0u);
@@ -1019,17 +1016,189 @@ static void test_fault_log_lifecycle(void)
     Car_ImuForward();
     s_sample_yaw = 15.0f;
     tick();
-    CHECK(g_mode_fsm.imu_valid == 1u && motorLeft.speed == 800 && motorRight.speed == 0);
+    CHECK(g_mode_fsm.imu_valid == 1u && motorLeft.speed == 900 && motorRight.speed == 100);
     s_sample_ok = 0u;
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_IMU);
     CHECK(g_mode_fsm.imu_valid == 0u);
     CHECK(DebugLog_Display() == OLED_OK && log_has("IMU_ERR"));
     CHECK(strstr(s_oled_rows[1], "Y:--") != NULL && strstr(s_oled_rows[2], "E:--") != NULL);
-    CHECK(strstr(s_oled_rows[4], "L:+800") != NULL && strstr(s_oled_rows[4], "R:+0") != NULL);
+    CHECK(strstr(s_oled_rows[4], "L:+900") != NULL && strstr(s_oled_rows[4], "R:+100") != NULL);
     puts("PASS pre-stop fault capture, STOP freeze, invalid request freeze and valid recovery");
 }
 
+/**
+ * @brief 验证所有新十字只推进阶段，不启动固定项目动作。
+ * @param 无。
+ * @return 无。
+ * @note 连续三帧离开才解除锁存；到达阶段 2 后也不能自动直行或左转。
+ */
+static void test_auto_cross_stage(void)
+{
+    unsigned crossing;
+    begin_case("fresh crosses only advance stage without a motion template", 1u);
+    CHECK(g_project_stage == 0u);
+    for (crossing = 1u; crossing <= 3u; ++crossing) {
+        set_sensors(0xFFu);
+        tick();
+        CHECK(g_project_stage == crossing - 1u);
+        tick();
+        CHECK(g_route.junction_event && g_project_stage == crossing);
+        CHECK(g_route.enabled && g_route.state == ROUTE_FOLLOW);
+        CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == 0u);
+        ticks(20u);
+        CHECK(!g_route.junction_event && g_project_stage == crossing);
+        CHECK(g_mode_fsm.turn_count == 0u && s_resets == 0u && s_imu_reads == 0u);
+        /* 只离开两帧不足以解除锁存，同一十字不能重复计数。 */
+        set_sensors(0x18u);
+        ticks(2u);
+        set_sensors(0xFFu);
+        ticks(2u);
+        CHECK(!g_route.junction_event && g_project_stage == crossing);
+        set_sensors(0x18u);
+        ticks(3u);
+    }
+
+    begin_case("automatic cross stage limit does not wrap", 1u);
+    g_project_stage = UINT32_MAX;
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == UINT32_MAX);
+    set_sensors(0x18u);
+    ticks(3u);
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == UINT32_MAX);
+    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == 0u);
+    CHECK(s_resets == 0u);
+    puts("PASS fresh cross stage count, persistent latch and overflow guard");
+}
+
+/**
+ * @brief 验证只有允许默认自动决策的巡线新十字才推进阶段。
+ * @param 无。
+ * @return 无。
+ * @note 关闭自动功能、停车、故障、IMU、外部请求和自动前移期间只检测条件。
+ */
+static void test_auto_cross_gates(void)
+{
+    begin_case("disabled auto route does not count crosses", 0u);
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == 0u);
+    Route_Enable(1u);
+    ticks(3u);
+    CHECK(g_project_stage == 0u);
+    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == 0u);
+
+    begin_case("external request on confirmed cross prevents stage advance", 1u);
+    set_sensors(0xFFu);
+    tick();
+    Car_Track();
+    tick();
+    CHECK(g_route.junction_event && g_project_stage == 0u);
+    ticks(3u);
+    CHECK(g_project_stage == 0u && g_mode_fsm.command_id == 1u);
+
+    begin_case("stopped car does not count crosses", 1u);
+    Car_Stop();
+    tick();
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == 0u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+
+    begin_case("IMU motion does not count crosses", 1u);
+    Car_ImuForward();
+    tick();
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == 0u);
+    CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_IMU);
+    CHECK(g_mode_fsm.command_id == 1u);
+
+    begin_case("faulted car does not count crosses", 1u);
+    Car_ImuForward();
+    s_sample_ok = 0u;
+    tick();
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == 0u);
+    check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+
+    begin_case("default approach does not count crosses", 1u);
+    set_sensors(0x0Fu);
+    ticks(3u);
+    CHECK(g_route.state == ROUTE_APPROACH);
+    set_sensors(0x18u);
+    ticks(3u);
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_route.state == ROUTE_APPROACH);
+    CHECK(g_project_stage == 0u);
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.command_id == 1u);
+    puts("PASS cross counting respects auto switch, status, mode and request priority");
+}
+
+/**
+ * @brief 验证用户可以自行关闭自动决策、安排任意动作并显式恢复。
+ * @param 无。
+ * @return 无。
+ * @note 直行超过原示例三秒也不自动左转；用户选择右转、停车和巡线交接。
+ */
+static void test_manual_project_actions(void)
+{
+    uint32_t commands_before_resume;
+    begin_case("user owns project actions and automatic switch", 1u);
+    g_project_stage = 2u;
+    Route_Enable(0u);
+    Car_ImuForward();
+    tick();
+    set_sensors(0xFFu);
+    ticks(400u);
+    CHECK(!g_route.enabled && g_project_stage == 2u);
+    CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_IMU);
+    CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.state_frames == 401u);
+    CHECK(g_mode_fsm.command_id == 1u && g_mode_fsm.turn_count == 0u);
+    CHECK(s_track_pid_calls == 0u && s_resets == 1u);
+
+    Car_TurnRight90(MODE_TRACK);
+    s_sample_yaw = -90.0f;
+    ticks(3u);
+    CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.command_id == 2u && s_resets == 2u);
+    CHECK(!g_route.enabled && g_project_stage == 2u);
+    ticks(5u);
+    CHECK(!g_route.enabled && g_project_stage == 2u);
+    CHECK(g_mode_fsm.command_id == 2u);
+
+    Car_Stop();
+    tick();
+    ticks(3u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    CHECK(!g_route.enabled && g_project_stage == 2u);
+    /* 项目完成后的阶段变化由用户自行决定，框架不会自动加一。 */
+    ++g_project_stage;
+    commands_before_resume = g_mode_fsm.command_id;
+    Car_Track();
+    Route_Enable(1u);
+    tick();
+    CHECK(g_route.enabled && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.status == CAR_RUNNING);
+    CHECK(g_mode_fsm.command_id == commands_before_resume + 1u);
+    CHECK(g_project_stage == 3u);
+    ticks(3u);
+    CHECK(g_project_stage == 3u && !g_route.junction_event);
+    set_sensors(0x18u);
+    ticks(3u);
+    set_sensors(0xFFu);
+    ticks(2u);
+    CHECK(g_route.junction_event && g_project_stage == 4u);
+    CHECK(g_route.enabled && g_route.state == ROUTE_FOLLOW);
+    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.turn_count == 1u);
+    CHECK(g_mode_fsm.command_id == commands_before_resume + 1u);
+    puts("PASS manual long straight, chosen right turn, stop and explicit auto resume");
+}
 /**
  * @brief 运行运动与路线的行为场景，任何断言失败都会返回非零退出码。
  * @param 无。
@@ -1050,6 +1219,9 @@ int main(void)
     test_timer_entry();
     test_automatic_logs();
     test_fault_log_lifecycle();
+    test_auto_cross_stage();
+    test_auto_cross_gates();
+    test_manual_project_actions();
     puts("All motion/route integration scenarios passed.");
     return EXIT_SUCCESS;
 }
