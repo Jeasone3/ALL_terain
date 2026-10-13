@@ -36,7 +36,7 @@ typedef struct {
 /* TIM4 内更新。外部只通过 Route_Enable 修改开关，不直接修改其他字段。 */
 extern volatile Route_t g_route;
 
-/* 默认 Route 在 TIM4 中计数；项目内在 PathPlan_Tick 中修改，前台只读取。
+/* 默认 Route 在 TIM4 中先对新十字计数，再执行 PathPlan_Tick；项目内可自行修改，前台只读取。
  * 启动前可设置起始阶段。不要由主循环和中断同时执行阶段加一。 */
 extern volatile uint32_t g_project_stage;
 
@@ -63,7 +63,7 @@ void Route_Enable(uint8_t enabled);
  * @param external_command 1：运动层本帧已经接受外部请求；0：允许示例路线提交动作。
  * @return 无。
  * @note 仅由 ModeFSM_Tick 每 10 ms 调用一次；所有事件只保持当前帧。
- *       灰度更新后先执行用户 PathPlan_Tick，再判断默认自动开关；不预设项目动作。
+ *       灰度更新后，正常自动巡线先对新十字推进阶段，再执行用户 PathPlan_Tick。
  *       外部请求当帧优先；空输入和运动故障时不调用自定义入口。
  *       默认关闭或主动停车时仍可执行自定义入口，不自动修改开关或恢复运动。
  */

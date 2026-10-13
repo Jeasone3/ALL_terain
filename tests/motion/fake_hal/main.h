@@ -50,4 +50,7 @@ void __set_PRIMASK(uint32_t mask);
  */
 uint32_t HAL_GetTick(void);
 
+/* 控制帧禁止调用，测试替身遇到调用立即失败。 */
+void HAL_Delay(uint32_t milliseconds);
+
 #endif

@@ -7,16 +7,17 @@
 #include "Mode_FSM.h"
 #include "Debug_Log.h"
 #include "Track_Task.h"            /* LINE_RAW_VALUE：传感器在线时的原始电平 */
+#include "Int_Beep.h"               /* Beep_Short: 路口提示音 */
 
 /* 10 ms 一帧；下面的距离由时间近似，上车后按实际车速校准。 */
 #define ROUTE_CONFIRM_FRAMES       3u      /* 路口连续三帧在线即确认 */
 #define ROUTE_CROSS_CONFIRM_FRAMES 2u  /* 十字路口连续两帧在线即确认 */
-#define ROUTE_APPROACH_FRAMES      80u     /* 默认转弯前移约 900 ms，需上车标定 */
+#define ROUTE_APPROACH_FRAMES      50u     /* 默认转弯前移约 900 ms，需上车标定 */
 #define ROUTE_CROSSING_FRAMES      500u    /* 备用穿越步骤约 5 秒；默认十字已不使用 */
 
 volatile Route_t g_route;
 /* 一个地图阶段变量：默认新十字加一，项目内是否推进由你自己决定。 */
-volatile uint32_t g_project_stage;
+volatile uint32_t g_project_stage = 0u;
 
 /* 候选连续帧只负责确认；锁存保证未离开路口时不重复触发。 */
 static RouteJunction s_junction_candidate; /* 连续帧确认的路口类型 */
@@ -26,6 +27,16 @@ static uint8_t s_line_candidate; // 连续帧确认的引导线状态
 static uint8_t s_line_frames; // 连续帧计数
 static RouteJunction s_turn_direction; // 转弯方向
 static uint32_t s_turn_count_before; // 转弯前计数
+
+/* 项目 1 的少量运行标志；地图条件仍由 g_project_stage 表示。 */
+static uint8_t s_project1_running;  /* 1：正在执行这次十秒直行 */
+static uint8_t s_project1_finished; /* 1：本次运行已完成或被外部动作中断，避免同阶段重复接管 */
+static uint8_t s_project1_beep_on;  /* 1：项目开始的短提示音尚未关闭 */
+static uint8_t s_project1_completed; /* 1：项目 1 正常完成，允许下一新十字进入项目 2 */
+
+/* 项目 2 沿用项目 1 的运行/结束标志，避免重复接管和重复提交动作。 */
+static uint8_t s_project2_running;  /* 1：正在执行这次十秒直行 */
+static uint8_t s_project2_finished; /* 1：已经完成或被外部动作中断 */
 
 /**
  * @brief 从一帧八路灰度中识别路口类型，并判断是否存在引导线。
@@ -144,63 +155,134 @@ static void cancel_route_step(void)
  * @brief 根据新路口选择示例动作，集中保留未来路径规划的替换入口。
  * @param junction 已经连续帧确认、且本帧首次上报的路口类型。
  * @return 无。
- * @note 默认策略：左右路口先 IMU 前移再转弯，新十字只推进项目阶段并继续巡线。
+ * @note 默认策略：左右路口先 IMU 前移再转弯；十字阶段计数已在规划入口之前完成。
  *       以后可在这里查询规划路线决定左、右或直行；不直接操作 PID 和电机。
  */
 static void select_route_action(RouteJunction junction)
 {
-    /* 默认左右路口先前移约 900 ms 再转弯；新十字只把项目阶段加一。 */
+    /* 默认左右路口先前移再转弯；十字保持当前运动，由规划入口选择是否接管。 */
     if (junction == JUNCTION_LEFT || junction == JUNCTION_RIGHT) {
         s_turn_direction = junction;
         g_route.state = ROUTE_APPROACH;
         g_route.state_frames = 0u;
         Car_ImuForward();
-    } else if (junction == JUNCTION_CROSS) {
-        /* 入口仅在新路口事件上调用，锁存期间不重复加一，不切换运动模式。 */
-        if (g_project_stage != UINT32_MAX) {
-            ++g_project_stage;
-            DebugLog_Write(LOG_INFO, "STAGE_NEXT");
-        }
     }
 }
 
 //----------------------------------------路径规划---------------------------------
+/* 项目动作函数在规划入口之后定义，先声明以便调用。 */
+static void Project1(void);
+static void Project2(void);
+
 /**
- * @brief 用户自己编写项目动作的入口，不内置直行、转弯或自动交接流程。
+ * @brief 每帧检查项目入口条件，并调度正在运行的项目。
  * @param 无。
  * @return 无。
  * @note TIM4 每 10 ms 调用一次，关闭默认自动决策后仍调用；主动停车后也可继续检查条件。
  *       外部请求优先帧、空传感器输入或运动故障时跳过，不自动覆盖人工动作或恢复故障。
- *       每次切换动作只发一个 Car_* 请求，不使用 HAL_Delay 等待动作完成。
+ *       项目 1、2 的启动、计时和结束逻辑分别封装在 Project1、Project2 中。
  */
 static void PathPlan_Tick(void)
 {
     /*
-     * 你的项目代码写在这里：
+     * 你的项目入口条件写在这里，具体动作封装到各项目函数中：
      * 1. 用 g_project_stage、灰度事件、动作帧数或转弯完成计数判断条件。
-     * 2. 自己开始安排动作前调用 Route_Enable(0u)，再提交一个 Car_* 请求。
-     * 3. 后续动作、转向、停车和阶段推进都由你自己的条件决定。
+     * 2. 项目开始安排动作前调用 Route_Enable(0u)，再提交一个 Car_* 请求。
+     * 3. 后续动作、转向、停车和阶段推进都由项目函数中的条件决定。
      * 4. 项目结束想恢复自动巡线时，调用 Car_Track() 和 Route_Enable(1u)。
-     * 此函数当前留空，默认不会自动执行任何项目动作，也不会修改你的开关。
+     * 项目函数每帧推进一次；在 10 ms 控制入口中不要用 HAL_Delay 等待。
      */
 
-    //  if (g_project_stage == 1u && g_route.junction_event &&
-    //      g_route.junction == JUNCTION_CROSS) {
-    //     Route_Enable(0u);
-    //     Car_TurnLeft90(MODE_TRACK);
-    //     DebugLog_Write(LOG_INFO, "PROJECT_LEFT");
-    //     Route_Enable(1u);
-    // }
+    /* 项目运行后每帧继续调用，不再要求路口事件持续存在。 */
+    if (s_project1_running) {
+        Project1();
+        return;
+    }
+    if (s_project2_running) {
+        Project2();
+        return;
+    }
 
+    /* 新十字已在调用本函数前推进阶段：首个十字在同一帧满足阶段 1。 */
+    if (!s_project1_finished && g_route.enabled &&
+        g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_TRACK &&
+        g_route.state == ROUTE_FOLLOW && g_project_stage == 1u &&
+        g_route.junction_event && g_route.junction == JUNCTION_CROSS) {
+        Project1();
+        return;
+    }
+
+    /* 项目 1 正常结束后保持自动决策，下一新十字推进到阶段 2 时才接管。 */
+    if (s_project1_completed && !s_project2_finished && g_route.enabled &&
+        g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_TRACK &&
+        g_route.state == ROUTE_FOLLOW && g_project_stage == 2u &&
+        g_route.junction_event && g_route.junction == JUNCTION_CROSS) {
+        Project2();
+        return;
+    }
 }
 
+/**
+ * @brief 执行项目 1：提示音约 100 ms，IMU 直行十秒后恢复自动巡线。
+ * @param 无。
+ * @return 无。
+ * @note 仅由 PathPlan_Tick 调用；首次启动后立即返回，后续帧再检查动作计时。
+ *       Car_* 只在动作切换时提交一次；返回后运动层继续采样 IMU 并运行 PID。
+ *       外部动作、停车或故障的取消逻辑保留在 Route_Tick 中。
+ */
+static void Project1(void)
+{
+    if (!s_project1_running) {
+        Route_Enable(0u);
+        Int_Beep_On();
+        s_project1_beep_on = 1u;
+        s_project1_running = 1u;
+        Car_ImuForward();                /* 只发一次；接受请求后重新开始帧计时。 */
+        DebugLog_Write(LOG_INFO, "PROJ1_FWD");
+        return;                         /* 本帧仍是旧动作计时，等待运动层接受请求后再检查。 */
+    }
 
+    if (s_project1_beep_on && g_mode_fsm.state_frames >= 10u) {
+        Int_Beep_Off();                  /* 10 帧约 100 ms，只关闭一次。 */
+        s_project1_beep_on = 0u;
+    }
+    if (g_mode_fsm.state_frames >= 400u) {
+        s_project1_running = 0u;
+        s_project1_finished = 1u;
+        s_project1_completed = 1u;       /* 仅正常完成才允许项目 2 进入。 */
+        DebugLog_Write(LOG_INFO, "PROJ1_DONE");
+        Car_Track();                     /* 6秒直行结束，恢复巡线控制。 */
+        Route_Enable(1u);                /* 开启项目间的默认自动决策。 */
+    }
+}
 
+/**
+ * @brief 执行项目 2：新十字确认后 IMU 直行六秒，再恢复自动决策。
+ * @param 无。
+ * @return 无。
+ * @note 仅由 PathPlan_Tick 调用；首次关闭默认决策并提交一次直行请求后立即返回。
+ *       后续帧以运动层 state_frames 计时，600 帧约 6 秒，不阻塞 IMU、PID 或电机更新。
+ *       结束时只提交一次 Car_Track 并开启自动决策；不自行推进地图阶段。
+ *       外部动作、停车或故障的取消逻辑保留在 Route_Tick 中。
+ */
+static void Project2(void)
+{
+    if (!s_project2_running) {
+        Route_Enable(0u);
+        s_project2_running = 1u;
+        Car_ImuForward();                /* 只发一次；接受请求后重新开始帧计时。 */
+        DebugLog_Write(LOG_INFO, "PROJ2_FWD");
+        return;                         /* 本帧仍是旧动作计时，下一帧再检查。 */
+    }
 
-
-
-
-
+    if (g_mode_fsm.state_frames >= 400u) {
+        s_project2_running = 0u;
+        s_project2_finished = 1u;
+        DebugLog_Write(LOG_INFO, "PROJ2_DONE");
+        Car_Track();                     /* 6秒直行结束，恢复巡线控制。 */
+        Route_Enable(1u);                /* 重新开启默认自动决策。 */
+    }
+}
 
 /**
  * @brief 初始化条件确认计数、事件和路线步骤，默认开启示例自动决策。
@@ -226,6 +308,12 @@ void Route_Init(void)
     s_turn_direction = JUNCTION_NONE;
     s_turn_count_before = 0u;
     g_project_stage = 0u;
+    s_project1_running = 0u;
+    s_project1_finished = 0u;
+    s_project1_beep_on = 0u;
+    s_project1_completed = 0u;
+    s_project2_running = 0u;
+    s_project2_finished = 0u;
 }
 
 /**
@@ -281,8 +369,40 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         DebugLog_Write(level, "LINE_OFF");
     }
 
-    /* 先调你的规划函数。默认开关只控制后面的自动决策，不控制这个入口。 */
+    /* 外部换动作、停车或故障会取消项目 1，不自动恢复运动或开启默认决策。
+     * 此处也在故障帧执行，保证规划入口被跳过时仍能关闭提示音。 */
+    if (s_project1_running &&
+        (external_command || g_mode_fsm.status != CAR_RUNNING ||
+         g_mode_fsm.mode != MODE_IMU || g_mode_fsm.imu_state != IMU_FORWARD)) {
+        if (s_project1_beep_on) {
+            Int_Beep_Off();
+            s_project1_beep_on = 0u;
+        }
+        s_project1_running = 0u;
+        s_project1_finished = 1u;
+    }
+
+    /* 项目 2 同样服从外部动作和故障；中断后不自动恢复运动或开启决策。 */
+    if (s_project2_running &&
+        (external_command || g_mode_fsm.status != CAR_RUNNING ||
+         g_mode_fsm.mode != MODE_IMU || g_mode_fsm.imu_state != IMU_FORWARD)) {
+        s_project2_running = 0u;
+        s_project2_finished = 1u;
+    }
+
     auto_was_enabled = g_route.enabled;
+    /* 默认自动巡线确认新十字后先推进阶段，让规划在同一帧读取新阶段和事件。
+     * 仍遵守外部动作优先、默认开关及运行模式；关闭期间和其他动作期间不计数。
+     * 这里只在单帧新事件上计数，旧的动作选择入口不再加一，避免一次十字加两次。 */
+    if (sensor_data != 0 && external_command == 0u && auto_was_enabled &&
+        g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_TRACK &&
+        g_route.state == ROUTE_FOLLOW && g_route.junction_event &&
+        g_route.junction == JUNCTION_CROSS && g_project_stage != UINT32_MAX) {
+        ++g_project_stage;
+        DebugLog_Write(LOG_INFO, "STAGE_NEXT");
+    }
+
+    /* 再调你的规划函数；默认开关只控制阶段计数与后面的自动决策，不控制这个入口。 */
     if (sensor_data != 0 && external_command == 0u &&
         g_mode_fsm.status != CAR_FAULT) {
         PathPlan_Tick();

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests')
 )
@@ -25,6 +25,7 @@ $includeDirectories = @(
     (Join-Path $projectRoot 'Com/Com_PID'),
     (Join-Path $projectRoot 'Com/Com_Limit'),
     (Join-Path $projectRoot 'Int/Int_Track'),
+    (Join-Path $projectRoot 'Int/Int_Beep'),
     (Join-Path $projectRoot 'Int/Int_OLED'),
     (Join-Path $projectRoot 'Int/Int_Motor')
 )
