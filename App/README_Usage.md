@@ -1,332 +1,63 @@
-**小车状态机与 OLED 日志使用指南**
+# 小车运动、固定路线与调试
 
-本指南对应当前工程代码。动作执行、路线选择与 OLED 显示已经接通；当前 `main.c` 已启用上电 IMU 直行约 10 秒后停车的测试，其他启动示例供你替换使用。
+当前默认两个测试开关均为 0。上电完成 IMU 静止校准后，检查固定路线的全部时间参数；尚未标定时保持停车，OLED 显示 WAIT_CAL。当前时间全部留为 0，因此默认不会自动跑车。
 
-**1. 先理解各模块的职责**
+## 先选择启动方式
 
-| 文件 | 职责 | 你主要怎样使用 |
+配置集中在 `Core/Src/main.c` 的 USER CODE BEGIN PD：
+
+| 目的 | TRACK_ONLY_TEST_ENABLE | IMU_STRAIGHT_TEST_ENABLE |
 | --- | --- | --- |
-| `App/Mode_FSM/Mode_FSM.h` | 动作接口和运行状态 | 调用 `Car_*()`，用 `ModeFSM_GetSnapshot()` 读状态 |
-| `App/Route/Route.c` | 条件确认和示例路线 | 调整前移时间，替换路线选择策略 |
-| `App/Route/Route.h` | 自动决策开关和检测结果 | 调用 `Route_Enable()` |
-| `App/IMU_Task/IMU_Task.c` | IMU 转弯、直行 PID | 调试控制参数，日常发动作不必直接调用这里的控制函数 |
-| `App/Track_Task/Track_Task.c` | 灰度循迹 PID | 调试循迹速度和 PID 参数 |
-| `App/Debug_Log/Debug_Log.h` | 手动事件记录 | 调用 `DebugLog_Write()` |
-| `Core/Src/main.c` | 初始化、前台显示、通信重试 | 放一次性的启动请求或上层轮询逻辑 |
+| 普通道路、U 型隧道纯循迹 | 1 | 任意，纯循迹优先 |
+| 单个直通项目限时标定 | 0 | 1 |
+| 已标定的完整固定路线 | 0 | 0 |
 
-```mermaid
-flowchart TD
-    D[上层：Route 或你的规划模块] -->|选择动作，调用一次| Q[Car_* 请求邮箱]
-    Q --> C[TIM4：每 10 ms 执行 ModeFSM_Tick]
-    G[八路灰度采样] --> C
-    C --> T[MODE_TRACK：循迹 PID]
-    C --> I[MODE_IMU：采样 IMU，角度 PID]
-    T --> M[左右轮 PWM]
-    I --> M
-    C -->|动作及条件事件| L[三条日志与故障现场]
-    L --> O[主循环：每 100 ms 显示 OLED]
-    I -->|读取失败或转弯超时| F[先保存现场，再停车]
-    F --> L
-```
+单项目测试的 `IMU_STRAIGHT_TEST_PWM=600u`、`IMU_STRAIGHT_TEST_MS=1000u`。先测 1 秒，此后每次增加 100 ms；普通直通项目把 PWM 改为 500。测试限时由 TIM4 控制帧执行，从请求真正接受开始，到时在控制入口停车；不再依赖主循环或 OLED 刷新及时返回。
 
-每个控制帧只运行当前模式的控制器。循迹时暂停 IMU 采样与解算；IMU 模式仍读取灰度用于条件检测，循迹 PID 不运行。这里的“关闭”指暂停相应控制功能，没有切断传感器供电。
+纯循迹模式不依赖 IMU 校准成功。限时 IMU 测试和自动路线都要求初始化与校准成功；通信重连不会自动恢复运动。
 
-**2. 当前上电后会做什么**
+## 实际调用顺序
 
-`main.c` 的 `IMU_STRAIGHT_TEST_ENABLE` 当前为 `1u`。上电后初始化外设并等待静止校准，校准成功蜂鸣后关闭 Route 自动决策、提交一次 IMU 直行请求，再启动 TIM4。小车保持首帧接受动作时的朝向，约 `IMU_STRAIGHT_TEST_MS = 10000u` 毫秒后提交一次停车请求。前台轮询和控制帧可能带来少量停车延迟。
+TIM4 每 10 ms → 采样八路灰度 → 接受外部请求 → Route 监测和决策 → 接受 Route 本帧请求 → 必要时更新 IMU → 当前唯一控制器 → 左右轮 PWM。
 
-初始化或校准失败时保持停车，日志显示 `IMU_INIT` 或 `CAL_FAIL`。测试期间读取失败仍由运动层进入 IMU 故障；前台通信重试不会自动重启本次测试，已有故障现场不会被定时停车覆盖。保持小车在上电校准期间静止，观察 OLED 的 `FWD`、`Y/T/E`、`I` 和左右轮 PWM；此启动流程尚需板上验证。
+- `Route` 保存路线表、项目计时和完成条件，不写 PID 或电机。
+- `ModeFSM` 接受动作、建立航向基准、处理停车与故障。
+- `Track_Task` 和 `IMU_Task` 互斥控制电机；原左右轮方向和 PID 增益保持现状。
+- OLED 只在前台显示快照；中断里不调用 OLED 通信或 HAL_Delay。
 
-将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u` 后恢复默认自动循迹路线，2°直行死区仍保留。`ModeFSM_Init()` 的初始模式是 `MODE_TRACK`，`Route` 默认开启。下面的路线描述适用于关闭启动测试后：
+## 动作接口
 
-当前示例路线：
-
-- 左路口：连续三帧确认 → IMU 保持航向前移 90 帧 → 左转 90° → 自动接循迹。
-- 右路口：连续三帧确认 → IMU 保持航向前移 90 帧 → 右转 90° → 自动接循迹。
-- 十字路口：连续两帧确认 → IMU 保持航向直行 500 帧 → 自动接循迹。
-
-一帧为 10 ms，所以 90 帧约 0.9 秒，500 帧约 5 秒。这是按时间近似前移，不能直接换算为固定厘米数，仍需根据实际车速校准。Route 源码的部分时间注释与数值不同，以实际帧数为准。
-
-路口判断按八路灰度的 IN1 至 IN8：左四路同时在线为左路口，右四路同时在线为右路口，八路同时在线优先判为十字。在线电平由 `Track_Task.h` 的 `LINE_RAW_VALUE` 决定，当前为 1；OLED 上的 `G` 已换算为“1 表示在线”。
-
-同一个路口只触发一次，连续三帧离开路口后才能再触发。重新开启自动路线不会重放已经触发的路口事件。
-
-**3. 五类动作怎样调用**
-
-在使用接口的文件加入：
+下列是接口清单，每次只选一个，不能依次粘贴成动作队列：
 
 ```c
-#include "Mode_FSM.h"
-#include "Route.h"
-#include "Debug_Log.h"
+Car_Track();                        /* 持续灰度循迹，基础 PWM 400 */
+Car_ImuForward(500u);                /* 持续 IMU 直行，项目内不执行丢线降速 */
+Car_ImuForward(600u);                /* 台阶/斜坡的首轮试车 PWM */
+Car_ImuForwardTimed(600u, 1000u);     /* 单项目标定，控制中断限时停车 */
+Car_TurnLeft90(MODE_TRACK);          /* 原地左转 90 度，完成后循迹 */
+Car_TurnRight90(MODE_IMU);           /* 原地右转 90 度，完成后保持目标直行，PWM 500 */
+Car_Stop();                         /* 下一控制帧停车，待处理 STOP 优先 */
 ```
 
-| 调用 | 接受后做什么 | 后续行为 |
-| --- | --- | --- |
-| `Car_Track();` | 灰度循迹 PID 接管 | 持续跟线；开启 Route 时按路口选择动作 |
-| `Car_ImuForward();` | 以接受动作时的朝向为 0°，保持该方向直行 | 持续到新动作或故障，没有内置距离或时间 |
-| `Car_TurnLeft90(MODE_TRACK);` | 以本次动作起点为基准，目标 +90° | 完成后自动循迹 |
-| `Car_TurnLeft90(MODE_IMU);` | 目标 +90° | 完成后自动沿转后航向直行 |
-| `Car_TurnRight90(MODE_TRACK);` | 目标 -90° | 完成后自动循迹 |
-| `Car_TurnRight90(MODE_IMU);` | 目标 -90° | 完成后自动沿转后航向直行 |
-| `Car_Stop();` | 清 PID，并由控制入口输出两轮零 PWM | 保持停车，等待新的动作 |
+新独立 IMU 动作只在接受时重建一次航向基准。不要在 while(1) 中重复发送；邮箱只有一个位置，多个普通请求只保留最后一个。PWM 与直行动作一起复制，不使用另一个易被覆盖的速度请求。
 
-左右转的参数表示**转弯完成后去哪一种模式**；转弯本身都使用 IMU 角度闭环。直接调用左右转是原地转弯，不包含 Route 的转前前移。
+IMU 直行死区保留 1 度，增益保留 {40, 0, 25}，纠偏上限改为 ±100 PWM。两轮直行输出限定 0 至 1000，不反转。正常 600 PWM 越障时两轮范围为 500 至 700；原地转弯仍允许两轮反向。
 
-例如调用 `Car_TurnLeft90(MODE_IMU)`：本次基准从 0°开始，目标为 +90°，完成后 IMU 直行仍保持 +90°。不要再补调一次 `Car_ImuForward()`；这个接口会以当时的实际朝向重新建立 0°基准，原转弯目标就被重新设定了。
+## 自动路线与中止
 
-每次新的独立 IMU 动作都会重建自己的角度起点。连续两次左转各是相对当前朝向的 90°，OLED 的目标可能都显示 +90°，不能把它当作地图中的全局朝向。
+`Route_Start()` 只在停车时检查整表并从起点准备启动；下一控制帧开始。未标定返回 0 并显示 WAIT_CAL。调用者必须先完成 IMU 校准，main.c 已执行这个检查。
 
-**4. 自动决策开关怎么选**
+`Route_Enable(0u)` 关闭路线但不直接停车；正在执行的实际动作仍继续，需要停车时另调 Car_Stop。任何外部运动请求、停车、故障或禁用都会中止当前自动路线，不推进下标。Enable(1) 不能自动续跑；重新放回起点并停车后，显式 Route_Start，或重新上电。
 
-```c
-Route_Enable(1);  /* 使用当前示例路线自动安排路口动作。 */
-Route_Enable(0);  /* 只监测条件，由你的上层代码决定动作。 */
-```
+路线、逐项时间含义与标定记录见 [FIXED_ROUTE_GUIDE.md](Route/FIXED_ROUTE_GUIDE.md)。
 
-上述两行是两种可选设置，不要按顺序都粘贴。单独测试循迹、IMU 直行和原地转弯时，先关闭示例路线，避免以后新的路口事件又自动发动作。
+## OLED
 
-关闭开关不会停车，也不会切回循迹；当前 IMU 直行仍会继续，正在转弯的动作仍会由运动层完成并接预定模式。关闭后下一控制帧取消未完成的 Route 步骤。需要停车时另外调用 `Car_Stop()`。
+- 第 1 行：运行状态、动作、路线阶段。
+- 第 2 行：有效 yaw 与目标；循迹时显示 --。
+- 第 3 行：自动路线显示 S（步骤，从 1 开始）、P（项目编号，0 为道路）、N（当前阶段帧数，乘 10 是毫秒）；手动模式保留 E 与动作 N。
+- 第 4 行：八路灰度与 IMU 通信状态。
+- 第 5 行：左右轮实际指令 PWM。
+- 后 3 行：事件；ROUTE_TO 是路线超时，故障现场保留停车前 PWM、步骤与计时。
 
-**5. 启动时怎样选择一个测试动作**
-
-在 `main.c` 的 IMU 初始化/校准结束之后、下面这行之前，放一组启动代码：
-
-```c
-HAL_TIM_Base_Start_IT(&htim4);
-```
-
-要先经过 `ModeFSM_Init()`、`IMUTask_Init()` 和传感器初始化，再提交请求；`ModeFSM_Init()` 会清空请求邮箱。使用下面的其他启动示例前，先将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u`，避免测试请求和定时停车逻辑干扰。以下每次只选择一组。
-
-```c
-/* 方案 A：纯循迹，不自动安排路口转弯。 */
-Route_Enable(0);
-Car_Track();
-```
-
-```c
-/* 方案 B：IMU 保持启动时的朝向直行。 */
-Route_Enable(0);
-Car_ImuForward();
-```
-
-```c
-/* 方案 C：右转 90°，然后自动接循迹。 */
-Route_Enable(0);
-Car_TurnRight90(MODE_TRACK);
-```
-
-```c
-/* 方案 D：启动后停车，等待按键或上层代码提交动作。 */
-Route_Enable(0);
-Car_Stop();
-```
-
-当前恢复默认自动循迹路线只需将 `IMU_STRAIGHT_TEST_ENABLE` 改为 `0u`，并确保没有另加启动请求。自行编写的启动代码也可选择 `Route_Enable(1); Car_Track();` 这一组。
-
-**6. 动作请求的时序必须理解**
-
-`Car_*()` 只把请求写入一个邮箱，不在函数调用期间完成运动。正常情况下下一次 10 ms 控制帧接受请求，清 PID 历史、建立角度基准并执行对应控制。
-
-```c
-/* 不能这样表达“直行完再转弯”：没有动作队列，前一个请求可能被覆盖。 */
-Car_ImuForward();
-Car_TurnLeft90(MODE_TRACK);
-```
-
-如果状态机尚未取走第一个请求，邮箱最后只剩下左转请求。待处理的停车请求优先，后续运动请求不会覆盖它。
-
-也不要在 `while (1)` 中每次都调用 `Car_ImuForward()` 或 `Car_TurnLeft90()`。这会反复初始化动作、角度基准、PID 和帧数；直行纠偏可能失效，转弯也无法正常完成或超时。
-
-正确方法是：发一次动作 → 每次循环检查条件 → 条件满足时发下一动作一次。按键、串口指令或传感器条件也应在新事件发生时提交一次请求。
-
-**7. 完整例子：直行约 2 秒 → 右转 → 再直行约 1 秒 → 停车**
-
-只在运行此例时启用下面三处代码；保持现有 OLED 显示和通信重试逻辑。本例中动作请求只来自演示程序，`Route` 自动选择关闭。
-
-粘贴前，先在 `main.c` 的 `/* USER CODE BEGIN Includes */` 区域补上 `#include "Route.h"`；当前该文件已有 `Mode_FSM.h` 与 `Debug_Log.h`。
-
-第一处，在 `main.c` 的 `/* USER CODE BEGIN 0 */` 区域加入函数：
-
-<!-- demo-code-begin -->
-```c
-/**
- * @brief 轮询演示路线，按动作帧数与转弯完成计数提交下一步。
- * @param 无。
- * @return 无。
- * @note 从主循环调用，检查间隔至少 10 ms；不直接采样、运行 PID 或写电机。
- *       配合启动前 Route_Enable(0) 与 Car_ImuForward 使用；每个动作只提交一次。
- *       转后 MODE_IMU 自动保持 -90°目标；发生故障或停车时不继续推进演示。
- *       静态步骤只在复位时初始化，重新演示需重新启动程序。
- */
-static void Demo_Poll(void)
-{
-    static uint8_t step = 0u;
-    static uint32_t turn_count_before = 0u;
-    static uint32_t last_poll_ms = 0u;
-    uint32_t now_ms = HAL_GetTick();
-    ModeFSM_t car;
-
-    /* 只轮询上层条件，10 ms 运动控制仍由 TIM4 独占。 */
-    if ((uint32_t)(now_ms - last_poll_ms) < 10u) {
-        return;
-    }
-    last_poll_ms = now_ms;
-    ModeFSM_GetSnapshot(&car);
-
-    /* 故障和停车期间不提交新动作，保留故障现场。 */
-    if (car.status != CAR_RUNNING) {
-        return;
-    }
-
-    switch (step) {
-    case 0u:
-        /* 等待启动的 IMU 直行动作实际接受，并执行约 200 × 10 ms。 */
-        if (car.mode == MODE_IMU && car.imu_state == IMU_FORWARD &&
-            car.state_frames >= 200u) {
-            turn_count_before = car.turn_count;
-            Car_TurnRight90(MODE_IMU);
-            step = 1u;  /* 立即切换等待步骤，防止主循环重复提交右转。 */
-        }
-        break;
-
-    case 1u:
-        /* 完成计数改变才表示转弯完成，CAR_RUNNING 不能作为完成条件。 */
-        if (car.turn_count != turn_count_before) {
-            step = 2u;
-            /* 运动层已经接上 IMU 直行，不能再发直行请求重建角度基准。 */
-        }
-        break;
-
-    case 2u:
-        /* 转弯完成时动作帧数已重新计数；沿转后航向走约一秒。 */
-        if (car.mode == MODE_IMU && car.imu_state == IMU_FORWARD &&
-            car.state_frames >= 100u) {
-            Car_Stop();
-            step = 3u;
-        }
-        break;
-
-    default:
-        break;  /* 演示结束，等待下一控制帧接受停车。 */
-    }
-}
-```
-<!-- demo-code-end -->
-
-第二处，在传感器初始化结束后、TIM4 启动前加入：
-
-```c
-Route_Enable(0);
-Car_ImuForward();
-```
-
-第三处，在现有 `while (1)` 的循环体内加入：
-
-```c
-Demo_Poll();
-```
-
-这里没有长时间 `HAL_Delay()` 或阻塞等待，所以主循环还能持续显示 OLED、重试通信。时间按动作接受后以及转弯完成后的帧数计算；采样相位和前台通信可能延后下一动作请求，因此使用“约两秒/约一秒”。需要更及时的步骤切换时，把轻量条件判断放到 Route 的 10 ms 入口。这是运动时长示例，不是距离闭环。
-
-**8. 怎样读状态和判断完成**
-
-主循环用快照接口：
-
-```c
-ModeFSM_t car;
-ModeFSM_GetSnapshot(&car);
-```
-
-| 字段 | 你能知道什么 |
-| --- | --- |
-| `car.status` | 运行、停车或故障 |
-| `car.mode` | 当前由循迹还是 IMU 控制 |
-| `car.imu_state` | IMU 直行、左转或右转 |
-| `car.state_frames` | 当前动作帧数，一帧 10 ms，动作切换后重新计数 |
-| `car.turn_count` | 已完成转弯总数；发起前保存，之后比较是否变化 |
-| `car.command_id` | 接受请求的序号，变化表示有请求被处理，不等于动作已完成 |
-| `car.imu_valid` | 本控制帧是否取得有效 IMU 角度；与通信就绪标志不同 |
-| `car.fault` | IMU、转弯超时或指令参数故障 |
-
-`CAR_RUNNING` 在直行与转弯期间都成立；判断转弯完成要比较 `turn_count`，不能只看运行状态。非法请求也会更新 `command_id`，需要结合 `status/fault` 判断是否成功。
-
-`g_route.junction_event`、`line_found_event` 和 `line_lost_event` 只保持一个控制帧，即 10 ms，主循环可能错过。当前 Route 与日志已在该控制帧消费这些事件；不要另写主循环轮询来假定能捕获每个短事件。需要前台规划时，应增加锁存或传递接口，并让 TIM4 只执行已经算好的路线步骤。
-
-**9. OLED 应该怎么看**
-
-```text
-FAULT L90 R:TURN
-Y:+37.2 T:+90.0
-E:+52.8 N:300
-G:00000000 I:1
-L:-427 R:+427
-12 I JUNC_L
-13 I L90>TRK
-16 E TURN_TO
-```
-
-- 第一行：运行状态、动作和 Route 步骤。手动转弯时 Route 可能仍为 `FOLLOW`，表示没有自动路线步骤；动作仍显示 `L90/R90`。
-- `Y/T/E`：当前相对角度、目标、最短角差，单位为度。上例还差约 52.8°。
-- `N`：本次动作帧数；300 帧为约 3 秒。
-- `G`：IN1 至 IN8 的在线情况，1 表示在线。
-- `I`：IMU 通信就绪；1 不保证本帧角度有效。
-- `L/R`：左右轮有符号 PWM 指令，不是实测速度。
-- 最后三行：开机秒数、等级、短消息；最新一条在底部。
-
-循迹期间 `Y/T/E` 显示 `--`；IMU 本帧无效时 `Y/E` 显示 `--`，有限目标 `T` 仍可显示。超过 ±999.9°以及 NaN/Inf 不显示数值。
-
-手动加日志：
-
-```c
-DebugLog_Write(LOG_INFO, "CHECK_POINT");
-DebugLog_Write(LOG_WARN, "WAIT_LINE");
-DebugLog_Write(LOG_ERROR, "USER_ERR");
-```
-
-固定保存最近三条，每条最多 11 个英文字符，超过截断。空指针和空字符串忽略，百分号为普通文本，不接受 printf 参数。记录接口可用于主循环或中断，但只在事件发生时调用，不要每帧刷同一条消息。
-
-`DebugLog_Write(LOG_ERROR, ...)` 只写一条错误级别事件，屏幕用 E 表示，不会主动停车或冻结现场。运行故障由运动层自动停车并调用 `DebugLog_CaptureFault()`。普通使用不必手动调用 CaptureFault、ClearFault 或再次 Init。
-
-首次故障会保存停车前 PWM 并冻结屏幕，所以真实电机已经停止，OLED 仍可能显示原先的非零 PWM。普通 `Car_Stop()` 保留冻结现场；接受新的有效运动动作后自动解除冻结。通信恢复只恢复通信，不会自动让车继续跑。OLED 失败按一秒重连，恢复后重绘，历史不清空。
-
-**10. 哪些参数影响使用**
-
-| 文件与参数 | 当前值 | 用途 |
-| --- | --- | --- |
-| `main.c` 的 `IMU_STRAIGHT_TEST_ENABLE` | 1 | 开启上电 IMU 直行测试，改为 0 恢复默认路线 |
-| `main.c` 的 `IMU_STRAIGHT_TEST_MS` | 10000 ms | 测试计时到期后提交一次停车请求 |
-| `Route.c` 的 `ROUTE_CONFIRM_FRAMES` | 3 帧 | 确认左右路口及有线/无线条件 |
-| `Route.c` 的 `ROUTE_CROSS_CONFIRM_FRAMES` | 2 帧 | 确认十字路口 |
-| `Route.c` 的 `ROUTE_APPROACH_FRAMES` | 90 帧 | 转前前移时长，约 0.9 秒 |
-| `Route.c` 的 `ROUTE_CROSSING_FRAMES` | 500 帧 | 十字路口穿越时长，约 5 秒 |
-| `Mode_FSM.c` 的 `TURN_DONE_TOLERANCE` | 7° | 误差绝对值小于此值才累计完成帧 |
-| `Mode_FSM.c` 的 `TURN_DONE_FRAMES` | 3 帧 | 连续满足容差才完成 |
-| `Mode_FSM.c` 的 `TURN_TIMEOUT_FRAMES` | 300 帧 | 转弯 3 秒超时停车 |
-| `IMU_Task.c` 的 `FWD_BASE_SPEED` | 400 | IMU 直行基础 PWM |
-| `IMU_Task.c` 的 `FWD_DEADBAND` | 2° | 绝对值小于 2°的误差送入直行 PID 前归零 |
-| `Track_Task.c` 中初始化的 `base_speed` | 400 | 循迹基础 PWM |
-| `Track_Task.h` 的 `LINE_LOST_SCALE` | 0.6 | 循迹丢线时输出降速比例 |
-
-目前 IMU 直行使用 2°死区：误差绝对值小于 2°时输入归零，恰好 2°和更大的误差继续进入 PID。已有微分历史会按原滤波系数衰减，死区内不保证两轮 PWM 立即相等。上车观察 `Y/E` 与左右轮 PWM，确认方向、电平与时序后再整定控制参数。
-
-循迹丢线会沿用最近偏差并降速，目前不会自动停车。日志的 `W LINE_OFF` 表示丢线提醒，停车条件需要上层另行规定。
-
-**11. 后续路径规划怎样接入**
-
-一种做法是把规划结果交给现在的 Route：保持 `Route_Enable(1)`，替换 `select_route_action()` 的方向选择，保留确认、前移、转弯等待等执行步骤。耗时的路径搜索放主循环，10 ms 入口只读取准备好的下一路线步骤。
-
-另一种做法是由你另写规划模块负责动作：先 `Route_Enable(0)`，该模块在条件满足时发一次 `Car_*()`，像演示程序一样等待时长或完成条件，再发下一动作。短暂传感器事件需要可靠地锁存并交给前台使用。避免两处同时安排不同的动作请求。
-
-地图位置、全局方向、已经走过的路口数和路线索引由上层保存。当前 `target_yaw/yaw` 是每次 IMU 动作的局部基准，不能直接充当全局定位；当前接口也没有距离闭环。
-
-**12. 使用时保留现有调度关系**
-
-- TIM4 每 10 ms 唯一调用 `ModeFSM_Tick()`，不要在主循环再调用一次。
-- `Route_Tick()` 已被运动层调用，不要重复调用。
-- 不另行调用 `TrackTask_Tick()`、`follow_line()`、IMU Tick 或直接写电机，否则可能同时出现两个控制来源。
-- `DebugLog_Display()` 已在主循环每 100 ms 调用，不要放入控制中断。
-- 初始化函数只在启动阶段调用；OLED 重连只初始化 OLED，不重新初始化状态机或日志。
-- 按键采用消抖后的按下事件发动作；串口每收到一个新命令提交一次。
-
-软件测试与 Keil 编译已验证模块行为。示例中的机械运动、前移时间、PID 参数和 OLED 断线恢复效果仍需在实际小车上验证。
+宿主测试与 Keil 编译不能替代实车的黑线宽度、时间、转向和爬升能力验证。

@@ -14,53 +14,63 @@
 #include <math.h>
 
 #define TURN_DONE_TOLERANCE 7.0f /* 转弯完成误差，单位：度 */
-#define TURN_DONE_FRAMES 3u      /* 转弯完成确认帧数,超时->????? */
+#define TURN_DONE_FRAMES 3u      /* 误差连续三帧在容差内才算完成 */
 #define TURN_TIMEOUT_FRAMES 300u /* 300 × 10 ms = 3 秒，上车后校准 */
 
-// 循迹数组
+/* 本帧八路灰度数据；循迹用于控制，IMU 模式用于路线条件检测。 */
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
-// new状态机对象
+/* 由 TIM4 维护的当前运动状态。 */
 volatile ModeFSM_t g_mode_fsm;
 
-// 动作对象
+/* 邮箱中的动作类型，与实际执行状态分开保存。 */
 typedef enum
 {
     COMMAND_TRACK = 0,
     COMMAND_IMU_FORWARD,
+    COMMAND_IMU_TIMED,
     COMMAND_LEFT,
     COMMAND_RIGHT,
-    COMMAND_STOP
+    COMMAND_STOP,
+    COMMAND_ROUTE_TIMEOUT
 } CarCommand;
 
-//
+/* pending 表示邮箱中有尚未接受的请求；next_mode 只在转弯时使用。 */
 typedef struct
 {
     CarCommand command; // 要执行什么动作
     CarMode next_mode;  // 转弯完成后的模式
+    uint16_t base_pwm;  /* IMU 直行基础占空比，与 command 在同一临界区复制 */
+    uint32_t duration_ms; /* 单项目测试限时，普通动作不使用 */
     uint8_t pending;    // 请求标志
 } CarRequest;
 
 /* 单个请求邮箱：正常请求最后一个生效，同帧停车请求优先。 存储外部命令信息 */
 static volatile CarRequest s_request;
 static uint8_t s_turn_done_frames; // 转弯完成帧数
+static uint32_t s_forward_limit_frames; /* 单项目测试最多执行帧数；0 表示普通持续直行 */
 
 /**
  * @brief 将动作写入请求邮箱，使上层无需直接改运动状态。
  * @param command 请求动作，不在此函数内执行。
  * @param next_mode 转弯完成后的模式；非转弯动作不使用此参数。
+ * @param base_pwm 直行 PWM；转弯后接 IMU 时使用普通直行值 500。
+ * @param duration_ms 单项目测试时长，普通动作传 0。
  * @return 无。
  * @note 可从主循环或 Route 调用；短暂屏蔽中断，待处理停车不会被运动请求覆盖。
  */
-static void submit_request(CarCommand command, CarMode next_mode)
+static void submit_request(CarCommand command, CarMode next_mode, uint16_t base_pwm,
+                           uint32_t duration_ms)
 {
     uint32_t saved_primask = __get_PRIMASK();
     __disable_irq();
 
-    // 仅在邮箱空或新请求为非停车时写入，避免同帧停车被覆盖。
+    /* 已等待处理的 STOP 不能被其他请求覆盖；其余请求最后一个生效。 */
     if (s_request.pending == 0u || s_request.command != COMMAND_STOP)
     {
         s_request.command = command;
         s_request.next_mode = next_mode;
+        s_request.base_pwm = base_pwm;
+        s_request.duration_ms = duration_ms;
         s_request.pending = 1u; // 产生请求
     }
 
@@ -78,7 +88,7 @@ static uint8_t take_request(CarRequest *request)
     uint8_t pending;
     uint32_t saved_primask = __get_PRIMASK();
     __disable_irq();
-    // 这里的pending防止中断被打断，导致请求状态不一致
+    /* 在临界区内复制并清标志，保证取出的动作与请求标志属于同一次提交。 */
     pending = s_request.pending;
     // 仅在有请求时才写入副本，避免无效数据覆盖。
     if (pending != 0u)
@@ -129,12 +139,23 @@ static void set_fault(CarFault fault)
  */
 static void apply_request(const CarRequest *request)
 {
-    // 用于调试，记录请求动作次数
+    const char *command_text = 0; /* 本次真正接受的动作日志；被覆盖的请求不记录。 */
+    uint8_t is_turn = (uint8_t)(request->command == COMMAND_LEFT ||
+                              request->command == COMMAND_RIGHT);
+
     g_mode_fsm.command_id++;
 
-    // 如果请求是左右转，转后模式必须是循迹或 IMU
-    if ((request->command == COMMAND_LEFT || request->command == COMMAND_RIGHT) &&
-        request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU)
+    if (request->command == COMMAND_ROUTE_TIMEOUT)
+    {
+        set_fault(CAR_FAULT_ROUTE_TIMEOUT);
+        return;
+    }
+
+    /* 先校验，非法请求保留故障现场，不解除日志冻结。 */
+    if ((is_turn && request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU) ||
+        ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED) &&
+         (request->base_pwm == 0u || request->base_pwm > 1000u)) ||
+        (request->command == COMMAND_IMU_TIMED && request->duration_ms == 0u))
     {
         set_fault(CAR_FAULT_COMMAND);
         return;
@@ -146,52 +167,63 @@ static void apply_request(const CarRequest *request)
     }
 
     g_mode_fsm.status = CAR_RUNNING;
-    g_mode_fsm.fault = CAR_FAULT_NONE; // 清除当前故障原因
-    g_mode_fsm.state_frames = 0u;      // 动作计时从零开始。
+    g_mode_fsm.fault = CAR_FAULT_NONE;
+    g_mode_fsm.state_frames = 0u;
     g_mode_fsm.target_yaw = 0.0f;
-    g_mode_fsm.imu_state = IMU_FORWARD; // 因为默认角度是0，所以默认是前进
-    g_mode_fsm.imu_valid = 0u;          // 本帧角度暂时无效，必须重新采样确认。
+    g_mode_fsm.imu_state = IMU_FORWARD;
+    g_mode_fsm.imu_valid = 0u; /* 新动作必须等待本帧有效采样。 */
+    s_forward_limit_frames = 0u;
 
-    if (request->command == COMMAND_STOP)
+    /* 只有新 IMU 动作重建零度基准；STOP 保留原模式，TRACK 不复位姿态。 */
+    if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK)
     {
-        g_mode_fsm.status = CAR_STOPPED;
+        g_mode_fsm.mode = MODE_IMU;
+        Attitude_Reset();
     }
-    else if (request->command == COMMAND_TRACK) //循迹态
-    {
-        g_mode_fsm.mode = MODE_TRACK;
-    }
-    else
-    {
-        g_mode_fsm.mode = MODE_IMU;     // IMU态
-        Attitude_Reset(); /* 新动作以此刻朝向为起点，不沿用上次转弯角度。 */
-        if (request->command == COMMAND_LEFT || request->command == COMMAND_RIGHT)
-        {
-            g_mode_fsm.imu_state = (request->command == COMMAND_LEFT) ? IMU_TURN_LEFT : IMU_TURN_RIGHT;
-            g_mode_fsm.target_yaw = (request->command == COMMAND_LEFT) ? 90.0f : -90.0f;
-            g_mode_fsm.after_turn_mode = request->next_mode;
-        }
-    }
-    reset_controllers(g_mode_fsm.target_yaw); //重置控制器，避免上一动作的历史影响新动作
-    /* 仅记录真正被状态机接受的动作，转弯消息同时说明完成后的去向。 */
+
+    /* 每个动作的状态设置与日志放在同一分支，避免分开维护两套动作判断。 */
     switch (request->command)
     {
     case COMMAND_TRACK:
-        DebugLog_Write(LOG_INFO, "TRACK");
+        g_mode_fsm.mode = MODE_TRACK;
+        command_text = "TRACK";
         break;
     case COMMAND_IMU_FORWARD:
-        DebugLog_Write(LOG_INFO, "IMU_FWD");
+    case COMMAND_IMU_TIMED:
+        g_mode_fsm.base_pwm = request->base_pwm;
+        if (request->command == COMMAND_IMU_TIMED) {
+            s_forward_limit_frames = request->duration_ms / 10u;
+            if (request->duration_ms % 10u != 0u) ++s_forward_limit_frames;
+        }
+        command_text = "IMU_FWD";
         break;
-    case COMMAND_LEFT:                                           //左转后是循迹   imu态
-        DebugLog_Write(LOG_INFO, request->next_mode == MODE_TRACK ? "L90>TRK" : "L90>IMU");
-        break;
+    case COMMAND_LEFT:
     case COMMAND_RIGHT:
-        DebugLog_Write(LOG_INFO, request->next_mode == MODE_TRACK ? "R90>TRK" : "R90>IMU");
+        g_mode_fsm.base_pwm = 500u;
+        g_mode_fsm.imu_state = request->command == COMMAND_LEFT ? IMU_TURN_LEFT : IMU_TURN_RIGHT;
+        g_mode_fsm.target_yaw = request->command == COMMAND_LEFT ? 90.0f : -90.0f;
+        g_mode_fsm.after_turn_mode = request->next_mode;
+        if (request->command == COMMAND_LEFT)
+        {
+            command_text = request->next_mode == MODE_TRACK ? "L90>TRK" : "L90>IMU";
+        }
+        else
+        {
+            command_text = request->next_mode == MODE_TRACK ? "R90>TRK" : "R90>IMU";
+        }
         break;
     case COMMAND_STOP:
-        DebugLog_Write(LOG_INFO, "STOP"); /* 故障冻结时忽略此记录，保留原现场。 */
+        g_mode_fsm.status = CAR_STOPPED;
+        command_text = "STOP";
         break;
     default:
         break;
+    }
+
+    reset_controllers(g_mode_fsm.target_yaw);
+    if (command_text != 0)
+    {
+        DebugLog_Write(LOG_INFO, command_text);
     }
 }
 
@@ -220,162 +252,142 @@ static void finish_turn(void)
 /**
  * @brief 取得本帧有效 IMU 角度，并检查转弯完成与超时。
  * @param 无。
- * @return 1：可继续控制；0：发生故障，应停车。
+ * @return 无；发生故障时更新 status，由 ModeFSM_Tick 的统一出口停车。
  * @note 先读六轴、确认成功、再解算角度；仅有限 yaw 才设置本帧 imu_valid。
  *       禁止用读取失败前的旧 yaw 执行 PID，读取失败和超时均先锁存故障现场。
  */
-static uint8_t update_imu(void)
+static void update_imu(void)
 {
     float error;
     if (g_imu_ready == 0u)
     {
         set_fault(CAR_FAULT_IMU);
-        return 0u;
+        return;
     }
     Int_MPU6050_Tick();
     if (g_imu_ready == 0u)
     {
         set_fault(CAR_FAULT_IMU);
-        return 0u;
+        return;
     }
     Attitude_Tick();
     if (!isfinite(g_euler.yaw))
     {
         set_fault(CAR_FAULT_IMU);
-        return 0u;
+        return;
     }
     g_mode_fsm.imu_valid = 1u;
 
-    if (g_mode_fsm.imu_state != IMU_FORWARD)
+    /* 直行只需要有效角度；转弯才需要完成确认和超时判断。 */
+    if (g_mode_fsm.imu_state == IMU_FORWARD)
     {
-        error = IMUTask_GetError();
-        if (fabsf(error) < TURN_DONE_TOLERANCE)
-        {
-            s_turn_done_frames++;
-        }
-        else
-        {
-            s_turn_done_frames = 0u; /* 容差外一帧即重新计数，避免掠过目标便判完成。 */
-        }
-        if (s_turn_done_frames >= TURN_DONE_FRAMES)
-        {
-            finish_turn();
-        }
-        else if (g_mode_fsm.state_frames + 1u >= TURN_TIMEOUT_FRAMES)
-        {
-            g_mode_fsm.state_frames++;
-            set_fault(CAR_FAULT_TURN_TIMEOUT);
-            return 0u;
-        }
+        return;
     }
-    return 1u;
+
+    error = IMUTask_GetError();
+    if (fabsf(error) < TURN_DONE_TOLERANCE)
+    {
+        s_turn_done_frames++;
+    }
+    else
+    {
+        s_turn_done_frames = 0u; /* 容差外一帧即重新计数，避免掠过目标便判完成。 */
+    }
+    if (s_turn_done_frames >= TURN_DONE_FRAMES)
+    {
+        finish_turn();
+    }
+    else if (g_mode_fsm.state_frames + 1u >= TURN_TIMEOUT_FRAMES)
+    {
+        g_mode_fsm.state_frames++;
+        set_fault(CAR_FAULT_TURN_TIMEOUT);
+    }
 }
 
 /**
- * @brief 初始化模式状态机
- * @details 该函数用于初始化模式状态机的各个参数，包括初始模式、IMU状态、
- *          车辆状态、故障状态、转向完成帧数等，并初始化路线规划模块
- *
- * 上电后是循迹模式，IMU状态为前进，车辆状态为运行，故障状态为无故障，目标角度为0，状态帧数为0，转向完成帧数为0，转向次数为0
+ * @brief 上电初始化为停车，清空请求和完成计数，并初始化日志与 Route。
+ * @note 在启动 TIM4 前调用；此处不读取外设，也不输出电机 PWM。
  */
 void ModeFSM_Init(void)
 {
-    // 定义并初始化初始状态结构体，包含模式、IMU状态、车辆状态、故障状态等
-    ModeFSM_t initial = {MODE_TRACK, IMU_FORWARD, CAR_RUNNING, CAR_FAULT_NONE,
-                         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u};
-    // 将初始状态赋值给全局状态机变量
+    ModeFSM_t initial = {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
+                         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u};
     g_mode_fsm = initial;
-    // 清空请求标志位
     s_request.pending = 0u;
     s_turn_done_frames = 0u;
+    s_forward_limit_frames = 0u;
     DebugLog_Init();
     DebugLog_Write(LOG_INFO, "BOOT");
     Route_Init();
 }
 
-//-----------------------------------------------ModeFSM_Tick：主循环，每帧调用一次。---------------------------------/
 /**
  * @brief 执行一帧灰度检测、上层动作选择和互斥的运动控制。
  * @param 无。
  * @return 无。
  * @note 外部请求优先于 Route；灰度在 IMU 模式中仅用于条件观察，不能调用循迹 PID。
  *       每帧先撤销角度有效标记，只有本帧成功读取 IMU 后才能恢复，循迹期间显示 --。
- *
- * 第一次取请求：处理已有动作
-        ↓
-    Route_Tick：检测路口，可能提交新动作
-        ↓
-    第二次取请求：处理刚产生的动作
-        ↓
-    执行当前模式的 PID
- */
-/**
- * @brief 模式状态机主函数，处理车辆运行状态和模式切换
- * 该函数负责读取传感器数据、处理外部请求、更新车辆状态和执行相应控制任务
+ *       顺序：采样灰度 → 接受外部请求 → Route 决策 → 接受本帧请求 → IMU 更新 → 控制输出。
  */
 void ModeFSM_Tick(void)
 {
-    CarRequest request;           // 由于封装思想，对象属性不能直接访问，车辆请求结构体，存储外部命令信息
-    uint8_t external_command;     // 记录第一次取请求是否成功，告诉 Route 本帧是否已经接受外部动作
-    uint8_t stop_this_frame = 0u; // 记录本帧是否已经接受停车，防止后面的新动作覆盖它
+    CarRequest request;           /* 从邮箱取出的请求副本。 */
+    uint8_t external_command;      /* 本帧接受外部动作后，禁止 Route 覆盖。 */
+    uint8_t stop_this_frame = 0u;  /* 已接受停车时，新运动请求留到下一帧。 */
 
-    g_mode_fsm.imu_valid = 0u; /* 防止暂停采样或读取失败后把上一帧角度当作实时值。
-                                   清零表示：本帧还没有取得有效 IMU 角度，不是把角度数值清零，也不是认定传感器坏了。
-                                   灰度在循迹、IMU 直行、转弯等模式下都会读取。循迹时用于控制，IMU 模式下用于观察路口和黑线条件。*/
-    // 读取所有传感器数据
+    g_mode_fsm.imu_valid = 0u; /* 清除的是本帧有效标志，角度数值不在这里清零。 */
     Read_All_Track(g_sensor_data);
-    // 获取外部请求  并  提取命令类型
+
+    /* 第一次取请求：处理主循环或其他中断已经提交的动作。 */
     external_command = take_request(&request);
-    // 如果有外部命令，检查是否为停车命令并应用请求
     if (external_command != 0u)
     {
-        stop_this_frame = (uint8_t)(request.command == COMMAND_STOP); // 如果停车 stop_this_frame置1 否则置0
-        apply_request(&request);                                      // 采取外部请求
-    }
-
-    // 执行路径跟踪任务，传入传感器数据和外部命令
-    Route_Tick(g_sensor_data, external_command);
-
-    /* 已接受停车时，之后由其他中断提交的新动作留到下一帧，确保本帧确实输出零。 */
-    // 如果本帧没有停止，检查是否有新的外部请求并应用
-    if (stop_this_frame == 0u && take_request(&request) != 0u)
-    { // 利用逻辑短路，如果stop_this_frame为1，则不执行apply_request(&request);
+        stop_this_frame = (uint8_t)(request.command == COMMAND_STOP);
         apply_request(&request);
     }
 
-    // 更新IMU数据 如果车辆处于运行状态           且        使用IMU模式
-    if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU)
+    Route_Tick(g_sensor_data, external_command);
+
+    /* 第二次取请求：Route 本帧的决策立即生效；停车帧不再取新请求。 */
+    if (stop_this_frame == 0u && take_request(&request) != 0u)
     {
-        (void)update_imu();
+        apply_request(&request);
     }
 
-    // 所有的故障最后都走这里，如果车辆不处于运行状态，停止IMU任务并返回 停车状态
+    /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
+    if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU &&
+        g_mode_fsm.imu_state == IMU_FORWARD && s_forward_limit_frames != 0u &&
+        g_mode_fsm.state_frames >= s_forward_limit_frames)
+    {
+        g_mode_fsm.status = CAR_STOPPED;
+        reset_controllers(g_mode_fsm.target_yaw);
+        DebugLog_Write(LOG_INFO, "TEST_DONE");
+    }
+
+    if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU)
+    {
+        update_imu();
+    }
+
+    /* 主动停车和所有故障统一输出零 PWM，运行帧只执行一个控制器。 */
     if (g_mode_fsm.status != CAR_RUNNING)
     {
         IMUTask_Stop();
         return;
     }
 
-    // 增加状态帧计数
     g_mode_fsm.state_frames++;
 
-
-
-    //执行动作
-    // 根据当前模式执行不同的控制任务
     if (g_mode_fsm.mode == MODE_TRACK)
     {
-        // 跟踪线路模式,循迹PID
         follow_line(&g_line_controller, g_sensor_data, LINE_RAW_VALUE);
     }
     else if (g_mode_fsm.imu_state == IMU_FORWARD)
     {
-        // IMU前进模式, IMU直行PID
-        IMUTask_ForwardTick();
+        IMUTask_ForwardTick(g_mode_fsm.base_pwm);
     }
     else
     {
-        // IMU转向模式 转向PID
         IMUTask_TurnTick();
     }
 }
@@ -389,18 +401,40 @@ void ModeFSM_Tick(void)
  */
 void Car_Track(void)
 {
-    submit_request(COMMAND_TRACK, MODE_TRACK);
+    submit_request(COMMAND_TRACK, MODE_TRACK, 0u, 0u);
 }
 
 /**
  * @brief 请求以当前朝向建立零度基准并持续进行 IMU 直行。
- * @param 无。
+ * @param base_pwm 基础 PWM，范围 1 至 1000，与本次动作一起提交。
  * @return 无。
  * @note 下一帧接受动作；不设定距离或自动结束时间，结束条件由上层决定。
  */
-void Car_ImuForward(void)
+void Car_ImuForward(uint16_t base_pwm)
 {
-    submit_request(COMMAND_IMU_FORWARD, MODE_IMU);
+    submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u);
+}
+
+/**
+ * @brief 原子提交测试 PWM 和限时，避免先启动运动、再设置定时造成竞争。
+ * @param base_pwm 基础 PWM；非法值由运动层接受请求时故障停车。
+ * @param duration_ms 非零测试时长，计时不从主循环提交时刻开始。
+ * @return 无。
+ */
+void Car_ImuForwardTimed(uint16_t base_pwm, uint32_t duration_ms)
+{
+    submit_request(COMMAND_IMU_TIMED, MODE_IMU, base_pwm, duration_ms);
+}
+
+/**
+ * @brief 请求路线超时停车，在接受请求时捕获尚未清零的电机与路线现场。
+ * @param 无。
+ * @return 无。
+ * @note 只提交一次故障请求；停车优先规则与普通运动请求相同。
+ */
+void Car_RouteTimeout(void)
+{
+    submit_request(COMMAND_ROUTE_TIMEOUT, MODE_TRACK, 0u, 0u);
 }
 
 /**
@@ -411,7 +445,7 @@ void Car_ImuForward(void)
  */
 void Car_TurnLeft90(CarMode next_mode)
 {
-    submit_request(COMMAND_LEFT, next_mode);
+    submit_request(COMMAND_LEFT, next_mode, 500u, 0u);
 }
 
 /**
@@ -422,7 +456,7 @@ void Car_TurnLeft90(CarMode next_mode)
  */
 void Car_TurnRight90(CarMode next_mode)
 {
-    submit_request(COMMAND_RIGHT, next_mode);
+    submit_request(COMMAND_RIGHT, next_mode, 500u, 0u);
 }
 
 /**
@@ -434,7 +468,7 @@ void Car_TurnRight90(CarMode next_mode)
  */
 void Car_Stop(void)
 {
-    submit_request(COMMAND_STOP, MODE_TRACK);
+    submit_request(COMMAND_STOP, MODE_TRACK, 0u, 0u);
 }
 
 /**

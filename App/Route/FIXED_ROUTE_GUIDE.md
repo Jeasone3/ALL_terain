@@ -1,207 +1,76 @@
-# 固定路线接入指南
+# 固定路线标定与首次试车
 
-适用情形：起点和路线已知，在依次经过的路口执行左转、直行、右转或停车。
+当前实现已接入固定路线，时间参数全部留 0；默认上电校准后显示 WAIT_CAL 并停车。这是待标定状态，不是电机或 IMU 故障。
 
-本文件提供接入模板，尚未修改或接入现有固件。下面的“左、直、右、停”只是示例，需要按实际路线修改。
+## 1. 配置在哪里
 
-## 1. 代码写在哪里
-
-第一版直接写在 `App/Route/Route.c`：路线动作表负责选择动作，现有 Route 状态机负责前移、转弯、穿越和等待完成。保持 `Route_Enable(1u)`。
-
-现有分工：
-
-```text
-灰度确认新路口
-    → 路线动作表选择 LEFT / STRAIGHT / RIGHT / STOP
-    → Route 安排前移、转弯或穿越
-    → Car_* 提交一次动作请求
-    → ModeFSM_Tick 选择控制器
-    → PID 和电机输出
-```
-
-`junction` 是检测到的路口类型；`action` 是计划执行的动作。两者不能绑定：在十字路口也可以按路线选择左转或右转。
-
-## 2. 在 Route.c 的静态变量区域加入动作表
-
-放在现有 `s_turn_count_before` 定义之后、辅助函数之前：
+在 `App/Route/Route.c` 顶部的 `g_route_plan[24]` 填写。每行依次是：
 
 ```c
-typedef enum {
-    ROUTE_ACTION_LEFT = 0,
-    ROUTE_ACTION_STRAIGHT,
-    ROUTE_ACTION_RIGHT,
-    ROUTE_ACTION_STOP
-} RouteAction;
-
-/* 示例：第一个新路口左转，第二个直行，第三个右转，第四个停车。
- * 请按真实路线修改；每个表项对应一个依次确认的新路口。 */
-static const RouteAction s_route_plan[] = {
-    ROUTE_ACTION_LEFT,
-    ROUTE_ACTION_STRAIGHT,
-    ROUTE_ACTION_RIGHT,
-    ROUTE_ACTION_STOP
-};
-
-#define ROUTE_PLAN_COUNT \
-    (sizeof(s_route_plan) / sizeof(s_route_plan[0]))
-
-/* 只有已完成的动作才推进下标。 */
-static uint32_t s_plan_index = 0u;
+/* 动作、项目编号、基础 PWM、入口延时 ms、最短通过/前移 ms、阶段超时 ms */
+{ROUTE_ACTION_IMU_PASS, 2u, 600u, 0u, 0u, 0u}
 ```
 
-`STOP` 表示在该新路口被确认时发出停车请求，不表示自动定位到路口中心。若终点位于两路口之间，需要另行定义到达条件。
+这是字段说明；大台阶已经在真实表内，不要再追加一行。三个时间都需按实际路段测量，不能把说明里的 0 改成同一组猜测值。
 
-## 3. 在 Route_Init 中初始化下标
-
-在 `Route_Init()` 内加入：
-
-```c
-s_plan_index = 0u;
-```
-
-`ModeFSM_Init()` 已经调用 `Route_Init()`，主程序不用重复初始化 Route。这个模板只支持从已知起点重新开始；重置下标不能代替车辆回到起点。
-
-## 4. 替换 select_route_action 函数
-
-用下面的完整函数替换当前 `select_route_action()`。现有 `ROUTE_APPROACH`、`ROUTE_TURN`、`ROUTE_CROSSING` 的执行机制继续复用。
-
-```c
-static void select_route_action(RouteJunction junction)
-{
-    RouteAction action;
-
-    /* 表已用完：在本次新路口停车，避免越界。 */
-    if (s_plan_index >= ROUTE_PLAN_COUNT) {
-        DebugLog_Write(LOG_INFO, "PLAN_END");
-        Car_Stop();
-        return;
-    }
-
-    action = s_route_plan[s_plan_index];
-
-    if (action == ROUTE_ACTION_STOP) {
-        DebugLog_Write(LOG_INFO, "PLAN_END");
-        Car_Stop();
-        return;
-    }
-
-    /* 按当前粗分类检查转向是否匹配：十字可左转或右转。
-     * 直行出口是否存在须由已知地图保证，当前检测不能完整识别所有出口。 */
-    if ((action == ROUTE_ACTION_LEFT &&
-         junction != JUNCTION_LEFT && junction != JUNCTION_CROSS) ||
-        (action == ROUTE_ACTION_RIGHT &&
-         junction != JUNCTION_RIGHT && junction != JUNCTION_CROSS)) {
-        DebugLog_Write(LOG_ERROR, "PLAN_BAD");
-        Car_Stop();
-        return;
-    }
-
-    if (action == ROUTE_ACTION_LEFT || action == ROUTE_ACTION_RIGHT) {
-        /* 转向由动作表决定，不能直接沿用检测结果。 */
-        s_turn_direction = (action == ROUTE_ACTION_LEFT) ?
-                           JUNCTION_LEFT : JUNCTION_RIGHT;
-        g_route.state = ROUTE_APPROACH;
-    } else if (action == ROUTE_ACTION_STRAIGHT) {
-        g_route.state = ROUTE_CROSSING;
-    } else {
-        DebugLog_Write(LOG_ERROR, "PLAN_BAD");
-        Car_Stop();
-        return;
-    }
-
-    g_route.state_frames = 0u;
-    Car_ImuForward();
-}
-```
-
-确认左/右路口不一定代表所有出口都已正确识别。模板沿用当前灰度分类假设；路线动作必须与实际路口布局匹配。`PLAN_BAD` 表示模板发现转向与检测不匹配，并提交停车请求，未新增 `CarFault` 枚举。
-
-## 5. 只在动作完成时推进下标
-
-在 `cancel_route_step()` 定义之后、`select_route_action()` 之前新增：
-
-```c
-static void finish_route_step(void)
-{
-    if (s_plan_index < ROUTE_PLAN_COUNT) {
-        ++s_plan_index;
-    }
-    cancel_route_step();
-}
-```
-
-将 `Route_Tick()` 内的 `ROUTE_TURN` 分支替换为：
-
-```c
-case ROUTE_TURN:
-    g_route.state_frames = g_mode_fsm.state_frames;
-    if (g_mode_fsm.turn_count != s_turn_count_before) {
-        /* 运动层已经自动切回循迹，这里只完成路线表中的当前动作。 */
-        finish_route_step();
-    }
-    break;
-```
-
-将 `ROUTE_CROSSING` 分支替换为：
-
-```c
-case ROUTE_CROSSING:
-    g_route.state_frames = g_mode_fsm.state_frames;
-    if (g_route.state_frames >= ROUTE_CROSSING_FRAMES) {
-        Car_Track();
-        finish_route_step();
-    }
-    break;
-```
-
-其余用于外部接管、停车、故障和关闭自动路线的 `cancel_route_step()` 调用保持原样。
-
-不要在 `cancel_route_step()` 内推进下标，因为取消动作不等于完成动作。不要在每次 `Route_Tick()` 或刚发请求时推进下标。
-
-动作完成后只把下一动作设为待使用；下一次新路口事件到来才开始下一动作。转弯完成或穿越计时结束，不等于已到下一路口。
-
-## 6. 启动和工程配置
-
-本方案只修改已经参与构建的 `Route.c`，不需要新增 Keil Group 或 Include Path。
-
-若要在主程序显式配置开关，在 `Core/Src/main.c` 的用户 include 区加入：
-
-```c
-#include "Route.h"
-```
-
-在 `ModeFSM_Init()` 之后、`HAL_TIM_Base_Start_IT(&htim4)` 之前加入：
-
-```c
-Route_Enable(1u);  /* 默认已经开启，此行明确保留 Route 的动作执行步骤。 */
-```
-
-本方案不使用 `Route_Enable(0)`。关闭后现有前移和转弯等待步骤会被取消，且不会自动停车。
-
-不要在主循环重复调用 `Route_Tick()` 或 `ModeFSM_Tick()`。不要每帧重复发送 `Car_*()`，否则动作计时、PID 和角度基准会被不断重置。
-
-## 7. 配置实际时间
-
-当前源代码一帧约 10 ms：
-
-| 配置 | 当前值 | 用途 |
+| 字段 | 道路表项 | 项目表项 |
 | --- | --- | --- |
-| `ROUTE_CONFIRM_FRAMES` | 3 | 左右路口和有线/无线的连续确认 |
-| `ROUTE_CROSS_CONFIRM_FRAMES` | 2 | 十字路口的连续确认 |
-| `ROUTE_APPROACH_FRAMES` | 80 | 转弯前移约 800 ms |
-| `ROUTE_CROSSING_FRAMES` | 500 | 直行穿越约 5 s |
+| entry_ms | 接受路口前的最短等待，可为 0 | 前一步完成后到切换项目控制的时间，必须非零 |
+| pass_ms | 左右转：检测到路口后前移时间；直行：最短穿越时间 | IMU 项目：整车通过前不接受出口线的时间；U 型：屏蔽路口的最短时间；项目 9：登台停车时长 |
+| timeout_ms | 等待路口、前移、转弯或恢复的每阶段上限 | 接近、通行或恢复的每阶段上限 |
 
-`ROUTE_CROSSING_FRAMES` 的“100 ms”注释与 500 的实际值不一致。请根据真实车速和路口尺寸设置穿越时间；若意图为 100 ms，对应 10 帧，但这不是车辆标定结果。
+`timeout_ms` 必须大于 `entry_ms` 与 `pass_ms`；每阶段重新计时，不是整行总时间。时间按 10 ms 控制节拍向上对齐。转弯仍有运动层独立 3 秒超时。
 
-计时近似前移距离，没有编码器不能直接配置为准确的厘米数。确认顺序和转向正确之后，再在车辆上标定时间参数。
+第一项目从 Route 真正开始的控制帧计入口延时；其余项目从前一步 RECOVER 成功并进入新表项开始计时。项目通行时长从接受 IMU 动作开始计算，U 型从进入 OBSTACLE 开始计算。不能使用提交请求前的主循环时间作为项目起点。
 
-## 8. 固定路线执行的边界
+## 2. 24 步初始导航表
 
-- 必须从已知起点和朝向启动，路线表从下标 0 开始。
-- 每个需要决策的位置都应能被当前路口检测识别；纯弯道不一定产生路口事件。
-- 前移、转弯或穿越期间检测到的新路口事件不会保存到恢复循迹以后。当前检测在所有模式中更新并锁存事件，只有等待循迹时才消费动作表；应确保这些步骤在进入下一个路口前完成。密集路口需要额外设计事件保存和定位确认机制，不能只增加穿越时间。
-- 漏检或误检路口会让动作表与实际位置错位。该模板按路口顺序执行，没有地图节点定位能力。
-- 外部请求、故障或关闭路线中断步骤后，不把中断视为成功。车辆位置改变后应重新确认起点或另行设计恢复机制，再继续路线。
-- `STOP` 表项在新路口确认时停车。若需要停在路口中心或某个终点标记，应增加独立的终点检测/接近步骤。
+| S | 动作/位置 | P | PWM |
+| --- | --- | --- | --- |
+| 1 | 起点后石块 | 1 | 500 |
+| 2 | 石块后十字直行，去大台阶 | 0 | 500 |
+| 3 | 大台阶 | 2 | 600 |
+| 4 | 高台后十字直行，避开方形隧道 | 0 | 500 |
+| 5 | 后方连接直角左转 | 0 | 500 |
+| 6 | 右转进入 U 型隧道支路 | 0 | 500 |
+| 7 | U 型隧道循迹 | 3 | 400 |
+| 8 | U 出口连接直角左转 | 0 | 500 |
+| 9 | 右转去栅格 | 0 | 500 |
+| 10 | 栅格 | 4 | 500 |
+| 11 | 左转进入左侧外沿 | 0 | 500 |
+| 12 | 左转去减速带 | 0 | 500 |
+| 13 | 减速带 | 5 | 500 |
+| 14 | 中间十字直行 | 0 | 500 |
+| 15 | 草地 | 6 | 500 |
+| 16 | 右转去石块，不能进入方形隧道 | 0 | 500 |
+| 17 | 第二次石块 | 1 | 500 |
+| 18 | 石块后右转进入外沿 | 0 | 500 |
+| 19 | 右转去小台阶 | 0 | 500 |
+| 20 | 小台阶 | 7 | 600 |
+| 21 | 中间十字直行 | 0 | 500 |
+| 22 | 防滑带 | 8 | 500 |
+| 23 | 右转去项目 9 | 0 | 500 |
+| 24 | 斜坡上高台，到时停车 | 9 | 600 |
 
-模板未接入现有固件，也未做 Keil 或车辆验证。接入后应先检查路线下标和动作日志，再验证车辆上的路口识别、转向和时间参数。
+这张导航表依据原图连线推导，尚未经过实车路口日志核对。尤其 S4 至 S9 的后方连接转角，应先验证每个预期位置能否产生一个三帧路口事件，再确认顺序。传感器图案本身不能证明地图节点；没有产生事件的普通弯不能直接按一个路口计数。遇到这种差异应在全程启用前校正表项，而不是随意缩短超时跳过步骤。
+
+## 3. 单项标定顺序
+
+1. 在 main.c 将 TRACK_ONLY_TEST_ENABLE=1，确认普通道路、连接弯角和 U 型隧道的循迹方向及稳定性。
+2. 改为 TRACK_ONLY_TEST_ENABLE=0、IMU_STRAIGHT_TEST_ENABLE=1。台阶/斜坡先选 IMU_STRAIGHT_TEST_PWM=600，其他直通项目先选 500。
+3. IMU_STRAIGHT_TEST_MS 从 1000 开始，每次增加 100，记录从接受动作到整车越过项目的时间。试车从明确的入口位置对正开始，不能在坡上重新建立入口朝向。
+4. 填各项目 pass_ms，并单独测量前一路口动作结束到项目入口的 entry_ms。以整车通过为准，不把前方灰度刚碰到出口线当作后轮已经离开台阶。
+5. timeout_ms 给实测通过留出余量；出口必须是中心连续窄线，观察 G 的实际图案，必要时先核对传感器高度和线宽。
+6. 项目 9 的 pass_ms 单独测到整车已经上台、停车位置合适，不依赖高台上找线。其余项目超时仍没确认出口必须停车。
+7. 填完全部道路和项目参数后，两个测试开关均设 0，先从起点短段核对 S/P/N 与位置，再逐段延长到全程。不要通过填写虚假的时间绕过未标定闸门。
+
+600 只是首轮参数；高负载时左右轮仍会有最多 100 PWM 差速。若实际需要更高基础 PWM，应只改当前项目并重复同一入口测试，不同时修改 PID 和多个项目。
+
+## 4. 启动、中止和显示
+
+- 自动启动前 main.c 检查 IMU 初始化与静止校准，Route_Start 检查所有时间字段。缺项显示 WAIT_CAL，S/P 指向第一条无效表项。
+- Route_Start 成功后下一控制帧开始；Route_Enable(1) 不能重放被中止的路线。
+- 外部请求、Car_Stop、故障或禁用路线都不推进下标。重新运行必须停车、放回起点并显式重新启动。
+- S 从 1 开始；P=0 是道路；N 是当前阶段已执行帧数，乘 10 即毫秒。PROJECT_IN 表示进入项目，ROUTE_DONE 表示登台定时结束。
+- 每次 PROJECT_IN 同时短鸣约 100 ms，包括 U 型隧道和第二次石块；普通道路路口不鸣叫。提示音独立计时，不阻塞运动；停车或中止会提前关掉，IMU 故障后最迟下一控制帧关掉。上电校准蜂鸣保持原样。
+- ROUTE_TO 锁存超时前步骤、阶段、计时与电机输出；屏幕上的 PWM 是故障现场，不代表停车后仍在输出。

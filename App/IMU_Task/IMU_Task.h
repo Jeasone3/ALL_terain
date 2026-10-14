@@ -45,11 +45,11 @@ void IMUTask_TurnTick(void);
 
 /**
  * @brief 运行一帧保持当前目标航向的直行 PID，使用 base±out 差速纠偏。
- * @param 无。
+ * @param base_pwm 已由运动层校验的基础 PWM，范围 1 至 1000。
  * @return 无。
- * @note 最短角差小于 10° 时令 PID 输入误差归零；调用前保证 IMU 有效及控制器互斥。
+ * @note 采用 1° 死区和 ±100 PWM 纠偏上限，两轮输出不反转；调用前保证 IMU 有效。
  */
-void IMUTask_ForwardTick(void);
+void IMUTask_ForwardTick(uint16_t base_pwm);
 
 /**
  * @brief 保留旧的临时前移接口，以固定 yaw=0° 为目标执行一帧直行。

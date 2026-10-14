@@ -34,7 +34,7 @@ static float s_target_yaw = 0.0f;
 #define TURN_MAX_IOUT     50.0f
 /* 直行参数 */
 #define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
-#define FWD_MAX_OUT       1000.0f    /* 纠偏差速限幅 */
+#define FWD_MAX_OUT       100.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
 #define FWD_DEADBAND      1.0f      /* 死区 */
 
 /**
@@ -73,7 +73,7 @@ void IMUTask_Init(void)
     PID_set_integral_separation(&s_turn_pid, 30.0f);   /* 大误差暂停积分防超调 */
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
-    /* 直行 PID 起点: Kp=30, Ki=0, Kd=5; 需实测整定 */
+    /* 保留当前直行增益，仅调整输出限幅；仍需实车整定。 */
     pid_real_t fwd_params[3] = {40.0f, 0.0f, 25.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
@@ -132,12 +132,13 @@ void IMUTask_TurnTick(void)
 /**
  * @brief 执行给定航向的一帧直行控制，统一普通直行和旧的临时前移逻辑。
  * @param target 本帧保持的目标 yaw，单位为度；不改全局动作目标。
+ * @param base_pwm 本次动作接受的基础 PWM；改变 PWM 不在此处重置姿态或 PID。
  * @return 无。
- * @note 使用直行 PID 与 400 的基础 PWM；采用 2° 死区和 ±400 纠偏限幅。
+ * @note 采用 1° 死区、±100 PWM 纠偏限幅；基础 PWM 由动作参数提供。
  *       死区仅令 PID 输入误差归零，已有微分历史仍按原滤波系数衰减。
  *       会写两轮电机，调用前必须保证 IMU 有效及控制器互斥。
  */
-static void imu_forward_tick(float target)
+static void imu_forward_tick(float target, uint16_t base_pwm)
 {
     float error = imu_angle_error(target, g_euler.yaw);
 
@@ -146,10 +147,10 @@ static void imu_forward_tick(float target)
         error = 0.0f;
     }
     float out  = PID_calc(&s_fwd_pid, target - error, target);
-    float base = FWD_BASE_SPEED;
+    float base = (float)base_pwm;
     /* 正误差需要左转：左轮减速、右轮加速；负误差需要右转，差速方向相反。 */
-    int16_t L = (int16_t)Com_Limit(base - out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
-    int16_t R = (int16_t)Com_Limit(base + out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+    int16_t L = (int16_t)Com_Limit(base - out, 0.0f, MOTOR_MAX_SPEED);
+    int16_t R = (int16_t)Com_Limit(base + out, 0.0f, MOTOR_MAX_SPEED);
     Motor_SetSpeed(&motorLeft,  L);
     Motor_SetSpeed(&motorRight, R);
 }
@@ -163,19 +164,19 @@ static void imu_forward_tick(float target)
  */
 void Temp_Turn_Forward(void)
 {
-    imu_forward_tick(0.0f);
+    imu_forward_tick(0.0f, (uint16_t)FWD_BASE_SPEED);
 }
 
 /**
  * @brief 执行一帧 IMU 直行，靠角度 PID 保持最近一次设置的目标航向。
- * @param 无。
+ * @param base_pwm 本次动作的基础 PWM，不是编码器反馈车速。
  * @return 无。
  * @note 由当前控制入口每 10 ms 调用一次，调用前 IMU 必须有效。
  *       转后接 IMU 直行时继续保持转弯目标；本函数不改变目标，也不判断动作结束条件。
  */
-void IMUTask_ForwardTick(void)
+void IMUTask_ForwardTick(uint16_t base_pwm)
 {
-    imu_forward_tick(s_target_yaw);
+    imu_forward_tick(s_target_yaw, base_pwm);
 }
 
 /**

@@ -49,9 +49,10 @@
 /* USER CODE BEGIN PD */
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
-#define TRACK_ONLY_TEST_ENABLE    1u     /* 1：上电后持续只循迹；0：按下面的开关选择启动模式 */
-#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：上电测试 IMU 直行，仅在纯循迹测试关闭时生效 */
-#define IMU_STRAIGHT_TEST_MS      20000u  /* 直行测试时长，单位：毫秒 */
+#define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：单项目限时测试；两个开关均 0 时检查固定路线标定 */
+#define IMU_STRAIGHT_TEST_PWM     600u   /* 台阶和斜坡首轮 600；其他直通项目可改为 500 */
+#define IMU_STRAIGHT_TEST_MS      1000u  /* 首轮 1 秒，此后每次增加 100 ms；控制中断内到时停车 */
 
 /* USER CODE END PD */
 
@@ -104,10 +105,6 @@ int main(void)
   /* USER CODE BEGIN 1 */
 
   uint8_t imu_calibrated = 0u;
-#if IMU_STRAIGHT_TEST_ENABLE && !TRACK_ONLY_TEST_ENABLE
-  uint32_t imu_test_start_ms = 0u;
-  uint8_t imu_test_running = 0u;
-#endif
 
   /* USER CODE END 1 */
 
@@ -149,7 +146,7 @@ int main(void)
   
   line_following_init(&g_line_controller); //循迹初始化
   
-  ModeFSM_Init();                          //运动状态机与 Route 初始化，默认循迹
+  ModeFSM_Init();                          /* 初始化为停车，明确选择测试或已标定路线后才能运行。 */
 
 
   #if TRACK_ONLY_TEST_ENABLE || IMU_STRAIGHT_TEST_ENABLE
@@ -180,14 +177,23 @@ int main(void)
   #elif IMU_STRAIGHT_TEST_ENABLE
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
-    Car_ImuForward();             /* 只提交一次，首帧以当前朝向为零度基准。 */
-    imu_test_start_ms = HAL_GetTick();
-    imu_test_running = 1u;
+    Car_ImuForwardTimed(IMU_STRAIGHT_TEST_PWM, IMU_STRAIGHT_TEST_MS);
+    DebugLog_Write(LOG_INFO, "IMU_TEST"); /* 限时从接受请求开始，与主循环刷新耗时无关。 */
   }
   else
   {
     DebugLog_Write(LOG_ERROR, g_imu_ready != 0u ? "CAL_FAIL" : "IMU_INIT");
     Car_Stop();                   /* 初始化或校准失败时，阻止默认循迹开始运动。 */
+  }
+#else
+  if (imu_calibrated != 0u && g_imu_ready != 0u)
+  {
+    (void)Route_Start();          /* 参数不全时显示 WAIT_CAL，保持停车，不猜测项目时间。 */
+  }
+  else
+  {
+    DebugLog_Write(LOG_ERROR, g_imu_ready != 0u ? "CAL_FAIL" : "IMU_INIT");
+    Car_Stop();
   }
 #endif
 
@@ -211,26 +217,6 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
   {
 
 
-    #if IMU_STRAIGHT_TEST_ENABLE && !TRACK_ONLY_TEST_ENABLE
-    if (imu_test_running != 0u)
-    {
-      /* 原子检查运行状态并提交停车；已有故障保持原状，不被定时停车清除。 */
-      uint32_t saved_primask = __get_PRIMASK();
-      __disable_irq();
-
-      if (g_mode_fsm.status != CAR_RUNNING)
-      {
-        imu_test_running = 0u;
-      }
-      else if ((uint32_t)(HAL_GetTick() - imu_test_start_ms) >= IMU_STRAIGHT_TEST_MS)
-      {
-        Car_Stop();               /* 下一控制帧输出零 PWM；本次测试不自动重启。 */
-        imu_test_running = 0u;
-      }
-
-      __set_PRIMASK(saved_primask);
-    }
-#endif
 
 
 

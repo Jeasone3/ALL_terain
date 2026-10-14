@@ -29,7 +29,7 @@ typedef struct {
 
 typedef struct {
     ModeFSM_t motion;
-    RouteState route_state;
+    Route_t route;                    /* 路线阶段、步骤、项目和计时在同一临界区保存 */
     float yaw;
     uint8_t imu_ready;
     uint8_t line_mask;               /* bit0 至 bit7 对应 IN1 至 IN8，1 表示在线 */
@@ -61,7 +61,7 @@ static void capture_state_locked(DebugLog_Snapshot *snapshot)
     uint8_t channel;
 
     snapshot->motion = g_mode_fsm;
-    snapshot->route_state = g_route.state;
+    snapshot->route = g_route;
     snapshot->yaw = g_euler.yaw;
     snapshot->imu_ready = g_imu_ready;
     snapshot->left_pwm = motorLeft.speed;
@@ -105,9 +105,10 @@ void DebugLog_Init(void)
     uint8_t index;
     DebugLog_Record empty_record = { 0u, LOG_INFO, { 0 } };
     DebugLog_Snapshot empty_state = {
-        { MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
-          MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u },
-        ROUTE_FOLLOW, 0.0f, 0u, 0u, 0, 0
+        {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
+         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u},
+        {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u},
+        0.0f, 0u, 0u, 0, 0
     };
     uint32_t saved_primask = __get_PRIMASK();
 
@@ -168,6 +169,7 @@ static const char *fault_text(CarFault fault)
         case CAR_FAULT_IMU:          return "IMU_ERR";
         case CAR_FAULT_TURN_TIMEOUT: return "TURN_TO";
         case CAR_FAULT_COMMAND:      return "BAD_CMD";
+        case CAR_FAULT_ROUTE_TIMEOUT:return "ROUTE_TO";
         default:                    return "BAD_CMD";
     }
 }
@@ -264,6 +266,13 @@ static const char *route_name(RouteState state)
         case ROUTE_APPROACH: return "APP";
         case ROUTE_TURN:     return "TURN";
         case ROUTE_CROSSING: return "CROSS";
+        case ROUTE_READY:   return "READY";
+        case ROUTE_ENTRY:   return "ENTRY";
+        case ROUTE_OBSTACLE:return "PASS";
+        case ROUTE_RECOVER: return "EXIT";
+        case ROUTE_UNCALIBRATED: return "WAIT";
+        case ROUTE_ABORTED: return "ABORT";
+        case ROUTE_FINISHED:return "DONE";
         default:            return "?";
     }
 }
@@ -394,10 +403,19 @@ OLED_Status DebugLog_Display(void)
     line_text[GRAYSCALE_SENSOR_CHANNELS] = '\0';
 
     OLED_PrintLine(0u, "%s %s R:%s", status_name(&display.state.motion),
-                   action_name(&display.state.motion), route_name(display.state.route_state));
+                   action_name(&display.state.motion), route_name(display.state.route.state));
     OLED_PrintLine(1u, "Y:%s T:%s", yaw_text, target_text);
-    OLED_PrintLine(2u, "E:%s N:%lu", error_text,
-                   (unsigned long)display.state.motion.state_frames);
+    if (display.state.route.enabled || display.state.route.project_id != 0u ||
+        display.state.route.step_index != 0u || display.state.route.state >= ROUTE_READY) {
+        /* N 是当前路线阶段已完成帧数，乘 10 即毫秒；最大值仍不超过 21 字符。 */
+        OLED_PrintLine(2u, "S:%u P:%u N:%lu",
+                       (unsigned int)(display.state.route.step_index + 1u),
+                       (unsigned int)display.state.route.project_id,
+                       (unsigned long)display.state.route.state_frames);
+    } else {
+        OLED_PrintLine(2u, "E:%s N:%lu", error_text,
+                       (unsigned long)display.state.motion.state_frames);
+    }
     OLED_PrintLine(3u, "G:%s I:%u", line_text, (unsigned int)(display.state.imu_ready != 0u));
     OLED_PrintLine(4u, "L:%+d R:%+d", (int)display.state.left_pwm, (int)display.state.right_pwm);
     first_log_row = (uint8_t)(DEBUG_LOG_CAPACITY - display.count);

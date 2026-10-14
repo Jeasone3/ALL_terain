@@ -403,12 +403,43 @@ static void test_snapshot_irq_and_reconnect(void)
  * @return EXIT_SUCCESS 表示所有场景通过；断言失败由 CHECK 直接结束。
  * @note 软件测试不验证实际 OLED 亮度、接线与现场可读性。
  */
+/**
+ * @brief 验证路线项目计时的最长行宽和故障冻结，避免进度被后续复位覆盖。
+ * @return 无。
+ */
+static void test_route_telemetry(void)
+{
+    char fault_screen[sizeof(s_oled_rows)];
+    begin_case("route progress, extreme timer and frozen project snapshot");
+    g_route.enabled = 1u;
+    g_route.state = ROUTE_OBSTACLE;
+    g_route.step_index = ROUTE_STEP_COUNT - 1u;
+    g_route.project_id = 9u;
+    g_route.state_frames = UINT32_MAX;
+    motorLeft.speed = motorRight.speed = 600;
+    display();
+    CHECK(strstr(s_oled_rows[2], "S:24 P:9 N:4294967295") != NULL);
+    DebugLog_CaptureFault(CAR_FAULT_ROUTE_TIMEOUT);
+    display();
+    CHECK(has_message("ROUTE_TO"));
+    memcpy(fault_screen, s_oled_rows, sizeof(s_oled_rows));
+    g_route.state = ROUTE_ABORTED;
+    g_route.step_index = 0u;
+    g_route.project_id = 1u;
+    g_route.state_frames = 0u;
+    motorLeft.speed = motorRight.speed = 0;
+    display();
+    CHECK(memcmp(fault_screen, s_oled_rows, sizeof(s_oled_rows)) == 0);
+    puts("PASS route progress, 21-column limit and frozen project timing");
+}
+
 int main(void)
 {
     test_records_and_text();
     test_status_and_numeric_limits();
     test_fault_snapshot();
     test_snapshot_irq_and_reconnect();
+    test_route_telemetry();
     puts("All debug-log scenarios passed.");
     return EXIT_SUCCESS;
 }

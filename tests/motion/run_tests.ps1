@@ -27,6 +27,7 @@ $includeDirectories = @(
     (Join-Path $projectRoot 'Int/Int_Track'),
     (Join-Path $projectRoot 'Int/Int_OLED'),
     (Join-Path $projectRoot 'Int/Int_Motor')
+    (Join-Path $projectRoot 'Int/Int_Beep')
 )
 $commonArguments = @('-std=c99', '-Wall', '-Wextra', '-Werror', '-pedantic', '-O2')
 foreach ($includeDirectory in $includeDirectories) {
