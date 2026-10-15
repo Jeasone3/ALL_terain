@@ -32,6 +32,7 @@ static float s_target_yaw = 0.0f;
 /* 转弯 PID 限幅 */
 #define TURN_MAX_OUT      800.0f
 #define TURN_MAX_IOUT     50.0f
+#define TURN_MIN_OUT      250.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
 /* 直行参数 */
 #define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
@@ -112,6 +113,8 @@ float IMUTask_GetError(void)
  * @return 无。
  * @note 仅由当前控制入口每 10 ms 调用一次，不能与循迹或直行控制同时运行。
  *       调用前须取得本周期有效 IMU 数据；目标设置、完成判断和超时停车由状态机负责。
+ *       尚未到位且 PID 输出不足时，按剩余角差方向补足最低 PWM，帮助克服末段静摩擦。
+ *       进入共用的到位容差后输出零，等待状态机用后续新采样完成连续帧确认。
  */
 void IMUTask_TurnTick(void)
 {
@@ -121,6 +124,17 @@ void IMUTask_TurnTick(void)
     /* PID 内部仍用 set-ref。把最短角差换成等效反馈，使它实际使用 error；
      * 不跨角度边界时与原来的 target-yaw 数学等价，PID 参数和输出符号不变。 */
     float out = PID_calc(&s_turn_pid, s_target_yaw - error, s_target_yaw);
+
+    /* 例如还差 6.8°时，原比例项只有约 54 PWM，积分上限也只有 50 PWM。
+     * 此时继续等待不一定能克服静摩擦；仅补足小输出，不改变原 PID 增益与最大限幅。
+     * 进入容差后先停转，避免最低 PWM 在完成确认期间继续把车身推过目标。 */
+    if (fabsf(error) < IMU_TURN_DONE_TOLERANCE) {
+        out = 0.0f;
+    } else if (fabsf(out) < TURN_MIN_OUT) {
+        if (error > 0.0f) out = TURN_MIN_OUT;
+        else out = -TURN_MIN_OUT;
+    }
+
     /* error>0 时 L<0、R>0，左转增大 yaw；error<0 时反向，右转减小 yaw。 */
     int16_t L = (int16_t)Com_Limit(-out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
     int16_t R = (int16_t)Com_Limit( out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);

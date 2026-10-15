@@ -13,9 +13,9 @@
 #include "Debug_Log.h"
 #include <math.h>
 
-#define TURN_DONE_TOLERANCE 5.0f /* 转弯完成误差，单位：度 */
-#define TURN_DONE_FRAMES 3u      /* 误差连续三帧在容差内才算完成 */
-#define TURN_TIMEOUT_FRAMES 300u /* 3 秒内须进入容差；已进入时最多再补两帧确认 */
+#define TURN_DONE_TOLERANCE IMU_TURN_DONE_TOLERANCE /* 与转弯控制共用到位容差，单位：度 */
+#define TURN_DONE_FRAMES 2u      /* 误差连续两帧在容差内才算完成 */
+#define TURN_TIMEOUT_FRAMES 500u /* 最多等待 5 秒；提前转完立即衔接，截止时已进容差最多补一帧 */
 
 /* 本帧八路灰度数据；循迹用于控制，IMU 模式用于路线条件检测。 */
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
@@ -255,8 +255,8 @@ static void finish_turn(void)
  * @return 无；发生故障时更新 status，由 ModeFSM_Tick 的统一出口停车。
  * @note 先读六轴、确认成功、再解算角度；仅有限 yaw 才设置本帧 imu_valid。
  *       禁止用读取失败前的旧 yaw 执行 PID，读取失败和超时均先锁存故障现场。
- *       第 300 帧已进入 5° 容差而确认不足三帧时，最多补足后续两帧（20 ms）。
- *       补帧期间一旦离开容差立即超时停车；未进入容差时仍在第 300 帧停车。
+ *       第 500 帧已进入 5° 容差而确认不足两帧时，最多补足后一帧（10 ms）。
+ *       补帧期间一旦离开容差立即超时停车；未进入容差时在第 500 帧停车。
  */
 static void update_imu(void)
 {
@@ -302,8 +302,8 @@ static void update_imu(void)
     else if (g_mode_fsm.state_frames + 1u >= TURN_TIMEOUT_FRAMES &&
              s_turn_done_frames == 0u)
     {
-        /* 已在容差内的 1/2 帧允许补足确认，避免目标 -90°、反馈 -86°时被提前故障截断。
-         * 连续命中达到三帧就完成，离开范围则计数归零并立即故障，因此最多额外运行两帧。 */
+        /* 已在容差内的一帧允许补足确认，避免目标 -90°、反馈 -86°时被提前故障截断。
+         * 连续命中达到两帧就完成，离开范围则计数归零并立即故障，因此最多额外运行一帧。 */
         g_mode_fsm.state_frames++;
         set_fault(CAR_FAULT_TURN_TIMEOUT);
     }

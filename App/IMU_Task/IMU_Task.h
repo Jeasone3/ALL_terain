@@ -11,6 +11,9 @@
  * 目标由 IMUTask_SetTarget 设定；控制和完成判断统一使用最短角差。
  */
 
+/* 转弯控制和状态机共用同一到位容差，避免控制器停转后状态机仍认为未到位。 */
+#define IMU_TURN_DONE_TOLERANCE 5.0f
+
 /**
  * @brief 初始化转弯和直行 PID，保留当前参数并清除历史。
  * @param 无。
@@ -39,7 +42,8 @@ float IMUTask_GetError(void);
  * @brief 运行一帧原地转弯 PID，电机输出为 left=-out、right=+out。
  * @param 无。
  * @return 无。
- * @note 每 10 ms 调用一次；调用前 IMU 必须有效，且本周期不运行循迹或直行 PID。
+ * @note 每 10 ms 调用一次；容差外的小输出补足最低转弯 PWM，容差内输出零等待完成确认。
+ *       调用前 IMU 必须有效，且本周期不运行循迹或直行 PID。
  */
 void IMUTask_TurnTick(void);
 

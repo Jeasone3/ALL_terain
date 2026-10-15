@@ -28,7 +28,7 @@
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 10000u, JUNCTION_CROSS} //减速带
+    {ROUTE_ACTION_RIGHT,    2u, 800u, 2000u, 4000u, 10000u, JUNCTION_CROSS} //减速带
 };
 
 volatile Route_t g_route;

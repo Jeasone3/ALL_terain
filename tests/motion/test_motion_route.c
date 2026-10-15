@@ -491,8 +491,9 @@ static void test_turn_handoffs(void)
             CHECK(abs(motorLeft.speed) == 720);
             CHECK(s_track_pid_calls == 0u);
             s_sample_yaw = target;
-            ticks(2u);
+            tick();
             CHECK(g_mode_fsm.turn_count == 0u);
+            CHECK(motorLeft.speed == 0 && motorRight.speed == 0);
             tick();
             CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == next);
             CHECK(g_mode_fsm.status == CAR_RUNNING && s_resets == 1u);
@@ -517,10 +518,62 @@ static void test_turn_handoffs(void)
 }
 
 /**
- * @brief 验证连续动作重新建立基准、完成判据防抖以及 300 帧超时边界。
+ * @brief 用真实转弯 PID 验证末段最低输出、过冲纠偏、容差内停转与两帧交接。
  * @param 无。
  * @return 无。
- * @note 当前源码容差严格小于 5 度，命中必须连续三帧；断续命中不能累计。
+ * @note 左右转分别覆盖还差 6.8°、恰好 5°、进入 4°容差和过冲 6°的反馈。
+ *       200 PWM 是当前试车值；断言只验证输出与状态，不证明实际轮子一定能转动。
+ */
+static void test_turn_minimum_drive(void)
+{
+    unsigned direction;
+    for (direction = 0u; direction < 2u; ++direction) {
+        float sign = direction == 0u ? 1.0f : -1.0f;
+        begin_case("minimum turn drive and stopped confirmation in both directions", 0u);
+        if (direction == 0u) Car_TurnLeft90(MODE_TRACK);
+        else Car_TurnRight90(MODE_TRACK);
+        tick();
+        CHECK(abs(motorLeft.speed) == 720);
+
+        s_sample_yaw = sign * 83.2f;
+        ticks(100u); /* 固定反馈让积分充分累积，原输出约 104，修复后须保持最低 200。 */
+        CHECK(g_mode_fsm.turn_count == 0u && g_mode_fsm.status == CAR_RUNNING);
+        CHECK(motorLeft.speed == (int16_t)(-sign * 200.0f));
+        CHECK(motorRight.speed == -motorLeft.speed);
+
+        s_sample_yaw = -sign * 86.0f;
+        tick();
+        CHECK(abs(motorLeft.speed) == 800); /* 大误差仍受原最大转弯 PWM 限制。 */
+        s_sample_yaw = sign * 85.0f;
+        tick();
+        CHECK(g_mode_fsm.turn_count == 0u && abs(motorLeft.speed) == 200);
+        s_sample_yaw = sign * 86.0f;
+        tick();
+        CHECK(g_mode_fsm.turn_count == 0u && motorLeft.speed == 0 && motorRight.speed == 0);
+
+        s_sample_yaw = sign * 96.0f; /* 过冲后剩余角差反向，重新确认前先反向纠偏。 */
+        tick();
+        CHECK(g_mode_fsm.turn_count == 0u);
+        CHECK(motorLeft.speed == (int16_t)(sign * 200.0f));
+        CHECK(motorRight.speed == -motorLeft.speed);
+        s_sample_yaw = sign * 86.0f;
+        tick();
+        CHECK(g_mode_fsm.turn_count == 0u && motorLeft.speed == 0 && motorRight.speed == 0);
+        tick();
+        CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+        CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+        Car_Stop();
+        tick();
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    }
+    puts("PASS minimum turn drive, overshoot signs, zero-PWM confirmation and track handoff");
+}
+
+/**
+ * @brief 验证连续动作重新建立基准、完成判据防抖以及 500 帧超时边界。
+ * @param 无。
+ * @return 无。
+ * @note 当前源码容差严格小于 5 度，命中必须连续两帧；断续命中不能累计。
  */
 static void test_turn_filter_and_timeout(void)
 {
@@ -528,12 +581,12 @@ static void test_turn_filter_and_timeout(void)
     Car_TurnLeft90(MODE_IMU);
     tick();
     s_sample_yaw = 90.0f;
-    ticks(2u);
+    tick();
     s_sample_yaw = 85.0f;
     tick();
     CHECK(g_mode_fsm.turn_count == 0u);
     s_sample_yaw = 86.0f;
-    ticks(2u);
+    tick();
     CHECK(g_mode_fsm.turn_count == 0u);
     tick();
     CHECK(g_mode_fsm.turn_count == 1u);
@@ -547,10 +600,10 @@ static void test_turn_filter_and_timeout(void)
     ticks(3u);
     CHECK(g_mode_fsm.turn_count == 2u && g_mode_fsm.mode == MODE_TRACK);
 
-    begin_case("exact 300-frame timeout", 0u);
+    begin_case("exact 500-frame timeout", 0u);
     Car_TurnLeft90(MODE_IMU);
-    ticks(299u);
-    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 299u);
+    ticks(499u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 499u);
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
     CHECK(g_mode_fsm.turn_count == 0u);
@@ -562,76 +615,72 @@ static void test_turn_filter_and_timeout(void)
 
     begin_case("confirmed completion on deadline frame", 0u);
     Car_TurnRight90(MODE_IMU);
-    ticks(297u);
+    ticks(498u);
     s_sample_yaw = -90.0f;
-    ticks(3u);
+    ticks(2u);
     CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == 1u);
     CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.state_frames == 1u);
     puts("PASS continuous completion filter, new baseline and timeout");
 }
 
 /**
- * @brief 验证转弯在 3 秒截止帧已经进入容差时，只补足剩余确认帧。
+ * @brief 验证转弯在 5 秒截止帧已经进入容差时，只补足剩余确认帧。
  * @param 无。
  * @return 无。
- * @note 最迟第 302 帧完成或故障；补帧期间离开 5° 容差即停车，未进容差不延长。
+ * @note 最迟第 501 帧完成或故障；补帧期间离开 5° 容差即停车，未进容差不延长。
  *       复现目标 -90°、最后读数 -86°且仍停在 R90 的截止边界，不放宽角度或修改 PID。
  */
 static void test_turn_deadline_confirmation(void)
 {
-    begin_case("first in-tolerance sample on deadline gets at most two confirmation frames", 0u);
+    begin_case("first in-tolerance sample on deadline gets one confirmation frame", 0u);
     Car_TurnRight90(MODE_TRACK);
-    ticks(299u);
+    ticks(499u);
     s_sample_yaw = -86.0f;
     tick();
-    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 300u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 500u);
     CHECK(g_mode_fsm.imu_state == IMU_TURN_RIGHT && g_mode_fsm.turn_count == 0u);
-    tick();
-    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 301u);
     tick();
     CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
     CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 400 && motorRight.speed == 400);
 
-    begin_case("two hits by deadline need only one additional confirmation frame", 0u);
+    begin_case("two hits by deadline complete without an additional frame", 0u);
     Car_TurnRight90(MODE_TRACK);
-    ticks(298u);
+    ticks(498u);
     s_sample_yaw = -86.0f;
     ticks(2u);
-    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 300u);
-    CHECK(g_mode_fsm.turn_count == 0u);
-    tick();
+    CHECK(g_mode_fsm.state_frames == 1u && g_mode_fsm.mode == MODE_TRACK);
     CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == 1u);
 
     begin_case("leaving tolerance in first extra frame faults immediately", 0u);
     Car_TurnRight90(MODE_TRACK);
-    ticks(299u);
+    ticks(499u);
     s_sample_yaw = -86.0f;
     tick();
     s_sample_yaw = -84.9f;
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
-    CHECK(g_mode_fsm.state_frames == 301u && g_mode_fsm.turn_count == 0u);
+    CHECK(g_mode_fsm.state_frames == 501u && g_mode_fsm.turn_count == 0u);
     CHECK(DebugLog_Display() == OLED_OK && log_has("TURN_TO"));
     s_sample_yaw = -90.0f;
     ticks(10u);
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
 
-    begin_case("second extra frame either confirms or ends the turn attempt", 0u);
+    begin_case("interrupted confirmation on deadline cannot obtain grace", 0u);
     Car_TurnRight90(MODE_TRACK);
-    ticks(299u);
+    ticks(498u);
     s_sample_yaw = -86.0f;
-    ticks(2u);
+    tick();
     s_sample_yaw = -85.0f; /* 恰好 5° 不满足严格小于 5°，不能再开始新一轮确认。 */
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
-    CHECK(g_mode_fsm.state_frames == 302u && g_mode_fsm.turn_count == 0u);
+    CHECK(g_mode_fsm.state_frames == 500u && g_mode_fsm.turn_count == 0u);
 
     begin_case("opposite yaw sign cannot receive completion grace", 0u);
     Car_TurnRight90(MODE_TRACK);
     s_sample_yaw = 86.0f;
-    ticks(300u);
+    ticks(500u);
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
-    CHECK(g_mode_fsm.state_frames == 300u && g_mode_fsm.turn_count == 0u);
+    CHECK(g_mode_fsm.state_frames == 500u && g_mode_fsm.turn_count == 0u);
     puts("PASS bounded deadline confirmation at -86 degrees and immediate fault on lost tolerance");
 }
 
@@ -1060,7 +1109,7 @@ static void test_route_steps(void)
     ticks(200u); /* 转动尚未完成的 2 秒不能消耗第二段入口的 2 秒。 */
     CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.turn_count == 0u);
     s_sample_yaw = -90.0f;
-    ticks(2u);
+    tick();
     CHECK(g_mode_fsm.turn_count == 0u);
     tick();
     CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
@@ -1137,7 +1186,7 @@ static void test_route_cross_edges(void)
         CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.command_id == command + 2u);
         CHECK(g_mode_fsm.imu_state == IMU_TURN_RIGHT && CLOSE(g_mode_fsm.target_yaw, -90.0f));
         s_sample_yaw = -90.0f;
-        ticks(3u);
+        ticks(2u);
         CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
         tick();
         CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.command_id == command + 2u);
@@ -1149,20 +1198,44 @@ static void test_route_cross_edges(void)
  * @brief 区分“正常转完但灰度无线”和“接近目标却未满足完成条件”的两种停车线索。
  * @param 无。
  * @return 无。
- * @note 第 300 帧才到 -86°仍须确认后接循迹；无线时输出 240/240 并继续第二段。
- *       误差持续 5.1° 时保留 3 秒故障保护，不得跳过未完成转弯。
+ * @note 原 3 秒截止时仅转到 -83.2°仍应继续；随后达标立即接入口，不必等满 5 秒。
+ *       第 500 帧才到 -86°仍须确认后接循迹；无线时输出 240/240 并继续第二段。
+ *       误差持续 5.1° 时保留 5 秒故障保护，不得跳过未完成转弯。
  *       这些场景只验证软件分支，实际轮子在低 PWM 下能否推动小车仍须实车观察。
  */
 static void test_route_turn_stop_diagnosis(void)
 {
     uint32_t command;
+    begin_case("turn past old three-second deadline then continues entry and project", 1u);
+    memcpy(g_route_plan, s_original_plan, sizeof(s_original_plan));
+    reach_route_state(1u, ROUTE_TURN);
+    command = g_mode_fsm.command_id;
+    s_sample_yaw = -83.2f;
+    ticks(299u); /* 转弯开始帧已执行一次；累计 300 帧时仍允许继续纠偏。 */
+    CHECK(g_mode_fsm.state_frames == 300u && g_mode_fsm.status == CAR_RUNNING);
+    CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.turn_count == 0u);
+    ticks(99u);
+    s_sample_yaw = -86.0f;
+    tick();
+    CHECK(g_mode_fsm.turn_count == 0u && g_mode_fsm.status == CAR_RUNNING);
+    tick(); /* 约 4 秒达标后立即切换，不把 5 秒上限当作固定转弯时长。 */
+    CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.command_id == command);
+    tick();
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 1u);
+    ticks(198u);
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 199u);
+    tick();
+    CHECK(g_route.state == ROUTE_OBSTACLE && g_mode_fsm.mode == MODE_IMU);
+    CHECK(g_mode_fsm.base_pwm == 700u && g_mode_fsm.command_id == command + 1u);
+
     begin_case("completed route turn keeps tracking even with all sensors off line", 1u);
     memcpy(g_route_plan, s_original_plan, sizeof(s_original_plan));
     reach_route_state(1u, ROUTE_TURN);
-    ticks(298u); /* 正式转弯已执行一帧，再等待 298 帧，到截止前一帧仍未进入容差。 */
+    ticks(498u); /* 正式转弯已执行一帧，再等待 498 帧，到截止前一帧仍未进入容差。 */
     set_sensors(0u);
     s_sample_yaw = -86.0f;
-    ticks(3u);
+    ticks(2u);
     CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
     CHECK(g_mode_fsm.status == CAR_RUNNING && g_route.state == ROUTE_TURN);
     CHECK(motorLeft.speed == 240 && motorRight.speed == 240);
@@ -1183,9 +1256,9 @@ static void test_route_turn_stop_diagnosis(void)
     memcpy(g_route_plan, s_original_plan, sizeof(s_original_plan));
     reach_route_state(1u, ROUTE_TURN);
     s_sample_yaw = -84.9f; /* 与 -90° 目标相差 5.1°，外观看似转完但软件条件尚未成立。 */
-    ticks(298u);
+    ticks(498u);
     CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == 0u);
-    CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.state_frames == 299u);
+    CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.state_frames == 499u);
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
     CHECK(DebugLog_Display() == OLED_OK && log_has("TURN_TO"));
@@ -1193,7 +1266,7 @@ static void test_route_turn_stop_diagnosis(void)
     ticks(10u);
     CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.turn_count == 0u);
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
-    puts("PASS post-turn line loss keeps motion, unconfirmed near-target yaw faults instead");
+    puts("PASS five-second turn window, immediate entry handoff and retained timeout protection");
 }
 
 /**
@@ -1253,10 +1326,10 @@ static void test_project_exit_and_timeout(void)
     CHECK(g_mode_fsm.status == CAR_RUNNING);
 
     begin_case("route turn retains the motion layer timeout", 1u);
-    g_route_plan[1].timeout_ms = 5000u; /* 留足 3 秒，验证运动层而非短场景的 1000 ms 路线超时。 */
+    g_route_plan[1].timeout_ms = 7000u; /* 留足 5 秒及确认帧，验证运动层而非短场景的路线超时。 */
     reach_route_state(1u, ROUTE_TURN);
     s_sample_yaw = 0.0f;
-    ticks(299u);
+    ticks(499u);
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
     s_sample_yaw = -90.0f;
     ticks(10u);
@@ -1586,7 +1659,7 @@ static void test_automatic_logs(void)
  * @brief 验证真实运动故障入口先捕获 PWM，STOP 和非法请求保留冻结现场，合法动作解除。
  * @param 无。
  * @return 无。
- * @note 停车后实时电机已为零，屏幕仍必须保留 299 帧时的两轮转弯输出。
+ * @note 停车后实时电机已为零，屏幕仍必须保留 499 帧时的两轮转弯输出。
  */
 static void test_fault_log_lifecycle(void)
 {
@@ -1594,12 +1667,12 @@ static void test_fault_log_lifecycle(void)
     char expected_pwm[OLED_LINE_CHARS + 1u];
     begin_case("real timeout snapshot, stop, invalid command and accepted recovery", 0u);
     Car_TurnLeft90(MODE_TRACK);
-    ticks(300u);
+    ticks(500u);
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
     CHECK(DebugLog_Display() == OLED_OK);
     CHECK(log_has("TURN_TO"));
     CHECK(strstr(s_oled_rows[0], "FAULT L90") != NULL);
-    CHECK(strstr(s_oled_rows[2], "N:300") != NULL);
+    CHECK(strstr(s_oled_rows[2], "N:500") != NULL);
     CHECK(strstr(s_oled_rows[4], "L:-720") != NULL && strstr(s_oled_rows[4], "R:+720") != NULL);
     memcpy(fault_rows, s_oled_rows, sizeof(s_oled_rows));
     Car_Stop();
@@ -1652,6 +1725,7 @@ int main(void)
     test_real_pid_forward_deadband();
     test_default_and_mailbox();
     test_turn_handoffs();
+    test_turn_minimum_drive();
     test_turn_filter_and_timeout();
     test_turn_deadline_confirmation();
     test_faults_and_recovery();
