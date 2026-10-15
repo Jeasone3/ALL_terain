@@ -32,7 +32,7 @@ typedef enum {
 typedef enum {
     CAR_FAULT_NONE = 0,
     CAR_FAULT_IMU,                 /* IMU 不可用、读取失败或角度无效 */
-    CAR_FAULT_TURN_TIMEOUT,        /* 转弯 3 秒内未完成 */
+    CAR_FAULT_TURN_TIMEOUT,        /* 转弯 3 秒内未进容差，或截止确认期间离开容差 */
     CAR_FAULT_COMMAND,             /* 转后模式或直行 PWM 参数不合法 */
     CAR_FAULT_ROUTE_TIMEOUT        /* 路口等待、项目通行或出口确认超时 */
 } CarFault;

@@ -9,10 +9,10 @@
 #include "Track_Task.h"
 #include "Int_Beep.h"
 
-#define ROUTE_CONFIRM_FRAMES 3u
+#define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 首个右路口确认后短鸣 100 ms，独立于阶段计时 */
-#define ROUTE_TURN_APPROACH_MS    50u /* 转弯前保持航向前移；沿用旧参数，待实车标定 */
+#define ROUTE_TURN_APPROACH_MS   500u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
@@ -27,8 +27,8 @@
  * 超时沿用原前两个项目的 10000/13000 ms；等待路口距离也需要实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT},
-    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 13000u, JUNCTION_CROSS}
+    {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
+    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 13000u, JUNCTION_CROSS} //减速带
 };
 
 volatile Route_t g_route;

@@ -571,6 +571,71 @@ static void test_turn_filter_and_timeout(void)
 }
 
 /**
+ * @brief 验证转弯在 3 秒截止帧已经进入容差时，只补足剩余确认帧。
+ * @param 无。
+ * @return 无。
+ * @note 最迟第 302 帧完成或故障；补帧期间离开 5° 容差即停车，未进容差不延长。
+ *       复现目标 -90°、最后读数 -86°且仍停在 R90 的截止边界，不放宽角度或修改 PID。
+ */
+static void test_turn_deadline_confirmation(void)
+{
+    begin_case("first in-tolerance sample on deadline gets at most two confirmation frames", 0u);
+    Car_TurnRight90(MODE_TRACK);
+    ticks(299u);
+    s_sample_yaw = -86.0f;
+    tick();
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 300u);
+    CHECK(g_mode_fsm.imu_state == IMU_TURN_RIGHT && g_mode_fsm.turn_count == 0u);
+    tick();
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 301u);
+    tick();
+    CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 400 && motorRight.speed == 400);
+
+    begin_case("two hits by deadline need only one additional confirmation frame", 0u);
+    Car_TurnRight90(MODE_TRACK);
+    ticks(298u);
+    s_sample_yaw = -86.0f;
+    ticks(2u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.state_frames == 300u);
+    CHECK(g_mode_fsm.turn_count == 0u);
+    tick();
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == 1u);
+
+    begin_case("leaving tolerance in first extra frame faults immediately", 0u);
+    Car_TurnRight90(MODE_TRACK);
+    ticks(299u);
+    s_sample_yaw = -86.0f;
+    tick();
+    s_sample_yaw = -84.9f;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(g_mode_fsm.state_frames == 301u && g_mode_fsm.turn_count == 0u);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("TURN_TO"));
+    s_sample_yaw = -90.0f;
+    ticks(10u);
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+
+    begin_case("second extra frame either confirms or ends the turn attempt", 0u);
+    Car_TurnRight90(MODE_TRACK);
+    ticks(299u);
+    s_sample_yaw = -86.0f;
+    ticks(2u);
+    s_sample_yaw = -85.0f; /* 恰好 5° 不满足严格小于 5°，不能再开始新一轮确认。 */
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(g_mode_fsm.state_frames == 302u && g_mode_fsm.turn_count == 0u);
+
+    begin_case("opposite yaw sign cannot receive completion grace", 0u);
+    Car_TurnRight90(MODE_TRACK);
+    s_sample_yaw = 86.0f;
+    ticks(300u);
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(g_mode_fsm.state_frames == 300u && g_mode_fsm.turn_count == 0u);
+    puts("PASS bounded deadline confirmation at -86 degrees and immediate fault on lost tolerance");
+}
+
+/**
  * @brief 验证 IMU 本帧读取失败、NaN、Inf、非法指令及显式恢复。
  * @param 无。
  * @return 无。
@@ -814,7 +879,7 @@ static void calibrate_test_plan(void)
     for (i = 0u; i < ROUTE_STEP_COUNT; ++i) {
         g_route_plan[i].entry_ms = 30u;
         g_route_plan[i].pass_ms = 50u;
-        g_route_plan[i].timeout_ms = 500u;
+        g_route_plan[i].timeout_ms = 1000u; /* 大于真实的 500 ms 前移，其他短场景仍有独立截止边界。 */
     }
 }
 
@@ -993,7 +1058,7 @@ static void test_route_steps(void)
     CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.mode == MODE_IMU);
     CHECK(g_mode_fsm.base_pwm == 500u && g_mode_fsm.command_id == 4u);
     set_sensors(0x18u);
-    ticks(4u);
+    ticks(49u);
     CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.imu_state == IMU_FORWARD);
     tick();
     CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.imu_state == IMU_TURN_RIGHT);
@@ -1036,7 +1101,58 @@ static void test_route_steps(void)
     set_sensors(0x18u);
     ticks(100u);
     CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
-    puts("PASS exact 2000/4000 ms, typed junctions, 50 ms approach, real turn handoff and cruise");
+    puts("PASS exact 2000/4000 ms, typed junctions, 500 ms approach, real turn handoff and cruise");
+}
+
+/**
+ * @brief 区分“正常转完但灰度无线”和“接近目标却未满足完成条件”的两种停车线索。
+ * @param 无。
+ * @return 无。
+ * @note 第 300 帧才到 -86°仍须确认后接循迹；无线时输出 240/240 并继续第二段。
+ *       误差持续 5.1° 时保留 3 秒故障保护，不得跳过未完成转弯。
+ *       这些场景只验证软件分支，实际轮子在低 PWM 下能否推动小车仍须实车观察。
+ */
+static void test_route_turn_stop_diagnosis(void)
+{
+    uint32_t command;
+    begin_case("completed route turn keeps tracking even with all sensors off line", 1u);
+    memcpy(g_route_plan, s_original_plan, sizeof(s_original_plan));
+    reach_route_state(1u, ROUTE_TURN);
+    ticks(298u); /* 正式转弯已执行一帧，再等待 298 帧，到截止前一帧仍未进入容差。 */
+    set_sensors(0u);
+    s_sample_yaw = -86.0f;
+    ticks(3u);
+    CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_route.state == ROUTE_TURN);
+    CHECK(motorLeft.speed == 240 && motorRight.speed == 240);
+    command = g_mode_fsm.command_id;
+    s_sample_yaw = 0.0f;
+    tick();
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 1u);
+    ticks(198u);
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 199u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.command_id == command);
+    CHECK(motorLeft.speed == 240 && motorRight.speed == 240);
+    tick();
+    CHECK(g_route.state == ROUTE_OBSTACLE && g_mode_fsm.mode == MODE_IMU);
+    CHECK(g_mode_fsm.command_id == command + 1u && g_mode_fsm.base_pwm == 700u);
+    CHECK(motorLeft.speed == 700 && motorRight.speed == 700);
+
+    begin_case("near 90 degrees without completion still produces TURN_TO", 1u);
+    memcpy(g_route_plan, s_original_plan, sizeof(s_original_plan));
+    reach_route_state(1u, ROUTE_TURN);
+    s_sample_yaw = -84.9f; /* 与 -90° 目标相差 5.1°，外观看似转完但软件条件尚未成立。 */
+    ticks(298u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == 0u);
+    CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.state_frames == 299u);
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("TURN_TO"));
+    s_sample_yaw = -90.0f;
+    ticks(10u);
+    CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.turn_count == 0u);
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    puts("PASS post-turn line loss keeps motion, unconfirmed near-target yaw faults instead");
 }
 
 /**
@@ -1060,13 +1176,13 @@ static void test_project_exit_and_timeout(void)
     begin_case("waiting for first right junction times out", 1u);
     tick();
     set_sensors(0x18u);
-    ticks(49u);
+    ticks(99u);
     CHECK(g_mode_fsm.status == CAR_RUNNING);
     tick();
     check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
     CHECK(g_route.step_index == 0u);
     CHECK(DebugLog_Display() == OLED_OK && log_has("ROUTE_TO"));
-    CHECK(strstr(s_oled_rows[2], "S:1 P:1 N:50") != NULL);
+    CHECK(strstr(s_oled_rows[2], "S:1 P:1 N:100") != NULL);
     CHECK(strstr(s_oled_rows[4], "L:+400 R:+400") != NULL);
     ticks(10u);
     check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
@@ -1075,28 +1191,28 @@ static void test_project_exit_and_timeout(void)
     begin_case("waiting for next cross also times out", 1u);
     reach_route_state(1u, ROUTE_FOLLOW);
     set_sensors(0x18u);
-    ticks(50u);
+    ticks(100u);
     check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
     CHECK(g_route.step_index == 1u);
 
     begin_case("wide exit cannot rearm and recovery times out", 1u);
     reach_route_state(0u, ROUTE_RECOVER);
     set_sensors(0xFFu);
-    ticks(50u);
+    ticks(100u);
     check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
     CHECK(g_route.step_index == 0u);
 
     begin_case("valid third narrow frame wins at recovery deadline", 1u);
     reach_route_state(0u, ROUTE_RECOVER);
     set_sensors(0xFFu);
-    ticks(47u);
+    ticks(97u);
     set_sensors(0x18u);
     ticks(3u);
     CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 1u);
     CHECK(g_mode_fsm.status == CAR_RUNNING);
 
     begin_case("route turn retains the motion layer timeout", 1u);
-    g_route_plan[1].timeout_ms = 5000u; /* 留足 3 秒，验证运动层而非短场景的 500 ms 路线超时。 */
+    g_route_plan[1].timeout_ms = 5000u; /* 留足 3 秒，验证运动层而非短场景的 1000 ms 路线超时。 */
     reach_route_state(1u, ROUTE_TURN);
     s_sample_yaw = 0.0f;
     ticks(299u);
@@ -1496,10 +1612,12 @@ int main(void)
     test_default_and_mailbox();
     test_turn_handoffs();
     test_turn_filter_and_timeout();
+    test_turn_deadline_confirmation();
     test_faults_and_recovery();
     test_real_pid_angle_wrap();
     test_route_conditions();
     test_route_steps();
+    test_route_turn_stop_diagnosis();
     test_route_interrupts();
     test_route_imu_faults();
     test_project_exit_and_timeout();
