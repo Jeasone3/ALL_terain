@@ -320,7 +320,7 @@ static void begin_recovery(void)
     enter_state(ROUTE_RECOVER);
     reset_junction();
     /* 转弯完成已自动接循迹时保留 PID 历史，不再提交重复的 TRACK 请求。 */
-    if (g_mode_fsm.mode != MODE_TRACK) C ar_Track();
+    if (g_mode_fsm.mode != MODE_TRACK) Car_Track();
 }
 
 /** @brief 初始化监测和路线进度，不启动电机，也不修改已填写的标定表。 */
