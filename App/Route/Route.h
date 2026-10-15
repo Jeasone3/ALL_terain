@@ -36,7 +36,7 @@ typedef enum {
 /**
  * @brief 一段“指定路口、入口对正、IMU 通行”的参数，时间单位均为毫秒。
  * @note project_id 表示本次路线的段号，不推断图片中的项目编号。
- *       trigger_junction 必须与三帧确认的新事件一致，其他图案不会启动本段。
+ *       trigger_junction 必须与两帧确认的路口一致；左右单侧要求新事件，十字允许从单侧升级。
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
  *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
@@ -68,9 +68,9 @@ extern RouteStep g_route_plan[ROUTE_STEP_COUNT];
 
 typedef struct {
     RouteState state;              /* 当前路线执行阶段 */
-    RouteJunction junction;        /* 三帧确认的传感器路口图案 */
+    RouteJunction junction;        /* 两帧确认的传感器路口图案 */
     uint8_t junction_event;        /* 单帧新路口事件，项目内部不产生 */
-    uint8_t line_found;            /* 任意一路在线的三帧稳定值 */
+    uint8_t line_found;            /* 任意一路在线的两帧稳定值 */
     uint8_t line_found_event;      /* 本帧稳定有线事件 */
     uint8_t line_lost_event;       /* 本帧稳定无线事件 */
     uint8_t enabled;               /* 路线许可；关闭不直接改电机 */

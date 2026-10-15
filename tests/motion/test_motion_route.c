@@ -773,51 +773,51 @@ static void test_real_pid_angle_wrap(void)
 }
 
 /**
- * @brief 验证所有路口三帧确认、类型抖动、单次锁存与有线/无线条件事件。
+ * @brief 验证所有路口两帧确认、类型抖动、单次锁存与有线/无线条件事件。
  * @param 无。
  * @return 无。
  * @note 关闭示例决策只保留检测，防止路线动作影响防抖边界的观察。
  */
 static void test_route_conditions(void)
 {
-    begin_case("cross three-frame confirmation and debounce", 0u);
+    begin_case("cross two-frame confirmation and debounce", 0u);
     set_sensors(0xFFu);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_NONE && !g_route.junction_event);
     /* 缺一路在线会改变类型，之前的十字候选帧不能累计。 */
     set_sensors(0xFEu);
     tick();
     set_sensors(0xFFu);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_NONE && !g_route.junction_event);
     tick();
     CHECK(g_route.junction == JUNCTION_CROSS && g_route.junction_event);
     tick();
     CHECK(!g_route.junction_event);
     set_sensors(0x18u);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_CROSS);
     set_sensors(0xFFu);
     ticks(3u);
     CHECK(g_route.junction == JUNCTION_CROSS && !g_route.junction_event);
     set_sensors(0x18u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.junction == JUNCTION_NONE);
     set_sensors(0xFFu);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_NONE && !g_route.junction_event);
     tick();
     CHECK(g_route.junction == JUNCTION_CROSS && g_route.junction_event);
 
     begin_case("condition debounce and junction latch", 0u);
     set_sensors(0x0Fu);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_NONE && !g_route.junction_event);
     set_sensors(0xF0u);
-    ticks(2u);
+    tick();
     CHECK(g_route.junction == JUNCTION_NONE && !g_route.junction_event);
     set_sensors(0x0Fu);
-    ticks(2u);
+    tick();
     CHECK(!g_route.junction_event);
     tick();
     CHECK(g_route.junction == JUNCTION_LEFT && g_route.junction_event);
@@ -827,19 +827,17 @@ static void test_route_conditions(void)
     tick();
     CHECK(g_route.junction == JUNCTION_LEFT && !g_route.junction_event);
     tick();
-    CHECK(g_route.junction == JUNCTION_LEFT && !g_route.junction_event);
-    tick();
     CHECK(g_route.junction == JUNCTION_CROSS && !g_route.junction_event);
     set_sensors(0x18u);
-    ticks(2u);
+    tick();
     set_sensors(0xF0u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.junction == JUNCTION_RIGHT && !g_route.junction_event);
     set_sensors(0x18u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.junction == JUNCTION_NONE);
     set_sensors(0xF0u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.junction == JUNCTION_RIGHT && g_route.junction_event);
 
     begin_case("line-found event in IMU and stopped modes", 0u);
@@ -848,7 +846,7 @@ static void test_route_conditions(void)
     ticks(3u);
     CHECK(!g_route.line_found);
     set_sensors(0x01u);
-    ticks(2u);
+    tick();
     CHECK(!g_route.line_found && !g_route.line_found_event);
     tick();
     CHECK(g_route.line_found && g_route.line_found_event);
@@ -857,7 +855,7 @@ static void test_route_conditions(void)
     CHECK(!g_route.line_found_event);
     Car_Stop();
     set_sensors(0u);
-    ticks(2u);
+    tick();
     CHECK(g_route.line_found && !g_route.line_lost_event);
     tick();
     CHECK(!g_route.line_found && g_route.line_lost_event);
@@ -992,7 +990,7 @@ static void test_route_steps(void)
     set_sensors(0x18u);
     ticks(3u);
     set_sensors(0xF0u);
-    ticks(2u);
+    tick();
     CHECK(g_route.state == ROUTE_FOLLOW && s_beep_starts == 0u);
     tick();
     CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 0u);
@@ -1034,28 +1032,24 @@ static void test_route_steps(void)
         CHECK(g_route.state == ROUTE_RECOVER && !g_route.junction_event);
     }
     set_sensors(0x18u);
-    ticks(2u);
+    tick();
     CHECK(g_route.state == ROUTE_RECOVER);
     set_sensors(0u);
     tick();
     set_sensors(0x18u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 1u);
     CHECK(g_mode_fsm.command_id == command);
 
     set_sensors(0xF0u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.state == ROUTE_FOLLOW);
     set_sensors(0xFFu);
-    ticks(3u);
-    CHECK(g_route.state == ROUTE_FOLLOW); /* 右口变十字仍需先离开同一宽区域。 */
-    set_sensors(0x18u);
-    ticks(3u);
-    set_sensors(0xFFu);
-    ticks(2u);
+    tick();
     CHECK(g_route.state == ROUTE_FOLLOW);
     tick();
     CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.mode == MODE_IMU);
+    CHECK(!g_route.junction_event); /* 先右口后十字时，新事件锁存不能挡住已确认的目标十字。 */
     CHECK(g_mode_fsm.base_pwm == 500u && g_mode_fsm.command_id == 4u);
     set_sensors(0x18u);
     ticks(49u);
@@ -1101,7 +1095,54 @@ static void test_route_steps(void)
     set_sensors(0x18u);
     ticks(100u);
     CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
-    puts("PASS exact 2000/4000 ms, typed junctions, 500 ms approach, real turn handoff and cruise");
+    puts("PASS exact 2000/4000 ms, cross after right edge, 500 ms approach, turn handoff and cruise");
+}
+
+/**
+ * @brief 验证十字直接出现、先左侧或先右侧出现时，都只触发一次右转。
+ * @param 无。
+ * @return 无。
+ * @note 单帧十字及中断后的单帧十字均不能触发；两帧确认后仍先前移 500 ms。
+ *       复用真实 Route/FSM 和控制器，模拟反馈只用于验证软件阶段与请求次数。
+ */
+static void test_route_cross_edges(void)
+{
+    static const uint8_t edge_masks[] = {0x18u, 0x0Fu, 0xF0u};
+    unsigned i;
+    uint32_t command;
+
+    for (i = 0u; i < sizeof(edge_masks) / sizeof(edge_masks[0]); ++i) {
+        begin_case("confirmed cross after none, left or right edge", 1u);
+        reach_route_state(1u, ROUTE_FOLLOW);
+        command = g_mode_fsm.command_id;
+        set_sensors(edge_masks[i]);
+        ticks(2u);
+        CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.command_id == command);
+
+        set_sensors(0xFFu);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW);
+        set_sensors(0x18u);
+        tick(); /* 只离开一帧，不能解除原单侧图案的事件锁存。 */
+        set_sensors(0xFFu);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.command_id == command);
+        tick();
+        CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.command_id == command + 1u);
+        CHECK(g_route.junction_event == (uint8_t)(i == 0u));
+
+        ticks(49u); /* 持续八路在线，不能重复提交前移或提前转弯。 */
+        CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.command_id == command + 1u);
+        tick();
+        CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.command_id == command + 2u);
+        CHECK(g_mode_fsm.imu_state == IMU_TURN_RIGHT && CLOSE(g_mode_fsm.target_yaw, -90.0f));
+        s_sample_yaw = -90.0f;
+        ticks(3u);
+        CHECK(g_mode_fsm.turn_count == 1u && g_mode_fsm.mode == MODE_TRACK);
+        tick();
+        CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.command_id == command + 2u);
+    }
+    puts("PASS direct cross, both side-to-cross transitions, debounce and single turn request");
 }
 
 /**
@@ -1202,12 +1243,12 @@ static void test_project_exit_and_timeout(void)
     check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
     CHECK(g_route.step_index == 0u);
 
-    begin_case("valid third narrow frame wins at recovery deadline", 1u);
+    begin_case("valid second narrow frame wins at recovery deadline", 1u);
     reach_route_state(0u, ROUTE_RECOVER);
     set_sensors(0xFFu);
-    ticks(97u);
+    ticks(98u);
     set_sensors(0x18u);
-    ticks(3u);
+    ticks(2u);
     CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 1u);
     CHECK(g_mode_fsm.status == CAR_RUNNING);
 
@@ -1617,6 +1658,7 @@ int main(void)
     test_real_pid_angle_wrap();
     test_route_conditions();
     test_route_steps();
+    test_route_cross_edges();
     test_route_turn_stop_diagnosis();
     test_route_interrupts();
     test_route_imu_faults();

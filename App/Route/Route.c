@@ -28,12 +28,12 @@
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 13000u, JUNCTION_CROSS} //减速带
+    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 10000u, JUNCTION_CROSS} //减速带
 };
 
 volatile Route_t g_route;
 
-static RouteJunction s_junction_candidate; /* 三帧候选路口类型 */
+static RouteJunction s_junction_candidate; /* 两帧候选路口类型 */
 static uint8_t s_junction_frames;          /* 候选类型连续帧数 */
 static uint8_t s_junction_latched;         /* 当前路口已经报告，离开前不重复 */
 static uint8_t s_line_candidate;           /* 任意通道在线的候选值 */
@@ -102,10 +102,10 @@ static RouteJunction classify_sensor_frame(const uint16_t *sensor_data, uint8_t 
 }
 
 /**
- * @brief 路口三帧确认，离开三帧后才解除锁存。
+ * @brief 路口两帧确认，离开两帧后才解除新事件锁存。
  * @param raw_junction 本帧图案。
  * @return 无。
- * @note 左右与十字之间变化不会解锁；只能在道路识别阶段消费事件。
+ * @note 类型变化不会产生第二个新事件，但仍更新确认类型；FOLLOW 可据此接受随后确认的十字。
  */
 static void update_junction(RouteJunction raw_junction)
 {
@@ -116,7 +116,7 @@ static void update_junction(RouteJunction raw_junction)
         ++s_junction_frames;
     }
 
-    if (s_junction_frames < ROUTE_CONFIRM_FRAMES) //未连续三帧确认
+    if (s_junction_frames < ROUTE_CONFIRM_FRAMES) //未连续两帧确认
         return;
     
     g_route.junction = s_junction_candidate; //候选成功
@@ -130,7 +130,7 @@ static void update_junction(RouteJunction raw_junction)
 }
 
 /**
- * @brief 三帧确认任意有线/无线变化，供日志观察，不直接决定项目完成。
+ * @brief 两帧确认任意有线/无线变化，供日志观察，不直接决定项目完成。
  * @param raw_line 任意通道是否在线。
  * @return 无。
  */
@@ -179,7 +179,7 @@ static uint8_t narrow_line(const uint16_t *sensor_data)
 /**
  * @brief 为当前出口阶段累计窄黑线连续帧数。
  * @param sensor_data 本帧采样。
- * @return 连续三帧有效时为 1，任一无效帧立即清零。
+ * @return 连续两帧有效时为 1，任一无效帧立即清零。
  */
 static uint8_t confirm_exit(const uint16_t *sensor_data)
 {
@@ -299,10 +299,10 @@ static void finish_step(void)
 }
 
 /**
- * @brief 项目或道路动作完成后恢复循迹，再确认三帧窄黑线。
+ * @brief 项目或道路动作完成后恢复循迹，再确认两帧窄黑线。
  * @param 无。
  * @return 无。
- * @note IMU 计时一到立即切回循迹；恢复期间仍屏蔽路口，三帧窄线后才启用下一段。
+ * @note IMU 计时一到立即切回循迹；恢复期间仍屏蔽路口，两帧窄线后才启用下一段。
  */
 static void begin_recovery(void)
 {
@@ -445,7 +445,11 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     switch (g_route.state) {
     case ROUTE_FOLLOW:
-        if (g_route.junction_event && g_route.junction == step->trigger_junction) {
+        /* 斜着进入十字时可能先确认单侧路口，新事件会先被单侧图案锁存。
+         * 十字仍须连续两帧确认，但不再要求第二个新事件；接受后立即离开 FOLLOW，
+         * 同一十字不会重复提交动作。左右单侧路口仍保留原有的新事件要求。 */
+        if (g_route.junction == step->trigger_junction &&
+            (g_route.junction_event || g_route.junction == JUNCTION_CROSS)) {
             /* 提示绑定首个右路口的确认，不在 IMU 开始或第二段重复触发。 */
             if (g_route.step_index == 0u) {
                 s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
