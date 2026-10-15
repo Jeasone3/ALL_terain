@@ -1,6 +1,6 @@
 /**
  * @file Route.h
- * @brief 固定路线、项目参数和运行进度；路线层只提交动作，不写 PID 或电机。
+ * @brief 分段路线、项目参数和运行进度；路线层只提交动作，不写 PID 或电机。
  */
 #ifndef __ROUTE_H__
 #define __ROUTE_H__
@@ -15,48 +15,55 @@ typedef enum {
 } RouteJunction;
 
 typedef enum {
-    ROUTE_FOLLOW = 0,              /* 循迹等待当前表项对应的路口 */
+    ROUTE_FOLLOW = 0,              /* 循迹等待当前段指定类型的新路口 */
     ROUTE_APPROACH,                /* 按标定时间前移到转弯中心 */
     ROUTE_TURN,                    /* 等待运动层完成 90 度转弯 */
-    ROUTE_CROSSING,                /* 保持航向，确认离开当前路口 */
     ROUTE_READY,                   /* 已检查标定参数，下一控制帧开始 */
-    ROUTE_ENTRY,                   /* 前一路口完成后循迹接近项目入口 */
-    ROUTE_OBSTACLE,                /* 项目通行：IMU 直行或 U 型隧道循迹 */
+    ROUTE_ENTRY,                   /* 入口对正：保持灰度循迹，按 entry_ms 计时 */
+    ROUTE_OBSTACLE,                /* 项目通行：保持 IMU 航向，按 pass_ms 计时 */
     ROUTE_RECOVER,                 /* 恢复循迹并再次确认窄黑线，屏蔽重复路口 */
     ROUTE_UNCALIBRATED,            /* 参数未标定，保持停车 */
     ROUTE_ABORTED,                 /* 被接管、关闭或故障打断，不能自动续跑 */
-    ROUTE_FINISHED                 /* 已在项目 9 定时停车 */
+    ROUTE_CRUISE                   /* 到达调试截止段，持续循迹，不再派发后续动作 */
 } RouteState;
 
 typedef enum {
-    ROUTE_ACTION_LEFT = 0,         /* 接受路口后前移并左转 */
-    ROUTE_ACTION_RIGHT,            /* 接受路口后前移并右转 */
-    ROUTE_ACTION_STRAIGHT,         /* 穿过路口，离开后及时恢复循迹 */
-    ROUTE_ACTION_IMU_PASS,         /* 无黑线的直通项目 */
-    ROUTE_ACTION_TRACK_PASS,       /* U 型隧道，项目内部仍循迹 */
-    ROUTE_ACTION_TIMED_STOP        /* 项目 9，计时登台后结束整条路线 */
+    ROUTE_ACTION_LEFT = 0,         /* 接受指定路口后前移、左转，再入口对正 */
+    ROUTE_ACTION_RIGHT,            /* 接受指定路口后前移、右转，再入口对正 */
+    ROUTE_ACTION_STRAIGHT          /* 接受指定路口后继续循迹，直接入口对正 */
 } RouteAction;
 
 /**
- * @brief 一个道路动作或项目通行表项，时间单位均为毫秒。
- * @note project_id=0 表示道路动作，1 至 9 对应图中的项目。
- *       道路 entry_ms 是接受路口前的最短等待，可为 0；pass_ms 是前移/最短穿越时间。
- *       项目 entry_ms 是前一步完成后的入口延时；pass_ms 是最短通行或最终登台时长。
- *       timeout_ms 是该表项每个等待阶段的上限，必须大于 pass_ms 和 entry_ms。
+ * @brief 一段“指定路口、入口对正、IMU 通行”的参数，时间单位均为毫秒。
+ * @note project_id 表示本次路线的段号，不推断图片中的项目编号。
+ *       trigger_junction 必须与三帧确认的新事件一致，其他图案不会启动本段。
+ *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
+ *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
 typedef struct {
-    RouteAction action;            /* 本次完成什么动作 */
-    uint8_t project_id;             /* 图中项目编号；石块会出现两次 */
-    uint16_t base_pwm;              /* IMU 直行基础 PWM，循迹表项固定 400 */
-    uint32_t entry_ms;              /* 入口延时或路口识别时间窗起点 */
-    uint32_t pass_ms;               /* 前移、最短越障或最终停车时间 */
-    uint32_t timeout_ms;            /* 等路口、通行、出口确认的阶段超时 */
+    RouteAction action;            /* 路口继续循迹，或先前移转弯 */
+    uint8_t project_id;             /* 本次路线段号，从 1 开始 */
+    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM */
+    uint32_t entry_ms;              /* 入口灰度循迹持续时间 */
+    uint32_t pass_ms;               /* IMU 直行持续时间 */
+    uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
+    RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 24u
+#define ROUTE_STEP_COUNT 2u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
-/* 只在停车且 Route 未运行时修改时间；实际部署建议编辑 Route.c 后重新编译。
- * 默认时间为 0，表示未标定；行为、项目编号和 PWM 已按确认路线填写。 */
+/* 集中设置本次调试截止段数：2 表示只跑前两段；0 表示运行全部已编写段。
+ * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
+#ifndef ROUTE_DEBUG_STEP_LIMIT
+#define ROUTE_DEBUG_STEP_LIMIT 2u
+#endif
+
+#if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT
+#error ROUTE_DEBUG_STEP_LIMIT_exceeds_defined_route_steps
+#endif
+
+/* 只在停车且 Route 未运行时修改；实际部署编辑 Route.c 后重新编译。
+ * 2000/4000 ms 来自用户要求；PWM、前移时间和路口图案仍需实车标定。 */
 extern RouteStep g_route_plan[ROUTE_STEP_COUNT];
 
 typedef struct {
@@ -69,7 +76,7 @@ typedef struct {
     uint8_t enabled;               /* 路线许可；关闭不直接改电机 */
     uint32_t state_frames;         /* 当前阶段已完成的 10 ms 控制帧数 */
     uint16_t step_index;           /* 当前表项，内部从 0 开始，屏幕从 1 显示 */
-    uint8_t project_id;            /* 当前项目编号，0 为道路 */
+    uint8_t project_id;            /* 当前路线段号，与表项中的 project_id 一致 */
 } Route_t;
 
 extern volatile Route_t g_route;
@@ -78,14 +85,14 @@ extern volatile Route_t g_route;
 void Route_Init(void);
 
 /**
- * @brief 检查整张表是否已填入有效标定时间，不启动电机。
- * @return 1：全部有效；0：至少一个时间未标定或参数不合法。
+ * @brief 检查本次调试范围内的参数是否完整有效，不启动电机。
+ * @return 1：启用段全部有效；0：至少一个时间缺失或参数不合法。
  * @note 不推测实际距离，不替代实车标定和路口事件顺序验证。
  */
 uint8_t Route_IsCalibrated(void);
 
 /**
- * @brief 停车状态下从起点重新开始整条路线。
+ * @brief 停车状态下从起点开始本次启用的路线段。
  * @return 1：已准备，下一控制帧开始；0：未标定或车辆尚未停车。
  * @note 被打断后必须将车辆放回起点再显式调用；单纯 Enable(1) 不恢复进度。
  */

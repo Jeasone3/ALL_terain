@@ -50,9 +50,9 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：单项目限时测试；两个开关均 0 时检查固定路线标定 */
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：单项目限时测试；两个开关均 0 时启动已配置的路线段 */
 #define IMU_STRAIGHT_TEST_PWM     700u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
-#define IMU_STRAIGHT_TEST_MS      5000u  /* 首轮 1 秒，此后每次增加 100 ms；控制中断内到时停车 */
+#define IMU_STRAIGHT_TEST_MS      5000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
 
 /* USER CODE END PD */
 
@@ -146,7 +146,7 @@ int main(void)
   
   line_following_init(&g_line_controller); //循迹初始化
   
-  ModeFSM_Init();                          /* 初始化为停车，明确选择测试或已标定路线后才能运行。 */
+  ModeFSM_Init();                          /* 初始化为停车，明确选择测试或有效路线段后才能运行。 */
 
 
   #if TRACK_ONLY_TEST_ENABLE || IMU_STRAIGHT_TEST_ENABLE
@@ -188,7 +188,7 @@ int main(void)
 #else
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
-    (void)Route_Start();          /* 参数不全时显示 WAIT_CAL，保持停车，不猜测项目时间。 */
+    (void)Route_Start();          /* 检查本次调试范围；成功后循迹出发，等待指定的首个右路口。 */
   }
   else
   {

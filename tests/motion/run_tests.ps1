@@ -50,7 +50,7 @@ function Invoke-MotionTest {
     if ($LASTEXITCODE -ne 0) { throw "Test failed: $Name" }
 }
 
-Invoke-MotionTest -Name 'test_motion_route' -Arguments @(
+$motionSources = @(
     (Join-Path $PSScriptRoot 'test_motion_route.c'),
     (Join-Path $projectRoot 'App/Mode_FSM/Mode_FSM.c'),
     (Join-Path $projectRoot 'App/Route/Route.c'),
@@ -61,6 +61,11 @@ Invoke-MotionTest -Name 'test_motion_route' -Arguments @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+Invoke-MotionTest -Name 'test_motion_route' -Arguments $motionSources
+# 单段截止必须允许未填写的后续段；0 则表示执行全部已编写段。
+Invoke-MotionTest -Name 'test_motion_route_limit1' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=1u')
+Invoke-MotionTest -Name 'test_motion_route_all' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=0u')
 
 Invoke-MotionTest -Name 'test_debug_log' -Arguments @(
     (Join-Path $PSScriptRoot 'test_debug_log.c'),

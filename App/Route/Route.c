@@ -1,7 +1,7 @@
 /**
  * @file Route.c
- * @brief 固定路线：道路路口与项目分别执行，完成后才推进，不在项目内数路口。
- * @note 无编码器，所有入口和通行时间必须实车标定；默认参数禁止自动启动。
+ * @brief 按指定路口逐段进入项目，到调试截止段后保持灰度循迹。
+ * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
 #include "Mode_FSM.h"
@@ -11,37 +11,24 @@
 
 #define ROUTE_CONFIRM_FRAMES 3u
 #define ROUTE_FRAME_MS       10u
-#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每次进入项目短鸣 100 ms，不阻塞控制节拍 */
+#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 首个右路口确认后短鸣 100 ms，独立于阶段计时 */
+#define ROUTE_TURN_APPROACH_MS    50u /* 转弯前保持航向前移；沿用旧参数，待实车标定 */
+#define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 
-/* 顺序与箭头图一致；背后连接弯角也列出，避免把它们与岔路口混计。
- * 所有时间先填 0，逐段记录后分别填写，不把统一 5 秒当作真实距离。
- * 列顺序：动作、项目编号、PWM、入口延时、最短通过/前移、阶段超时。
+#if ROUTE_DEBUG_STEP_LIMIT == 0u
+#define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
+#else
+#define ROUTE_ACTIVE_STEP_COUNT ROUTE_DEBUG_STEP_LIMIT
+#endif
+
+/* 仅填写已经确认的新顺序，后续项目继续追加到同一张表，并同步增加 ROUTE_STEP_COUNT。
+ * 第 1 段保留用户已经设置的 2000 ms 入口；两段 IMU 时长均按本次要求设为 4000 ms。
+ * 列顺序：路口动作、路线段号、IMU PWM、循迹入口 ms、IMU 通行 ms、阶段超时 ms、触发图案。
+ * 超时沿用原前两个项目的 10000/13000 ms；等待路口距离也需要实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_IMU_PASS,   1u, 600u, 4000u, 5000u, 10000u}, /* 01 起点 -> 石块 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 02 石块后十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   2u, 700u, 3000u, 10000u, 13000u}, /* 03 大台阶 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 04 高台后方十字直行，避开方形隧道 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 05 后方连接直角左转 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 06 转入 U 型隧道入口支路 */
-    {ROUTE_ACTION_TRACK_PASS, 3u, 400u, 2000u, 10000u, 15000u}, /* 07 U 型隧道全程循迹 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 08 U 出口连接直角左转 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 09 转向栅格 */
-    {ROUTE_ACTION_IMU_PASS,   4u, 600u, 2000u, 6000u, 10000u}, /* 10 栅格 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 11 栅格后进入左侧外沿 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 12 左外沿转入减速带支路 */
-    {ROUTE_ACTION_IMU_PASS,   5u, 600u, 3000u, 5000u, 10000u}, /* 13 减速带 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 14 中间十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   6u, 600u, 3000u, 6000u, 10000u}, /* 15 草地 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 16 草地后右转去石块，禁止进入方形隧道 */
-    {ROUTE_ACTION_IMU_PASS,   1u, 600u, 3000u, 5000u, 10000u}, /* 17 第二次石块 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 18 石块后右转进入外沿 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 19 外沿右转去小台阶 */
-    {ROUTE_ACTION_IMU_PASS,   7u, 700u, 3000u, 5000u, 10000u}, /* 20 小台阶 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 50u, 5000u}, /* 21 中间十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   8u, 700u, 3000u, 6000u, 10000u}, /* 22 防滑带 */
-    {ROUTE_ACTION_RIGHT,      0u, 1000u, 2000u, 50u, 10000u}, /* 23 转向项目 9 斜坡 */
-    {ROUTE_ACTION_TIMED_STOP, 9u, 600u, 1000u, 5000u, 10000u}  /* 24 整车上蓝色高台后定时停车 */
+    {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT},
+    {ROUTE_ACTION_RIGHT,    2u, 700u, 2000u, 4000u, 13000u, JUNCTION_CROSS}
 };
 
 volatile Route_t g_route;
@@ -205,7 +192,7 @@ static uint8_t confirm_exit(const uint16_t *sensor_data)
 }
 
 /**
- * @brief 更新监测；项目入口、通行和恢复阶段屏蔽路口图案。
+ * @brief 更新监测；入口、通行、恢复、转弯和调试截止阶段屏蔽路口图案。
  * @param sensor_data 有效八路数组或空指针。
  * @return 无。
  * @note 事件只持续一帧，日志在控制入口即时保存，前台不轮询单帧事件。
@@ -224,7 +211,9 @@ static void update_conditions(const uint16_t *sensor_data)
 
     raw_junction = classify_sensor_frame(sensor_data, &raw_line); //识别路口
     if (g_route.state == ROUTE_ENTRY || g_route.state == ROUTE_OBSTACLE ||
-        g_route.state == ROUTE_RECOVER || g_route.state == ROUTE_READY) {
+        g_route.state == ROUTE_RECOVER || g_route.state == ROUTE_READY ||
+        g_route.state == ROUTE_APPROACH || g_route.state == ROUTE_TURN ||
+        g_route.state == ROUTE_CRUISE) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -242,29 +231,29 @@ static void update_conditions(const uint16_t *sensor_data)
 }
 
 /**
- * @brief 返回第一条无效参数的位置，全部有效时返回表长。
- * @return 0 至 ROUTE_STEP_COUNT，0 时间始终表示未标定。
- * @note 道路允许入口等待为 0；所有前移/通行和阶段超时都必须明确填写。
+ * @brief 检查本次启用段，返回第一条无效参数的位置。
+ * @param 无。
+ * @return 全部有效时返回 ROUTE_ACTIVE_STEP_COUNT，否则返回无效段的下标。
+ * @note 不检查调试截止点之后的参数，避免尚未填写的后续项目阻止当前短段试车。
+ *       入口与通行时间必须非零，阶段超时必须大于入口、通行和转弯前移时间。
  */
 static uint16_t invalid_step(void)
 {
     uint16_t i;
-    /* 最后一项必须负责停车，否则成功推进会越过固定表尾。 */
-    if (g_route_plan[ROUTE_STEP_COUNT - 1u].action != ROUTE_ACTION_TIMED_STOP ||
-        g_route_plan[ROUTE_STEP_COUNT - 1u].project_id != 9u) return ROUTE_STEP_COUNT - 1u;
-    for (i = 0u; i < ROUTE_STEP_COUNT; ++i) {
+    for (i = 0u; i < ROUTE_ACTIVE_STEP_COUNT; ++i) {
         const RouteStep *step = &g_route_plan[i];
-        if (step->action > ROUTE_ACTION_TIMED_STOP ||
-            (step->action == ROUTE_ACTION_TIMED_STOP && i != ROUTE_STEP_COUNT - 1u) ||
-            step->pass_ms == 0u || step->timeout_ms <= step->pass_ms ||
-            step->timeout_ms <= step->entry_ms ||
+        if ((step->action != ROUTE_ACTION_LEFT && step->action != ROUTE_ACTION_RIGHT &&
+             step->action != ROUTE_ACTION_STRAIGHT) ||
+            (step->trigger_junction != JUNCTION_LEFT && step->trigger_junction != JUNCTION_RIGHT &&
+             step->trigger_junction != JUNCTION_CROSS) ||
+            step->entry_ms == 0u || step->pass_ms == 0u || step->timeout_ms <= step->pass_ms ||
+            step->timeout_ms <= step->entry_ms || step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
             step->base_pwm == 0u || step->base_pwm > 1000u ||
-            (step->action >= ROUTE_ACTION_IMU_PASS && step->entry_ms == 0u) ||
-            (step->action == ROUTE_ACTION_TRACK_PASS && step->base_pwm != 400u)) {
+            step->project_id == 0u) {
             return i;
         }
     }
-    return ROUTE_STEP_COUNT;
+    return ROUTE_ACTIVE_STEP_COUNT;
 }
 
 /**
@@ -280,18 +269,18 @@ static void enter_state(RouteState state)
 }
 
 /**
- * @brief 进入当前表项，从本次状态切换开始统计已完成控制帧。
+ * @brief 进入当前路线段，先循迹等待该段指定类型的路口。
  * @param 无。
  * @return 无。
  * @note 每次表项只调用一次；不会在 while(1) 重复重置 PID 或航向。
  */
 static void begin_step(void)
 {
-    const RouteStep *step = &g_route_plan[g_route.step_index];//从0开始
-    g_route.project_id = step->project_id;  //项目编号
-    reset_junction(); //清空上一个状态
-    enter_state(step->action >= ROUTE_ACTION_IMU_PASS ? ROUTE_ENTRY : ROUTE_FOLLOW); //如果是IMU直行或U型隧道循迹，进入入口阶段，否则进入循迹等待阶段
-    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK) //如果当前不是循迹模式，则切换到循迹模式
+    const RouteStep *step = &g_route_plan[g_route.step_index];
+    g_route.project_id = step->project_id;
+    reset_junction();
+    enter_state(ROUTE_FOLLOW);
+    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK)
     {
         Car_Track();
     }
@@ -306,14 +295,14 @@ static void begin_step(void)
 static void finish_step(void)
 {
     ++g_route.step_index;
-    begin_step(); /* 最后一项只走定时停车分支，不会从这里越过表尾。 */
+    begin_step(); /* 调试截止段在通行结束时进入 CRUISE，不会调用此处越过末尾。 */
 }
 
 /**
  * @brief 项目或道路动作完成后恢复循迹，再确认三帧窄黑线。
  * @param 无。
  * @return 无。
- * @note 恢复期间仍屏蔽路口，禁止同一交叉区域重复推进下标。
+ * @note IMU 计时一到立即切回循迹；恢复期间仍屏蔽路口，三帧窄线后才启用下一段。
  */
 static void begin_recovery(void)
 {
@@ -323,7 +312,26 @@ static void begin_recovery(void)
     if (g_mode_fsm.mode != MODE_TRACK) Car_Track();
 }
 
-/** @brief 初始化监测和路线进度，不启动电机，也不修改已填写的标定表。 */
+/**
+ * @brief 结束入口对正，只提交一次本段 IMU 直行并开始通行计时。
+ * @param step 当前有效路线段，提供随请求一起提交的基础 PWM。
+ * @return 无。
+ * @note OBSTACLE 从零统计已完成控制帧；请求由 ModeFSM 本帧第二次取邮箱接受，
+ *       随后才建立 IMU 航向并输出电机。持续运行期间不得重复调用本函数。
+ */
+static void begin_project(const RouteStep *step)
+{
+    enter_state(ROUTE_OBSTACLE);
+    Car_ImuForward(step->base_pwm);
+    DebugLog_Write(LOG_INFO, "PROJECT_IN");
+}
+
+/**
+ * @brief 初始化监测与路线进度，不启动电机，也不修改已填写的路线表。
+ * @param 无。
+ * @return 无。
+ * @note 清除本轮路口、出口与提示音计数；调用后须由 Route_Start 显式启动。
+ */
 void Route_Init(void)
 {
     Route_t initial = {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
@@ -334,14 +342,20 @@ void Route_Init(void)
     reset_junction();
 }
 
-/** @brief 只检查整张表；返回 1 表示参数齐全，不代表已经通过实车验证。 */
+/**
+ * @brief 检查本次启用段的参数是否齐全，不操作电机。
+ * @param 无。
+ * @return 1 表示启用段均有效；0 表示至少一段参数缺失或非法。
+ * @note 函数名保持原接口；通过检查不代表 PWM、图案和前移距离已经实车验证。
+ */
 uint8_t Route_IsCalibrated(void)
 {
-    return (uint8_t)(invalid_step() == ROUTE_STEP_COUNT);
+    return (uint8_t)(invalid_step() == ROUTE_ACTIVE_STEP_COUNT);
 }
 
 /**
  * @brief 仅允许停车时从起点启动，参数缺失则保留停车并指出第一条待标定步骤。
+ * @param 无。
  * @return 1 已准备；0 未标定或尚在运行。
  * @note 不提交启动运动，下一控制帧由 READY 状态统一发送动作。
  */
@@ -357,7 +371,7 @@ uint8_t Route_Start(void)
     }
     invalid = invalid_step();
     Route_Init();
-    if (invalid != ROUTE_STEP_COUNT) {
+    if (invalid != ROUTE_ACTIVE_STEP_COUNT) {
         g_route.step_index = invalid;
         g_route.project_id = g_route_plan[invalid].project_id;
         g_route.state = ROUTE_UNCALIBRATED;
@@ -373,7 +387,12 @@ uint8_t Route_Start(void)
     return 1u;
 }
 
-/** @brief 设置路线许可，不直接改运动模式；中止后只能通过 Route_Start 从起点重启。 */
+/**
+ * @brief 设置路线许可，不直接改变当前运动模式或电机输出。
+ * @param enabled 0 禁用；非零允许已经显式启动的路线继续运行。
+ * @return 无。
+ * @note 禁用由下一控制帧消费并中止路线；中止后单纯启用不能恢复，须停车后 Route_Start。
+ */
 void Route_Enable(uint8_t enabled)
 {
     g_route.enabled = (uint8_t)(enabled != 0u);
@@ -383,7 +402,9 @@ void Route_Enable(uint8_t enabled)
  * @brief 执行一帧路线，使用已完成控制帧计时，成功优先于同帧超时。
  * @param sensor_data 本帧八路采样。
  * @param external_command 本帧已有外部接管时为 1。
- * @note 外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
+ * @return 无。
+ * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
+ *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 {
@@ -411,25 +432,36 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         begin_step();
         return;
     }
-
     if (g_route.state_frames < UINT32_MAX / ROUTE_FRAME_MS) 
     {
         ++g_route.state_frames;
     }
+
+    /* 截止后仅更新显示计时和保留接管检查，不再计路线超时或派发后续动作。 */
+    if (g_route.state == ROUTE_CRUISE) return;
 
     elapsed_ms = g_route.state_frames * ROUTE_FRAME_MS;
     step = &g_route_plan[g_route.step_index];
 
     switch (g_route.state) {
     case ROUTE_FOLLOW:
-        if (elapsed_ms >= step->entry_ms && g_route.junction_event) {
-            enter_state(step->action == ROUTE_ACTION_STRAIGHT ? ROUTE_CROSSING : ROUTE_APPROACH);
-            Car_ImuForward(step->base_pwm);
+        if (g_route.junction_event && g_route.junction == step->trigger_junction) {
+            /* 提示绑定首个右路口的确认，不在 IMU 开始或第二段重复触发。 */
+            if (g_route.step_index == 0u) {
+                s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
+                Int_Beep_On();
+            }
+            if (step->action == ROUTE_ACTION_STRAIGHT) {
+                enter_state(ROUTE_ENTRY); /* 当前已经循迹，保留 PID 历史与电机控制。 */
+            } else {
+                enter_state(ROUTE_APPROACH);
+                Car_ImuForward(ROUTE_TURN_APPROACH_PWM);
+            }
             return;
         }
         break;
     case ROUTE_APPROACH:
-        if (elapsed_ms >= step->pass_ms) {
+        if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) {
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
             if (step->action == ROUTE_ACTION_LEFT) Car_TurnLeft90(MODE_TRACK);
@@ -439,41 +471,33 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         break;
     case ROUTE_TURN:
         if (g_mode_fsm.turn_count != s_turn_count_before) {
-            begin_recovery();
-            return;
-        }
-        break;
-    case ROUTE_CROSSING:
-        if (elapsed_ms >= step->pass_ms && confirm_exit(sensor_data)) {
-            begin_recovery();
+            enter_state(ROUTE_ENTRY);
+            /* Route 先于本帧 IMU 更新；此处看到的是上一帧已经完成的转弯。
+             * FSM 完成帧已经运行一次循迹，将其计入入口的已完成帧，避免多算 10 ms。
+             * 不再次提交 TRACK，以免重置刚建立的循迹 PID 历史。 */
+            g_route.state_frames = g_mode_fsm.state_frames;
+            if (g_route.state_frames * ROUTE_FRAME_MS >= step->entry_ms) {
+                begin_project(step); /* 入口配置不足一帧时，也从实际转完的帧边界计算。 */
+            }
             return;
         }
         break;
     case ROUTE_ENTRY:
         if (elapsed_ms >= step->entry_ms) {
-            enter_state(ROUTE_OBSTACLE);
-            /* 每个项目只在进入通行阶段时触发一次，后续帧不能重复续鸣。 */
-            s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
-            Int_Beep_On();
-            if (step->action != ROUTE_ACTION_TRACK_PASS) {
-                Car_ImuForward(step->base_pwm);
-            }
-            DebugLog_Write(LOG_INFO, "PROJECT_IN");
+            begin_project(step);
             return;
         }
         break;
     case ROUTE_OBSTACLE:
-        if (step->action == ROUTE_ACTION_TIMED_STOP) {
-            if (elapsed_ms >= step->pass_ms) {
-                g_route.state = ROUTE_FINISHED;
-                update_project_beep(1u);
-                s_active = g_route.enabled = 0u;
-                DebugLog_Write(LOG_INFO, "ROUTE_DONE");
-                Car_Stop();
-                return;
+        if (elapsed_ms >= step->pass_ms) {
+            if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+                enter_state(ROUTE_CRUISE);
+                reset_junction();
+                Car_Track();
+                DebugLog_Write(LOG_INFO, "DEBUG_END");
+            } else {
+                begin_recovery();
             }
-        } else if (elapsed_ms >= step->pass_ms && confirm_exit(sensor_data)) {
-            begin_recovery();
             return;
         }
         break;

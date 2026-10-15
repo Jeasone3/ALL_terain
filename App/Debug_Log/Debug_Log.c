@@ -256,7 +256,7 @@ static void get_display_snapshot(DebugLog_DisplaySnapshot *display)
 /**
  * @brief 将上层路线步骤转成屏幕可容纳的英文缩写。
  * @param state 快照中的 Route 步骤。
- * @return FOLLOW、APP、TURN、CROSS；非法步骤返回 ?。
+ * @return 当前阶段的英文缩写；CRUISE 表示调试截止后的持续循迹，非法步骤返回 ?。
  * @note 仅前台显示使用，不据此选择或改变动作。
  */
 static const char *route_name(RouteState state)
@@ -265,14 +265,13 @@ static const char *route_name(RouteState state)
         case ROUTE_FOLLOW:   return "FOLLOW";
         case ROUTE_APPROACH: return "APP";
         case ROUTE_TURN:     return "TURN";
-        case ROUTE_CROSSING: return "CROSS";
         case ROUTE_READY:   return "READY";
         case ROUTE_ENTRY:   return "ENTRY";
         case ROUTE_OBSTACLE:return "PASS";
         case ROUTE_RECOVER: return "EXIT";
         case ROUTE_UNCALIBRATED: return "WAIT";
         case ROUTE_ABORTED: return "ABORT";
-        case ROUTE_FINISHED:return "DONE";
+        case ROUTE_CRUISE:  return "CRUISE";
         default:            return "?";
     }
 }

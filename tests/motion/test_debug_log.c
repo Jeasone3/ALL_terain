@@ -413,7 +413,7 @@ static void test_route_telemetry(void)
     begin_case("route progress, extreme timer and frozen project snapshot");
     g_route.enabled = 1u;
     g_route.state = ROUTE_OBSTACLE;
-    g_route.step_index = ROUTE_STEP_COUNT - 1u;
+    g_route.step_index = 23u; /* 使用较长的两位步骤号验证显示边界，不依赖当前只编写两段。 */
     g_route.project_id = 9u;
     g_route.state_frames = UINT32_MAX;
     motorLeft.speed = motorRight.speed = 600;
