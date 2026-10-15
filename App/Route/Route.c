@@ -18,30 +18,30 @@
  * 列顺序：动作、项目编号、PWM、入口延时、最短通过/前移、阶段超时。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_IMU_PASS,   1u, 500u, 0u, 0u, 0u}, /* 01 起点 -> 石块 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 0u, 0u}, /* 02 石块后十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   2u, 600u, 0u, 0u, 0u}, /* 03 大台阶 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 0u, 0u}, /* 04 高台后方十字直行，避开方形隧道 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 0u, 0u}, /* 05 后方连接直角左转 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 06 转入 U 型隧道入口支路 */
-    {ROUTE_ACTION_TRACK_PASS, 3u, 400u, 0u, 0u, 0u}, /* 07 U 型隧道全程循迹 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 0u, 0u}, /* 08 U 出口连接直角左转 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 09 转向栅格 */
-    {ROUTE_ACTION_IMU_PASS,   4u, 500u, 0u, 0u, 0u}, /* 10 栅格 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 0u, 0u}, /* 11 栅格后进入左侧外沿 */
-    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 0u, 0u}, /* 12 左外沿转入减速带支路 */
-    {ROUTE_ACTION_IMU_PASS,   5u, 500u, 0u, 0u, 0u}, /* 13 减速带 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 0u, 0u}, /* 14 中间十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   6u, 500u, 0u, 0u, 0u}, /* 15 草地 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 16 草地后右转去石块，禁止进入方形隧道 */
-    {ROUTE_ACTION_IMU_PASS,   1u, 500u, 0u, 0u, 0u}, /* 17 第二次石块 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 18 石块后右转进入外沿 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 19 外沿右转去小台阶 */
-    {ROUTE_ACTION_IMU_PASS,   7u, 600u, 0u, 0u, 0u}, /* 20 小台阶 */
-    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 0u, 0u}, /* 21 中间十字直行 */
-    {ROUTE_ACTION_IMU_PASS,   8u, 500u, 0u, 0u, 0u}, /* 22 防滑带 */
-    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 0u, 0u}, /* 23 转向项目 9 斜坡 */
-    {ROUTE_ACTION_TIMED_STOP, 9u, 600u, 0u, 0u, 0u}  /* 24 整车上蓝色高台后定时停车 */
+    {ROUTE_ACTION_IMU_PASS,   1u, 600u, 4000u, 5000u, 10000u}, /* 01 起点 -> 石块 */
+    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 02 石块后十字直行 */
+    {ROUTE_ACTION_IMU_PASS,   2u, 700u, 3000u, 10000u, 13000u}, /* 03 大台阶 */
+    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 04 高台后方十字直行，避开方形隧道 */
+    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 05 后方连接直角左转 */
+    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 06 转入 U 型隧道入口支路 */
+    {ROUTE_ACTION_TRACK_PASS, 3u, 400u, 2000u, 10000u, 15000u}, /* 07 U 型隧道全程循迹 */
+    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 08 U 出口连接直角左转 */
+    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 09 转向栅格 */
+    {ROUTE_ACTION_IMU_PASS,   4u, 600u, 2000u, 6000u, 10000u}, /* 10 栅格 */
+    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 11 栅格后进入左侧外沿 */
+    {ROUTE_ACTION_LEFT,       0u, 500u, 0u, 50u, 5000u}, /* 12 左外沿转入减速带支路 */
+    {ROUTE_ACTION_IMU_PASS,   5u, 600u, 3000u, 5000u, 10000u}, /* 13 减速带 */
+    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 3000u, 5000u}, /* 14 中间十字直行 */
+    {ROUTE_ACTION_IMU_PASS,   6u, 600u, 3000u, 6000u, 10000u}, /* 15 草地 */
+    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 16 草地后右转去石块，禁止进入方形隧道 */
+    {ROUTE_ACTION_IMU_PASS,   1u, 600u, 3000u, 5000u, 10000u}, /* 17 第二次石块 */
+    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 18 石块后右转进入外沿 */
+    {ROUTE_ACTION_RIGHT,      0u, 500u, 0u, 50u, 5000u}, /* 19 外沿右转去小台阶 */
+    {ROUTE_ACTION_IMU_PASS,   7u, 700u, 3000u, 5000u, 10000u}, /* 20 小台阶 */
+    {ROUTE_ACTION_STRAIGHT,   0u, 500u, 0u, 50u, 5000u}, /* 21 中间十字直行 */
+    {ROUTE_ACTION_IMU_PASS,   8u, 700u, 3000u, 6000u, 10000u}, /* 22 防滑带 */
+    {ROUTE_ACTION_RIGHT,      0u, 1000u, 2000u, 50u, 10000u}, /* 23 转向项目 9 斜坡 */
+    {ROUTE_ACTION_TIMED_STOP, 9u, 600u, 1000u, 5000u, 10000u}  /* 24 整车上蓝色高台后定时停车 */
 };
 
 volatile Route_t g_route;
@@ -122,14 +122,18 @@ static RouteJunction classify_sensor_frame(const uint16_t *sensor_data, uint8_t 
  */
 static void update_junction(RouteJunction raw_junction)
 {
-    if (raw_junction != s_junction_candidate) {
+    if (raw_junction != s_junction_candidate) { //进入候选
         s_junction_candidate = raw_junction;
         s_junction_frames = 1u;
-    } else if (s_junction_frames < ROUTE_CONFIRM_FRAMES) {
+    } else if (s_junction_frames < ROUTE_CONFIRM_FRAMES) { //候选连续帧数
         ++s_junction_frames;
     }
-    if (s_junction_frames < ROUTE_CONFIRM_FRAMES) return;
-    g_route.junction = s_junction_candidate;
+
+    if (s_junction_frames < ROUTE_CONFIRM_FRAMES) //未连续三帧确认
+        return;
+    
+    g_route.junction = s_junction_candidate; //候选成功
+   
     if (s_junction_candidate == JUNCTION_NONE) {
         s_junction_latched = 0u;
     } else if (!s_junction_latched) {
@@ -167,12 +171,17 @@ static void update_line(uint8_t raw_line)
 static uint8_t narrow_line(const uint16_t *sensor_data)
 {
     uint8_t i, count = 0u, center = 0u, seen = 0u, gap = 0u;
+
     for (i = 0u; i < 8u; ++i) {
         if (sensor_data[i] == LINE_RAW_VALUE) {
-            if (i < 2u || i > 5u || gap) return 0u;
+            if (i < 2u || i > 5u || gap) 
+                return 0u;
             ++count;
             seen = 1u;
-            if (i == 3u || i == 4u) center = 1u;
+            if (i == 3u || i == 4u) 
+            {
+                center = 1u;
+            }
         } else if (seen) {
             gap = 1u;
         }
@@ -205,11 +214,15 @@ static void update_conditions(const uint16_t *sensor_data)
 {
     uint8_t raw_line;
     RouteJunction raw_junction;
-    g_route.junction_event = 0u;
-    g_route.line_found_event = 0u;
-    g_route.line_lost_event = 0u;
-    if (sensor_data == 0) return;
-    raw_junction = classify_sensor_frame(sensor_data, &raw_line);
+
+    g_route.junction_event = 0u; // 新路口事件
+    g_route.line_found_event = 0u; // 新有线事件
+    g_route.line_lost_event = 0u;  // 新无线事件
+
+    if (sensor_data == 0) 
+        return;
+
+    raw_junction = classify_sensor_frame(sensor_data, &raw_line); //识别路口
     if (g_route.state == ROUTE_ENTRY || g_route.state == ROUTE_OBSTACLE ||
         g_route.state == ROUTE_RECOVER || g_route.state == ROUTE_READY) {
         reset_junction();
@@ -274,11 +287,14 @@ static void enter_state(RouteState state)
  */
 static void begin_step(void)
 {
-    const RouteStep *step = &g_route_plan[g_route.step_index];
-    g_route.project_id = step->project_id;
-    reset_junction();
-    enter_state(step->action >= ROUTE_ACTION_IMU_PASS ? ROUTE_ENTRY : ROUTE_FOLLOW);
-    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK) Car_Track();
+    const RouteStep *step = &g_route_plan[g_route.step_index];//从0开始
+    g_route.project_id = step->project_id;  //项目编号
+    reset_junction(); //清空上一个状态
+    enter_state(step->action >= ROUTE_ACTION_IMU_PASS ? ROUTE_ENTRY : ROUTE_FOLLOW); //如果是IMU直行或U型隧道循迹，进入入口阶段，否则进入循迹等待阶段
+    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK) //如果当前不是循迹模式，则切换到循迹模式
+    {
+        Car_Track();
+    }
     DebugLog_Write(LOG_INFO, "STEP_BEGIN");
 }
 
@@ -304,7 +320,7 @@ static void begin_recovery(void)
     enter_state(ROUTE_RECOVER);
     reset_junction();
     /* 转弯完成已自动接循迹时保留 PID 历史，不再提交重复的 TRACK 请求。 */
-    if (g_mode_fsm.mode != MODE_TRACK) Car_Track();
+    if (g_mode_fsm.mode != MODE_TRACK) C ar_Track();
 }
 
 /** @brief 初始化监测和路线进度，不启动电机，也不修改已填写的标定表。 */
@@ -334,6 +350,7 @@ uint8_t Route_Start(void)
     uint16_t invalid;
     uint32_t saved_primask = __get_PRIMASK();
     __disable_irq();
+
     if (g_mode_fsm.status != CAR_STOPPED) {
         __set_PRIMASK(saved_primask);
         return 0u;
@@ -351,6 +368,7 @@ uint8_t Route_Start(void)
     g_route.enabled = s_active = 1u;
     g_route.state = ROUTE_READY;
     DebugLog_Write(LOG_INFO, "ROUTE_START");
+
     __set_PRIMASK(saved_primask);
     return 1u;
 }
@@ -376,20 +394,29 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     update_project_beep((uint8_t)(external_command || !g_route.enabled ||
                                  g_mode_fsm.status != CAR_RUNNING));
     update_conditions(sensor_data);
-    if (!s_active) return;
+    if (!s_active) 
+        return;
+
     if (external_command || !g_route.enabled ||
         (g_mode_fsm.status != CAR_RUNNING && g_route.state != ROUTE_READY)) {
         s_active = g_route.enabled = 0u;
         g_route.state = ROUTE_ABORTED;
         return;
     }
-    if (sensor_data == 0) return;
+    if (sensor_data == 0) 
+    {
+        return;
+    }
     if (g_route.state == ROUTE_READY) {
         begin_step();
         return;
     }
 
-    if (g_route.state_frames < UINT32_MAX / ROUTE_FRAME_MS) ++g_route.state_frames;
+    if (g_route.state_frames < UINT32_MAX / ROUTE_FRAME_MS) 
+    {
+        ++g_route.state_frames;
+    }
+
     elapsed_ms = g_route.state_frames * ROUTE_FRAME_MS;
     step = &g_route_plan[g_route.step_index];
 

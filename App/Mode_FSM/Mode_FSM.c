@@ -13,7 +13,7 @@
 #include "Debug_Log.h"
 #include <math.h>
 
-#define TURN_DONE_TOLERANCE 7.0f /* 转弯完成误差，单位：度 */
+#define TURN_DONE_TOLERANCE 5.0f /* 转弯完成误差，单位：度 */
 #define TURN_DONE_FRAMES 3u      /* 误差连续三帧在容差内才算完成 */
 #define TURN_TIMEOUT_FRAMES 300u /* 300 × 10 ms = 3 秒，上车后校准 */
 

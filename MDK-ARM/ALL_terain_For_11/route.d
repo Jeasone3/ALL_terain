@@ -42,3 +42,4 @@ all_terain_for_11\route.o: ..\Com\Com_PID\Com_pid.h
 all_terain_for_11\route.o: ..\Int\Int_Motor\motor.h
 all_terain_for_11\route.o: ../Core/Inc/tim.h
 all_terain_for_11\route.o: ../Core/Inc/gpio.h
+all_terain_for_11\route.o: ..\Int\Int_Beep\Int_Beep.h

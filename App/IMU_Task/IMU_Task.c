@@ -34,7 +34,7 @@ static float s_target_yaw = 0.0f;
 #define TURN_MAX_IOUT     50.0f
 /* 直行参数 */
 #define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
-#define FWD_MAX_OUT       100.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
+#define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
 #define FWD_DEADBAND      1.0f      /* 死区 */
 
 /**

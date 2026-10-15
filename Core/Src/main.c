@@ -50,9 +50,9 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：单项目限时测试；两个开关均 0 时检查固定路线标定 */
-#define IMU_STRAIGHT_TEST_PWM     600u   /* 台阶和斜坡首轮 600；其他直通项目可改为 500 */
-#define IMU_STRAIGHT_TEST_MS      1000u  /* 首轮 1 秒，此后每次增加 100 ms；控制中断内到时停车 */
+#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：单项目限时测试；两个开关均 0 时检查固定路线标定 */
+#define IMU_STRAIGHT_TEST_PWM     700u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
+#define IMU_STRAIGHT_TEST_MS      5000u  /* 首轮 1 秒，此后每次增加 100 ms；控制中断内到时停车 */
 
 /* USER CODE END PD */
 
