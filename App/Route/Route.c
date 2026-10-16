@@ -11,9 +11,9 @@
 
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
-#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 首个右路口确认后短鸣 100 ms，独立于阶段计时 */
-#define ROUTE_TURN_APPROACH_MS   500u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
-#define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
+#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
+#define ROUTE_TURN_APPROACH_MS   650u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
+#define ROUTE_TURN_APPROACH_PWM  450u /* 前移使用原普通 IMU 直行基础 PWM */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -22,13 +22,20 @@
 #endif
 
 /* 仅填写已经确认的新顺序，后续项目继续追加到同一张表，并同步增加 ROUTE_STEP_COUNT。
- * 第 1 段保留用户已经设置的 2000 ms 入口；两段 IMU 时长均按本次要求设为 4000 ms。
+ * 已编写路段的参数保持原值；第 8 段恢复窄线后，继续接第 9 段十字左转项目。
  * 列顺序：路口动作、路线段号、IMU PWM、循迹入口 ms、IMU 通行 ms、阶段超时 ms、触发图案。
- * 超时沿用原前两个项目的 10000/13000 ms；等待路口距离也需要实车确认。
+ * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 800u, 2000u, 4000u, 10000u, JUNCTION_CROSS} //减速带
+    {ROUTE_ACTION_RIGHT,    2u, 500u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
+    {ROUTE_ACTION_STRAIGHT, 3u, 500u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
+    {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
+    {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
+    {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 草坪 */
+    {ROUTE_ACTION_LEFT,     8u, 500u, 1000u, 7000u, 10000u, JUNCTION_CROSS}, /* 大台阶 */
+    {ROUTE_ACTION_LEFT,     9u, 600u, 1000u, 5000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
 };
 
 volatile Route_t g_route;
@@ -235,7 +242,8 @@ static void update_conditions(const uint16_t *sensor_data)
  * @param 无。
  * @return 全部有效时返回 ROUTE_ACTIVE_STEP_COUNT，否则返回无效段的下标。
  * @note 不检查调试截止点之后的参数，避免尚未填写的后续项目阻止当前短段试车。
- *       入口与通行时间必须非零，阶段超时必须大于入口、通行和转弯前移时间。
+ *       项目入口与通行时间必须非零，阶段超时必须大于入口、通行和转弯前移时间。
+ *       RIGHT_TRACK 可接后续路段，入口、通行和对应 PWM 为零，不虚构项目时长。
  */
 static uint16_t invalid_step(void)
 {
@@ -243,13 +251,19 @@ static uint16_t invalid_step(void)
     for (i = 0u; i < ROUTE_ACTIVE_STEP_COUNT; ++i) {
         const RouteStep *step = &g_route_plan[i];
         if ((step->action != ROUTE_ACTION_LEFT && step->action != ROUTE_ACTION_RIGHT &&
-             step->action != ROUTE_ACTION_STRAIGHT) ||
+             step->action != ROUTE_ACTION_STRAIGHT && step->action != ROUTE_ACTION_RIGHT_TRACK) ||
             (step->trigger_junction != JUNCTION_LEFT && step->trigger_junction != JUNCTION_RIGHT &&
              step->trigger_junction != JUNCTION_CROSS) ||
-            step->entry_ms == 0u || step->pass_ms == 0u || step->timeout_ms <= step->pass_ms ||
-            step->timeout_ms <= step->entry_ms || step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
-            step->base_pwm == 0u || step->base_pwm > 1000u ||
+            step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
             step->project_id == 0u) {
+            return i;
+        }
+        if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
+            if (step->base_pwm != 0u ||
+                step->entry_ms != 0u || step->pass_ms != 0u) return i;
+        } else if (step->entry_ms == 0u || step->pass_ms == 0u ||
+                   step->timeout_ms <= step->pass_ms || step->timeout_ms <= step->entry_ms ||
+                   step->base_pwm == 0u || step->base_pwm > 1000u) {
             return i;
         }
     }
@@ -295,7 +309,7 @@ static void begin_step(void)
 static void finish_step(void)
 {
     ++g_route.step_index;
-    begin_step(); /* 调试截止段在通行结束时进入 CRUISE，不会调用此处越过末尾。 */
+    begin_step(); /* 截止段通行结束或 RIGHT_TRACK 转完时进入 CRUISE，不会从此处越过末尾。 */
 }
 
 /**
@@ -404,6 +418,8 @@ void Route_Enable(uint8_t enabled)
  * @param external_command 本帧已有外部接管时为 1。
  * @return 无。
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
+ *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
+ *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -450,11 +466,9 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
          * 同一十字不会重复提交动作。左右单侧路口仍保留原有的新事件要求。 */
         if (g_route.junction == step->trigger_junction &&
             (g_route.junction_event || g_route.junction == JUNCTION_CROSS)) {
-            /* 提示绑定首个右路口的确认，不在 IMU 开始或第二段重复触发。 */
-            if (g_route.step_index == 0u) {
-                s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
-                Int_Beep_On();
-            }
+            /* 包含第一个项目结束后的第二段十字；接受后立即离开 FOLLOW，同一路口不重复鸣叫。 */
+            s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
+            Int_Beep_On();
             if (step->action == ROUTE_ACTION_STRAIGHT) {
                 enter_state(ROUTE_ENTRY); /* 当前已经循迹，保留 PID 历史与电机控制。 */
             } else {
@@ -475,6 +489,17 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         break;
     case ROUTE_TURN:
         if (g_mode_fsm.turn_count != s_turn_count_before) {
+            if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
+                /* FSM 已在转弯完成帧接入循迹；不重复请求 TRACK，也不开始入口或 IMU 通行。 */
+                if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+                    enter_state(ROUTE_CRUISE);
+                    reset_junction();
+                    DebugLog_Write(LOG_INFO, "DEBUG_END");
+                } else {
+                    begin_recovery(); /* 先确认离开原路口，才允许下一段接收新事件。 */
+                }
+                return;
+            }
             enter_state(ROUTE_ENTRY);
             /* Route 先于本帧 IMU 更新；此处看到的是上一帧已经完成的转弯。
              * FSM 完成帧已经运行一次循迹，将其计入入口的已完成帧，避免多算 10 ms。

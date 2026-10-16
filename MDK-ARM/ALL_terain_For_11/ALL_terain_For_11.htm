@@ -3,7 +3,7 @@
 <title>Static Call Graph - [ALL_terain_For_11\ALL_terain_For_11.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image ALL_terain_For_11\ALL_terain_For_11.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Thu Oct 15 20:28:11 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 16 18:29:22 2026
 <BR><P>
 <H3>Maximum Stack Usage =        416 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -610,6 +610,10 @@ Global Symbols
 <LI><a href="#[5c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_dadd
 </UL>
 
+<P><STRONG><a name="[140]"></a>__decompress</STRONG> (Thumb, 0 bytes, Stack size unknown bytes, __dczerorl2.o(.text), UNUSED)
+
+<P><STRONG><a name="[141]"></a>__decompress1</STRONG> (Thumb, 86 bytes, Stack size unknown bytes, __dczerorl2.o(.text), UNUSED)
+
 <P><STRONG><a name="[66]"></a>Attitude_Init</STRONG> (Thumb, 8 bytes, Stack size 4 bytes, attitude.o(i.Attitude_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 4<LI>Call Chain = Attitude_Init
 </UL>
@@ -647,7 +651,7 @@ Global Symbols
 </UL>
 <BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;submit_request
 </UL>
-<BR>[Called By]<UL><LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
+<BR>[Called By]<UL><LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
@@ -673,7 +677,7 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;submit_request
 </UL>
 <BR>[Called By]<UL><LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
@@ -757,7 +761,7 @@ Global Symbols
 <LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 <LI><a href="#[106]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_conditions
 <LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
+<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 <LI><a href="#[bf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Tick
 <LI><a href="#[122]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;finish_turn
@@ -1591,7 +1595,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[f5]"></a>Route_Tick</STRONG> (Thumb, 462 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
+<P><STRONG><a name="[f5]"></a>Route_Tick</STRONG> (Thumb, 500 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
 <BR><BR>[Stack]<UL><LI>Max Depth = 88<LI>Call Chain = Route_Tick &rArr; update_conditions &rArr; DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[df]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_Beep_On
@@ -1603,8 +1607,8 @@ Global Symbols
 <LI><a href="#[108]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;enter_state
 <LI><a href="#[10b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;confirm_exit
 <LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
-<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
+<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[73]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnRight90
 <LI><a href="#[72]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnLeft90
 <LI><a href="#[71]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_Track
@@ -1677,7 +1681,7 @@ Global Symbols
 <BR><BR>[Calls]<UL><LI><a href="#[110]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_printf_core
 </UL>
 
-<P><STRONG><a name="[140]"></a>__1snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
+<P><STRONG><a name="[142]"></a>__1snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
 
 <P><STRONG><a name="[125]"></a>__2snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf))
 <BR><BR>[Stack]<UL><LI>Max Depth = 40<LI>Call Chain = __2snprintf
@@ -1685,19 +1689,19 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[81]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;format_angle
 </UL>
 
-<P><STRONG><a name="[141]"></a>__c89snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
+<P><STRONG><a name="[143]"></a>__c89snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
 
-<P><STRONG><a name="[142]"></a>snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
+<P><STRONG><a name="[144]"></a>snprintf</STRONG> (Thumb, 0 bytes, Stack size 40 bytes, printfa.o(i.__0snprintf), UNUSED)
 
 <P><STRONG><a name="[111]"></a>__0vsnprintf</STRONG> (Thumb, 46 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
 <BR><BR>[Calls]<UL><LI><a href="#[110]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_printf_core
 </UL>
 
-<P><STRONG><a name="[143]"></a>__1vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
+<P><STRONG><a name="[145]"></a>__1vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
 
-<P><STRONG><a name="[144]"></a>__2vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
+<P><STRONG><a name="[146]"></a>__2vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
 
-<P><STRONG><a name="[145]"></a>__c89vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
+<P><STRONG><a name="[147]"></a>__c89vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf), UNUSED)
 
 <P><STRONG><a name="[fe]"></a>vsnprintf</STRONG> (Thumb, 0 bytes, Stack size 24 bytes, printfa.o(i.__0vsnprintf))
 <BR><BR>[Stack]<UL><LI>Max Depth = 24<LI>Call Chain = vsnprintf
@@ -1740,11 +1744,11 @@ Global Symbols
 <LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
 </UL>
 
-<P><STRONG><a name="[146]"></a>__scatterload_copy</STRONG> (Thumb, 14 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_copy), UNUSED)
+<P><STRONG><a name="[148]"></a>__scatterload_copy</STRONG> (Thumb, 14 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_copy), UNUSED)
 
-<P><STRONG><a name="[147]"></a>__scatterload_null</STRONG> (Thumb, 2 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_null), UNUSED)
+<P><STRONG><a name="[149]"></a>__scatterload_null</STRONG> (Thumb, 2 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_null), UNUSED)
 
-<P><STRONG><a name="[148]"></a>__scatterload_zeroinit</STRONG> (Thumb, 14 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_zeroinit), UNUSED)
+<P><STRONG><a name="[14a]"></a>__scatterload_zeroinit</STRONG> (Thumb, 14 bytes, Stack size unknown bytes, handlers.o(i.__scatterload_zeroinit), UNUSED)
 
 <P><STRONG><a name="[11f]"></a>__set_errno</STRONG> (Thumb, 6 bytes, Stack size 0 bytes, errno.o(i.__set_errno))
 <BR><BR>[Called By]<UL><LI><a href="#[11d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
@@ -1825,7 +1829,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[bf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Tick
 </UL>
 
-<P><STRONG><a name="[126]"></a>line_following_init</STRONG> (Thumb, 98 bytes, Stack size 24 bytes, track_task.o(i.line_following_init))
+<P><STRONG><a name="[126]"></a>line_following_init</STRONG> (Thumb, 96 bytes, Stack size 24 bytes, track_task.o(i.line_following_init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 44<LI>Call Chain = line_following_init &rArr; PID_init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[d3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_set_integral_separation
@@ -2093,7 +2097,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[bf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Tick
 </UL>
 
-<P><STRONG><a name="[109]"></a>begin_project</STRONG> (Thumb, 26 bytes, Stack size 8 bytes, route.o(i.begin_project))
+<P><STRONG><a name="[10a]"></a>begin_project</STRONG> (Thumb, 26 bytes, Stack size 8 bytes, route.o(i.begin_project))
 <BR><BR>[Stack]<UL><LI>Max Depth = 56<LI>Call Chain = begin_project &rArr; DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[89]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
@@ -2103,7 +2107,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
-<P><STRONG><a name="[10a]"></a>begin_recovery</STRONG> (Thumb, 24 bytes, Stack size 8 bytes, route.o(i.begin_recovery))
+<P><STRONG><a name="[109]"></a>begin_recovery</STRONG> (Thumb, 24 bytes, Stack size 8 bytes, route.o(i.begin_recovery))
 <BR><BR>[Stack]<UL><LI>Max Depth = 32<LI>Call Chain = begin_recovery &rArr; Car_Track &rArr; submit_request
 </UL>
 <BR>[Calls]<UL><LI><a href="#[103]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;reset_junction
@@ -2141,8 +2145,8 @@ Local Symbols
 
 <P><STRONG><a name="[108]"></a>enter_state</STRONG> (Thumb, 16 bytes, Stack size 0 bytes, route.o(i.enter_state))
 <BR><BR>[Called By]<UL><LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
-<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
+<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
@@ -2154,7 +2158,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
-<P><STRONG><a name="[105]"></a>invalid_step</STRONG> (Thumb, 112 bytes, Stack size 0 bytes, route.o(i.invalid_step))
+<P><STRONG><a name="[105]"></a>invalid_step</STRONG> (Thumb, 146 bytes, Stack size 0 bytes, route.o(i.invalid_step))
 <BR><BR>[Called By]<UL><LI><a href="#[104]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Start
 </UL>
 
@@ -2167,7 +2171,7 @@ Local Symbols
 <P><STRONG><a name="[103]"></a>reset_junction</STRONG> (Thumb, 22 bytes, Stack size 0 bytes, route.o(i.reset_junction))
 <BR><BR>[Called By]<UL><LI><a href="#[106]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_conditions
 <LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 <LI><a href="#[f1]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Init
 </UL>

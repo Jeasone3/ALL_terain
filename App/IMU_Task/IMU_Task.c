@@ -30,13 +30,13 @@ static float s_target_yaw = 0.0f;
 /* 电机 PWM 量程(浮点, 与 Com_Limit 的 float 输入类型一致) */
 #define MOTOR_MAX_SPEED   1000.0f
 /* 转弯 PID 限幅 */
-#define TURN_MAX_OUT      800.0f
+#define TURN_MAX_OUT      600.0f
 #define TURN_MAX_IOUT     50.0f
-#define TURN_MIN_OUT      250.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
+#define TURN_MIN_OUT      210.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
 /* 直行参数 */
-#define FWD_BASE_SPEED    500.0f    /* 直行基础占空比 */
+#define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
-#define FWD_DEADBAND      1.0f      /* 死区 */
+#define FWD_DEADBAND      2.0f      /* 死区 */
 
 /**
  * @brief 计算从当前航向转到目标航向的最短角差，避免跨越 ±180° 时绕远路。
@@ -75,7 +75,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 保留当前直行增益，仅调整输出限幅；仍需实车整定。 */
-    pid_real_t fwd_params[3] = {40.0f, 0.0f, 25.0f};
+    pid_real_t fwd_params[3] = {44.0f, 0.0f, 25.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 

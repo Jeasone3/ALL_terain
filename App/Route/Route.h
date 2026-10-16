@@ -24,38 +24,41 @@ typedef enum {
     ROUTE_RECOVER,                 /* 恢复循迹并再次确认窄黑线，屏蔽重复路口 */
     ROUTE_UNCALIBRATED,            /* 参数未标定，保持停车 */
     ROUTE_ABORTED,                 /* 被接管、关闭或故障打断，不能自动续跑 */
-    ROUTE_CRUISE                   /* 到达调试截止段，持续循迹，不再派发后续动作 */
+    ROUTE_CRUISE                   /* 到达本次启用路线的末尾，持续循迹 */
 } RouteState;
 
 typedef enum {
     ROUTE_ACTION_LEFT = 0,         /* 接受指定路口后前移、左转，再入口对正 */
     ROUTE_ACTION_RIGHT,            /* 接受指定路口后前移、右转，再入口对正 */
-    ROUTE_ACTION_STRAIGHT          /* 接受指定路口后继续循迹，直接入口对正 */
+    ROUTE_ACTION_STRAIGHT,         /* 接受指定路口后继续循迹，直接入口对正 */
+    ROUTE_ACTION_RIGHT_TRACK       /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
 } RouteAction;
 
 /**
- * @brief 一段“指定路口、入口对正、IMU 通行”的参数，时间单位均为毫秒。
+ * @brief 一段指定路口后的动作参数，时间单位均为毫秒。
  * @note project_id 表示本次路线的段号，不推断图片中的项目编号。
  *       trigger_junction 必须与两帧确认的路口一致；左右单侧要求新事件，十字允许从单侧升级。
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
+ *       RIGHT_TRACK 只前移、右转后循迹，base_pwm、entry_ms、pass_ms 均为 0。
+ *       非截止段恢复窄线后接下一段；本次截止段完成后直接持续循迹。
  *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
 typedef struct {
     RouteAction action;            /* 路口继续循迹，或先前移转弯 */
     uint8_t project_id;             /* 本次路线段号，从 1 开始 */
-    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM */
-    uint32_t entry_ms;              /* 入口灰度循迹持续时间 */
-    uint32_t pass_ms;               /* IMU 直行持续时间 */
+    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM；RIGHT_TRACK 不使用 */
+    uint32_t entry_ms;              /* 入口灰度循迹持续时间；RIGHT_TRACK 不使用 */
+    uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK 不使用 */
     uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
     RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 2u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 9u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
-/* 集中设置本次调试截止段数：2 表示只跑前两段；0 表示运行全部已编写段。
+/* 集中设置本次调试截止段数：9 表示运行到新增十字左转后的 IMU 结束；0 表示全部已编写段。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 2u
+#define ROUTE_DEBUG_STEP_LIMIT 9u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT
@@ -63,7 +66,7 @@ typedef struct {
 #endif
 
 /* 只在停车且 Route 未运行时修改；实际部署编辑 Route.c 后重新编译。
- * 2000/4000 ms 来自用户要求；PWM、前移时间和路口图案仍需实车标定。 */
+ * 入口 1000/2000 ms、通行 4000/5000/6000 ms 来自用户要求；PWM、前移与图案需实车标定。 */
 extern RouteStep g_route_plan[ROUTE_STEP_COUNT];
 
 typedef struct {

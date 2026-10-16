@@ -65,6 +65,13 @@ $motionSources = @(
 Invoke-MotionTest -Name 'test_motion_route' -Arguments $motionSources
 # 单段截止必须允许未填写的后续段；0 则表示执行全部已编写段。
 Invoke-MotionTest -Name 'test_motion_route_limit1' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=1u')
+Invoke-MotionTest -Name 'test_motion_route_limit2' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=2u')
+Invoke-MotionTest -Name 'test_motion_route_limit3' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=3u')
+Invoke-MotionTest -Name 'test_motion_route_limit4' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=4u')
+Invoke-MotionTest -Name 'test_motion_route_limit5' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=5u')
+Invoke-MotionTest -Name 'test_motion_route_limit6' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=6u')
+Invoke-MotionTest -Name 'test_motion_route_limit7' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=7u')
+Invoke-MotionTest -Name 'test_motion_route_limit8' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=8u')
 Invoke-MotionTest -Name 'test_motion_route_all' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=0u')
 
 Invoke-MotionTest -Name 'test_debug_log' -Arguments @(
