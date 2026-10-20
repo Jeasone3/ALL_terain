@@ -1,6 +1,7 @@
 param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
-    [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests')
+    [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
+    [switch]$RouteFinishOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,6 +62,14 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($RouteFinishOnly) {
+    # 单独验证完整路线的收尾及截止 8 的兼容性，不依赖旧参数的全量调参断言。
+    Invoke-MotionTest -Name 'test_route_finish' -Arguments ($motionSources + '-DTEST_ROUTE_FINISH_ONLY')
+    Invoke-MotionTest -Name 'test_route_finish_all' -Arguments ($motionSources + @('-DTEST_ROUTE_FINISH_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=0u'))
+    Invoke-MotionTest -Name 'test_route_finish_limit8' -Arguments ($motionSources + @('-DTEST_ROUTE_FINISH_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=8u'))
+    return
+}
 
 Invoke-MotionTest -Name 'test_motion_route' -Arguments $motionSources
 # 单段截止必须允许未填写的后续段；0 则表示执行全部已编写段。

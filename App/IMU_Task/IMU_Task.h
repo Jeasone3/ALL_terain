@@ -12,7 +12,7 @@
  */
 
 /* 转弯控制和状态机共用同一到位容差，避免控制器停转后状态机仍认为未到位。 */
-#define IMU_TURN_DONE_TOLERANCE 5.0f
+#define IMU_TURN_DONE_TOLERANCE 3.0f
 
 /**
  * @brief 初始化转弯和直行 PID，保留当前参数并清除历史。

@@ -50,9 +50,9 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：单项目限时测试；两个开关均 0 时启动已配置的路线段 */
-#define IMU_STRAIGHT_TEST_PWM     700u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
-#define IMU_STRAIGHT_TEST_MS      5000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
+#define IMU_STRAIGHT_TEST_PWM     400u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
+#define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
 
 /* USER CODE END PD */
 
@@ -177,6 +177,8 @@ int main(void)
   #elif IMU_STRAIGHT_TEST_ENABLE
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
+    /* 只提交一次：接受请求时将当前朝向归零，TIM4 每 10 ms 采样 yaw 并执行角度 PID 差速纠偏。
+     * 基础 PWM 和持续时间由上方宏配置；到时停车，IMU 读取失败也会故障停车。 */
     Car_ImuForwardTimed(IMU_STRAIGHT_TEST_PWM, IMU_STRAIGHT_TEST_MS);
     DebugLog_Write(LOG_INFO, "IMU_TEST"); /* 限时从接受请求开始，与主循环刷新耗时无关。 */
   }

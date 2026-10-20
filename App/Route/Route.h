@@ -24,7 +24,10 @@ typedef enum {
     ROUTE_RECOVER,                 /* 恢复循迹并再次确认窄黑线，屏蔽重复路口 */
     ROUTE_UNCALIBRATED,            /* 参数未标定，保持停车 */
     ROUTE_ABORTED,                 /* 被接管、关闭或故障打断，不能自动续跑 */
-    ROUTE_CRUISE                   /* 到达本次启用路线的末尾，持续循迹 */
+    ROUTE_CRUISE,                  /* 短段调试截止后持续循迹 */
+    ROUTE_FINAL_TURN,              /* 完整路线最后一个项目结束后，原地 IMU 左转 90° */
+    ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
+    ROUTE_FINISHED                 /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
 } RouteState;
 
 typedef enum {
@@ -40,7 +43,8 @@ typedef enum {
  *       trigger_junction 必须与两帧确认的路口一致；左右单侧要求新事件，十字允许从单侧升级。
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
  *       RIGHT_TRACK 只前移、右转后循迹，base_pwm、entry_ms、pass_ms 均为 0。
- *       非截止段恢复窄线后接下一段；本次截止段完成后直接持续循迹。
+ *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。
+ *       完整路线末尾追加原地左转 90°、IMU 直行 3 秒，再停车。
  *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
 typedef struct {
@@ -55,7 +59,8 @@ typedef struct {
 
 #define ROUTE_STEP_COUNT 9u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
-/* 集中设置本次调试截止段数：9 表示运行到新增十字左转后的 IMU 结束；0 表示全部已编写段。
+/* 集中设置本次调试截止段数：9 或 0 均执行完整路线及末尾左转、直行 3 秒停车。
+ * 1 至 8 只运行对应前缀，截止后持续循迹，不执行完整路线的收尾动作。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
 #define ROUTE_DEBUG_STEP_LIMIT 9u

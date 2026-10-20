@@ -272,6 +272,9 @@ static const char *route_name(RouteState state)
         case ROUTE_UNCALIBRATED: return "WAIT";
         case ROUTE_ABORTED: return "ABORT";
         case ROUTE_CRUISE:  return "CRUISE";
+        case ROUTE_FINAL_TURN: return "END_L";
+        case ROUTE_FINAL_FORWARD: return "END_F";
+        case ROUTE_FINISHED: return "DONE";
         default:            return "?";
     }
 }

@@ -3,7 +3,7 @@
 <title>Static Call Graph - [ALL_terain_For_11\ALL_terain_For_11.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image ALL_terain_For_11\ALL_terain_For_11.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 16 18:29:22 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 16 19:14:18 2026
 <BR><P>
 <H3>Maximum Stack Usage =        416 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -669,6 +669,7 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;submit_request
 </UL>
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
+<LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
 <P><STRONG><a name="[71]"></a>Car_Track</STRONG> (Thumb, 16 bytes, Stack size 8 bytes, mode_fsm.o(i.Car_Track))
@@ -678,7 +679,6 @@ Global Symbols
 </UL>
 <BR>[Called By]<UL><LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
 <LI><a href="#[109]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
-<LI><a href="#[f5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
 <P><STRONG><a name="[72]"></a>Car_TurnLeft90</STRONG> (Thumb, 20 bytes, Stack size 8 bytes, mode_fsm.o(i.Car_TurnLeft90))
@@ -1595,11 +1595,12 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[f5]"></a>Route_Tick</STRONG> (Thumb, 500 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
+<P><STRONG><a name="[f5]"></a>Route_Tick</STRONG> (Thumb, 574 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
 <BR><BR>[Stack]<UL><LI>Max Depth = 88<LI>Call Chain = Route_Tick &rArr; update_conditions &rArr; DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[df]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_Beep_On
 <LI><a href="#[89]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
+<LI><a href="#[70]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_Stop
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_project_beep
 <LI><a href="#[106]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_conditions
 <LI><a href="#[103]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;reset_junction
@@ -1611,7 +1612,6 @@ Global Symbols
 <LI><a href="#[10a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[73]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnRight90
 <LI><a href="#[72]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnLeft90
-<LI><a href="#[71]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_Track
 <LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_RouteTimeout
 <LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_ImuForward
 </UL>
@@ -2176,7 +2176,7 @@ Local Symbols
 <LI><a href="#[f1]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Init
 </UL>
 
-<P><STRONG><a name="[106]"></a>update_conditions</STRONG> (Thumb, 194 bytes, Stack size 16 bytes, route.o(i.update_conditions))
+<P><STRONG><a name="[106]"></a>update_conditions</STRONG> (Thumb, 218 bytes, Stack size 16 bytes, route.o(i.update_conditions))
 <BR><BR>[Stack]<UL><LI>Max Depth = 64<LI>Call Chain = update_conditions &rArr; DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[89]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
@@ -2270,7 +2270,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Display
 </UL>
 
-<P><STRONG><a name="[82]"></a>route_name</STRONG> (Thumb, 64 bytes, Stack size 0 bytes, debug_log.o(i.route_name))
+<P><STRONG><a name="[82]"></a>route_name</STRONG> (Thumb, 80 bytes, Stack size 0 bytes, debug_log.o(i.route_name))
 <BR><BR>[Called By]<UL><LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Display
 </UL>
 

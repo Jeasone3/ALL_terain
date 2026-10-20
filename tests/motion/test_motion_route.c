@@ -955,6 +955,8 @@ static void drive_route_frame(void)
                     step->trigger_junction == JUNCTION_LEFT ? 0x0Fu : 0xFFu);
     } else if (g_route.state == ROUTE_TURN) {
         s_sample_yaw = step->action == ROUTE_ACTION_LEFT ? 90.0f : -90.0f;
+    } else if (g_route.state == ROUTE_FINAL_TURN || g_route.state == ROUTE_FINAL_FORWARD) {
+        s_sample_yaw = 90.0f;
     } else if (g_route.state == ROUTE_OBSTACLE) {
         set_sensors(0xFFu);
     }
@@ -1490,12 +1492,12 @@ static void test_route_later_steps(void)
 }
 
 /**
- * @brief 验证第 8 段接第 9 段：十字单次短鸣、闭环左转、循迹 1 秒、PWM600 直行 5 秒。
+ * @brief 验证第 9 段的 1 秒循迹、5 秒 IMU，以及末尾原地左转和 3 秒直行停车。
  * @param 无。
  * @return 无；帧边界、动作次数或控制模式错误时由 CHECK 立即结束测试。
  * @note 前八段用短时间场景抵达恢复阶段，再恢复真实路线表；第九段使用生产参数。
  *       恢复阶段须连续两帧中心窄线才接收十字；入口从实际转完计时，不重复发 TRACK。
- *       截止 8 保持原持续循迹；默认 9 和全部段在新段 IMU 到时恢复循迹，均不超时停车。
+ *       截止 8 保持原持续循迹；默认 9 和全部段追加原地左转，按完成帧计直行 300 帧后停车。
  */
 static void test_route_ninth_step(void)
 {
@@ -1594,18 +1596,103 @@ static void test_route_ninth_step(void)
     CHECK(g_route.state == ROUTE_OBSTACLE && g_route.state_frames == 499u);
     CHECK(g_mode_fsm.command_id == command + 3u && s_track_pid_calls == track_before);
     tick();
-    CHECK(g_route.state == ROUTE_CRUISE && g_route.step_index == 8u);
-    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == command + 4u);
-    CHECK(s_track_pid_calls == track_before + 1u && s_imu_reads == imu_before + 499u);
-    CHECK(DebugLog_Display() == OLED_OK && log_has("DEBUG_END"));
+    CHECK(g_route.state == ROUTE_FINAL_TURN && g_route.step_index == 8u);
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.imu_state == IMU_TURN_LEFT);
+    CHECK(g_mode_fsm.command_id == command + 4u && CLOSE(g_mode_fsm.target_yaw, 90.0f));
+    CHECK(motorLeft.speed < 0 && motorRight.speed == -motorLeft.speed);
+    CHECK(s_track_pid_calls == track_before && s_imu_reads == imu_before + 500u);
+    CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[0], "R:END_L") != NULL);
+    ticks(20u); /* 转动等待不计入后面的 3 秒，也不能重复提交左转。 */
+    CHECK(g_route.state == ROUTE_FINAL_TURN && g_mode_fsm.command_id == command + 4u);
+    CHECK(g_mode_fsm.turn_count == turns + 1u);
+    s_sample_yaw = 90.0f;
+    tick();
+    CHECK(g_mode_fsm.turn_count == turns + 1u && motorLeft.speed == 0 && motorRight.speed == 0);
+    tick();
+    CHECK(g_mode_fsm.turn_count == turns + 2u && g_mode_fsm.imu_state == IMU_FORWARD);
+    CHECK(g_mode_fsm.base_pwm == 500u && CLOSE(g_mode_fsm.target_yaw, 90.0f));
+    CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
+    turn_done_frame = s_frame;
+    imu_before = s_imu_reads;
+    tick();
+    CHECK(g_route.state == ROUTE_FINAL_FORWARD && g_route.state_frames == 1u);
+    CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[0], "R:END_F") != NULL);
+    ticks(298u);
+    CHECK(s_frame - turn_done_frame == 299u && g_route.state_frames == 299u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.command_id == command + 4u);
+    CHECK(s_track_pid_calls == track_before && s_imu_reads == imu_before + 299u);
+    CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
+    tick();
+    CHECK(s_frame - turn_done_frame == 300u);
+    CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled && g_route.step_index == 8u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    CHECK(g_mode_fsm.command_id == command + 5u && s_imu_reads == imu_before + 299u);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("ROUTE_DONE"));
+    CHECK(strstr(s_oled_rows[0], "R:DONE") != NULL);
     ticks(1500u);
-    CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
-    CHECK(g_mode_fsm.command_id == command + 4u && g_mode_fsm.turn_count == turns + 1u);
+    CHECK(g_route.state == ROUTE_FINISHED && g_mode_fsm.command_id == command + 5u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
     CHECK(s_beep_starts == beep_before + 1u && !g_route.junction_event);
-    set_sensors(0x18u);
+    Route_Enable(1u);
     ticks(10u);
-    CHECK(motorLeft.speed == g_line_controller.base_speed && motorRight.speed == g_line_controller.base_speed);
-    puts("PASS ninth step: narrow-line handoff, single 100ms beep, left turn, exact 1s/5s and cruise");
+    CHECK(g_route.state == ROUTE_FINISHED && g_mode_fsm.command_id == command + 5u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    CHECK(Route_Start()); /* 正常完成后也只能显式从起点重新启动。 */
+    tick();
+    CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 0u);
+    puts("PASS ninth step: exact 1s/5s, in-place left turn, retained heading, exact 3s and stopped finish");
+}
+
+/**
+ * @brief 验证收尾左转和直行阶段的停车、外部接管、禁用、IMU 故障及转弯超时。
+ * @param 无。
+ * @return 无；检查实际两轮输出、请求次数和中止后不自动续跑。
+ * @note 使用真实 Route/FSM，前九段缩短时间；末尾 3 秒仍按生产常量执行。
+ */
+static void test_route_finish_interrupts(void)
+{
+    static const RouteState phases[] = {ROUTE_FINAL_TURN, ROUTE_FINAL_FORWARD};
+    unsigned phase, action;
+    uint32_t command;
+    if (TEST_ACTIVE_STEP_COUNT < ROUTE_STEP_COUNT) return;
+    for (phase = 0u; phase < sizeof(phases) / sizeof(phases[0]); ++phase) {
+        for (action = 0u; action < 4u; ++action) {
+            begin_case("final turn/forward can be interrupted without resuming", 1u);
+            reach_route_state(8u, phases[phase]);
+            if (action == 0u) Car_Stop();
+            else if (action == 1u) Car_Track();
+            else if (action == 2u) Route_Enable(0u);
+            else s_sample_ok = 0u;
+            tick();
+            if (action == 3u) {
+                check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+                s_sample_ok = g_imu_ready = 1u;
+                tick(); /* 运动层采样失败后，路线在下一帧观察故障并取消。 */
+            }
+            CHECK(g_route.state == ROUTE_ABORTED && g_route.step_index == 8u);
+            if (action == 0u) check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            else if (action == 1u) CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.status == CAR_RUNNING);
+            else if (action == 2u) CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.status == CAR_RUNNING);
+            command = g_mode_fsm.command_id;
+            Route_Enable(1u);
+            s_sample_yaw = 90.0f;
+            ticks(350u); /* 超过正常直行时长，中止后不能再由路线发出停车或运动。 */
+            CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.command_id == command);
+            if (action == 0u) check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            else if (action == 3u) check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        }
+    }
+    begin_case("final in-place turn retains five-second timeout", 1u);
+    g_route_plan[8].timeout_ms = 10000u;
+    reach_route_state(8u, ROUTE_FINAL_TURN);
+    s_sample_yaw = 0.0f;
+    ticks(498u);
+    CHECK(g_route.state == ROUTE_FINAL_TURN && g_mode_fsm.status == CAR_RUNNING);
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    tick();
+    CHECK(g_route.state == ROUTE_ABORTED);
+    puts("PASS final turn/forward STOP, takeover, disable, IMU failure and turn timeout");
 }
 
 /**
@@ -1829,7 +1916,8 @@ static void test_project_exit_and_timeout(void)
 static void test_route_interrupts(void)
 {
     static const RouteState phases[] = {ROUTE_READY, ROUTE_FOLLOW, ROUTE_ENTRY,
-        ROUTE_OBSTACLE, ROUTE_RECOVER, ROUTE_APPROACH, ROUTE_TURN, ROUTE_CRUISE,
+        ROUTE_OBSTACLE, ROUTE_RECOVER, ROUTE_APPROACH, ROUTE_TURN,
+        TEST_ACTIVE_STEP_COUNT == ROUTE_STEP_COUNT ? ROUTE_FINAL_FORWARD : ROUTE_CRUISE,
         ROUTE_FOLLOW, ROUTE_ENTRY, ROUTE_OBSTACLE, ROUTE_RECOVER,
         ROUTE_FOLLOW, ROUTE_APPROACH, ROUTE_TURN, ROUTE_RECOVER,
         ROUTE_FOLLOW, ROUTE_APPROACH, ROUTE_TURN, ROUTE_RECOVER,
@@ -2263,6 +2351,13 @@ static void test_fault_log_lifecycle(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_ROUTE_FINISH_ONLY
+    /* 收尾专项入口：绕开旧调参断言，只验证新增时序、实际停车和中断边界。 */
+    test_route_ninth_step();
+    test_route_finish_interrupts();
+    puts("All final-route scenarios passed.");
+    return EXIT_SUCCESS;
+#endif
     test_route_debug_limit();
     if (ROUTE_DEBUG_STEP_LIMIT == 1u) {
         puts("All first-segment debug-limit scenarios passed.");
@@ -2281,6 +2376,7 @@ int main(void)
     test_route_extension();
     test_route_later_steps();
     test_route_ninth_step();
+    test_route_finish_interrupts();
     test_route_cross_edges();
     test_route_turn_stop_diagnosis();
     test_route_interrupts();

@@ -20,7 +20,9 @@
 
 第八段：保留用户当前表项，FOLLOW 等十字 → 短鸣、前移、左转 90° → ENTRY 配置 1 ms（按 10 ms 控制帧执行）→ OBSTACLE 以 600 PWM IMU 直行 7000 ms → RECOVER 循迹并确认窄线。
 
-第九段：FOLLOW 等下一个十字 → 短鸣、前移、IMU 闭环左转 90° → ENTRY 循迹 1000 ms → OBSTACLE 以 600 PWM IMU 直行 5000 ms → CRUISE 持续循迹。
+第九段：FOLLOW 等下一个十字 → 短鸣、前移、IMU 闭环左转 90° → ENTRY 循迹 1000 ms → OBSTACLE 以 600 PWM IMU 直行 5000 ms → FINAL_TURN 原地 IMU 左转 90° → FINAL_FORWARD 以 500 PWM 保持转后航向直行 3000 ms → FINISHED 停车。
+
+收尾左转不再等待新路口或先前移，直接使用 Car_TurnLeft90(MODE_IMU)。运动层转完当帧自动开始直行，保持 +90°目标；这第一帧计入后面的 3 秒，不重新归零航向。到时只提交一次 Car_Stop，关闭本轮路线，屏幕依次显示 R:END_L、R:END_F、R:DONE，结束日志为 ROUTE_DONE。
 
 每种路口连续两帧相同才确认，同一宽区域只产生一次新事件；连续两帧无路口才解除锁存。FOLLOW 只接受当前段 trigger_junction 指定的类型。等待十字时，若先确认单侧图案，再确认十字，即使新事件已被单侧图案锁存，仍进入前移与转弯；离开 FOLLOW 后不会重复执行。左右单侧路口仍要求新事件。项目、恢复、前移、转弯和 CRUISE 屏蔽路口动作。
 
@@ -38,7 +40,7 @@ IMU_Task.c 的 TURN_MIN_OUT 当前为 250 PWM，本次不修改：尚未进入�
 
 Route.h 中 ROUTE_STEP_COUNT 当前为 9；ROUTE_DEBUG_STEP_LIMIT 默认 9，0 表示全部，1 至 8 可截断调试。启动只检查启用范围，未启用段缺参数不会阻止短段测试。RIGHT_TRACK 可以接后续路段，三个不使用的项目参数必须为 0。
 
-调试截止为 RIGHT_TRACK 段时，右转完成后直接进入 CRUISE；截止为项目段时，IMU 到时进入 CRUISE。默认在第 9 段左转后的 IMU 5 秒结束时持续循迹。该阶段保留停车/接管响应，不再等待窄线、安排路口或触发路线超时。
+调试截止为 1 至 8 段时，仍在该段动作完成后进入 CRUISE 持续循迹。默认 9 和值 0 均执行完整九段及收尾左转、IMU 直行 3 秒停车；收尾阶段屏蔽路口动作，保留转弯超时、IMU 故障及外部接管处理。正常完成后单纯 Enable(1) 不会重新运动，须停车后显式 Route_Start 从起点重启。
 
 ## 中止与验证边界
 

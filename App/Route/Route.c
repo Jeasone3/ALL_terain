@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按指定路口逐段进入项目，到调试截止段后保持灰度循迹。
+ * @brief 按指定路口逐段进入项目，完整路线末尾左转后 IMU 直行 3 秒停车。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -13,7 +13,8 @@
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
 #define ROUTE_TURN_APPROACH_MS   650u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
-#define ROUTE_TURN_APPROACH_PWM  450u /* 前移使用原普通 IMU 直行基础 PWM */
+#define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
+#define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -29,13 +30,13 @@
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
     {ROUTE_ACTION_RIGHT,    2u, 500u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 500u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 8000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
     {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
     {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
     {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
     {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 草坪 */
-    {ROUTE_ACTION_LEFT,     8u, 500u, 1000u, 7000u, 10000u, JUNCTION_CROSS}, /* 大台阶 */
-    {ROUTE_ACTION_LEFT,     9u, 600u, 1000u, 5000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
+    {ROUTE_ACTION_LEFT,     8u, 400u, 1300u, 9000u, 10000u, JUNCTION_CROSS}, /* 大台阶 */
+    {ROUTE_ACTION_LEFT,     9u, 600u, 1300u, 3000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
 };
 
 volatile Route_t g_route;
@@ -220,7 +221,8 @@ static void update_conditions(const uint16_t *sensor_data)
     if (g_route.state == ROUTE_ENTRY || g_route.state == ROUTE_OBSTACLE ||
         g_route.state == ROUTE_RECOVER || g_route.state == ROUTE_READY ||
         g_route.state == ROUTE_APPROACH || g_route.state == ROUTE_TURN ||
-        g_route.state == ROUTE_CRUISE) {
+        g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
+        g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -420,6 +422,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
+ *       完整路线最后一个项目结束后原地左转，自动接 IMU 直行 3 秒并停车；短段调试仍循迹。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -430,6 +433,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     /* 先服务提示音；路线未启动、被关闭或本帧外部接管时也能及时关蜂鸣器。 */
     update_project_beep((uint8_t)(external_command || !g_route.enabled ||
                                  g_mode_fsm.status != CAR_RUNNING));
+   //更新路口事件
     update_conditions(sensor_data);
     if (!s_active) 
         return;
@@ -440,6 +444,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         g_route.state = ROUTE_ABORTED;
         return;
     }
+    //灰度线检测校验
     if (sensor_data == 0) 
     {
         return;
@@ -448,15 +453,17 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         begin_step();
         return;
     }
-    if (g_route.state_frames < UINT32_MAX / ROUTE_FRAME_MS) 
+    if (g_route.state_frames < UINT32_MAX / ROUTE_FRAME_MS) //小于最大计数值
     {
         ++g_route.state_frames;
     }
 
     /* 截止后仅更新显示计时和保留接管检查，不再计路线超时或派发后续动作。 */
     if (g_route.state == ROUTE_CRUISE) return;
-
+    
+    //计算已运行时间
     elapsed_ms = g_route.state_frames * ROUTE_FRAME_MS;
+    //根据当前状态执行相应操作
     step = &g_route_plan[g_route.step_index];
 
     switch (g_route.state) {
@@ -472,6 +479,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             if (step->action == ROUTE_ACTION_STRAIGHT) {
                 enter_state(ROUTE_ENTRY); /* 当前已经循迹，保留 PID 历史与电机控制。 */
             } else {
+                //转向前移
                 enter_state(ROUTE_APPROACH);
                 Car_ImuForward(ROUTE_TURN_APPROACH_PWM);
             }
@@ -479,11 +487,13 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         break;
     case ROUTE_APPROACH:
-        if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) {
+        if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) { //到达前移时间
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
-            if (step->action == ROUTE_ACTION_LEFT) Car_TurnLeft90(MODE_TRACK);
-            else Car_TurnRight90(MODE_TRACK);
+            if (step->action == ROUTE_ACTION_LEFT) 
+                Car_TurnLeft90(MODE_TRACK);
+            else 
+                Car_TurnRight90(MODE_TRACK);
             return;
         }
         break;
@@ -500,6 +510,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 }
                 return;
             }
+
             enter_state(ROUTE_ENTRY);
             /* Route 先于本帧 IMU 更新；此处看到的是上一帧已经完成的转弯。
              * FSM 完成帧已经运行一次循迹，将其计入入口的已完成帧，避免多算 10 ms。
@@ -511,25 +522,55 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             return;
         }
         break;
+
     case ROUTE_ENTRY:
         if (elapsed_ms >= step->entry_ms) {
             begin_project(step);
             return;
         }
         break;
-    case ROUTE_OBSTACLE:
+
+    case ROUTE_OBSTACLE: //障碍物使用imu通行
         if (elapsed_ms >= step->pass_ms) {
             if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
-                enter_state(ROUTE_CRUISE);
                 reset_junction();
-                Car_Track();
-                DebugLog_Write(LOG_INFO, "DEBUG_END");
+                if (ROUTE_ACTIVE_STEP_COUNT == ROUTE_STEP_COUNT) {
+                    /* 最后一个项目到时直接原地转，不再前移或等待新路口。
+                     * MODE_IMU 使 FSM 在转完的同一帧保持 +90°目标、以 500 PWM 直行。 */
+                    s_turn_count_before = g_mode_fsm.turn_count;
+                    enter_state(ROUTE_FINAL_TURN);
+                    Car_TurnLeft90(MODE_IMU);
+                } else {
+                    enter_state(ROUTE_CRUISE);
+                    Car_Track();
+                    DebugLog_Write(LOG_INFO, "DEBUG_END");
+                }
             } else {
                 begin_recovery();
             }
             return;
         }
         break;
+
+    case ROUTE_FINAL_TURN: //最终转弯，高台
+        if (g_mode_fsm.turn_count != s_turn_count_before) {
+            enter_state(ROUTE_FINAL_FORWARD);
+            /* Route 在本帧 IMU 更新前运行，FSM 上一帧转完后已执行了一帧直行。
+             * 把这一帧计入 3 秒；不重复发 IMU 请求，避免重建航向和清除 PID 历史。 */
+            g_route.state_frames = g_mode_fsm.state_frames;
+            return;
+        }
+        break;
+
+    case ROUTE_FINAL_FORWARD: //最终直行
+        if (elapsed_ms >= ROUTE_FINAL_FORWARD_MS) {
+            /* 先结束本轮调度，再提交一次 STOP；下一帧不会把正常完成误判为中止。 */
+            s_active = g_route.enabled = 0u;
+            enter_state(ROUTE_FINISHED);
+            Car_Stop();
+            DebugLog_Write(LOG_INFO, "ROUTE_DONE");
+        }
+        return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
     case ROUTE_RECOVER:
         if (confirm_exit(sensor_data)) {
             finish_step();
