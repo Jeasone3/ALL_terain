@@ -1,7 +1,7 @@
 /**
  * @file Debug_Log.h
  * @brief 简单 OLED 调试日志：五行状态与三条最近事件，故障时保留停车前现场。
- * @note 记录接口可从主循环或中断调用；显示接口只能在主循环调用。
+ * @note 记录接口可从主循环或中断调用；显示接口只能在 DisplayTask 调用。
  */
 #ifndef __DEBUG_LOG_H__
 #define __DEBUG_LOG_H__
@@ -55,8 +55,8 @@ void DebugLog_ClearFault(void);
 /**
  * @brief 绘制五行实时状态或冻结现场，以及三条按时间排列的最近日志。
  * @param 无。
- * @return OLED_Update 的状态，供主循环判断通信失败并按原流程重试。
- * @note 仅主循环每 100 ms 调用；本函数不调度、不等待、不初始化 OLED。
+ * @return OLED_Update 的状态，供 DisplayTask 判断通信失败并按原流程重试。
+ * @note 仅 DisplayTask 每 100 ms 调用；本函数不调度、不等待、不初始化 OLED。
  *       先在短临界区复制完整快照，恢复中断后才进行浮点格式化和 OLED 通信。
  *       循迹时 Y/T/E 显示 --；IMU 本帧无效时 Y/E 显示 --，有限目标 T 仍可显示。
  *       绝对值超过 999.9 度的角度也显示 --；帧数保留完整 uint32_t，最长一行 21 列。

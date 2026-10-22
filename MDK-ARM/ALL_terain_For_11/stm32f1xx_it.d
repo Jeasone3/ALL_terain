@@ -30,3 +30,12 @@ all_terain_for_11\stm32f1xx_it.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_
 all_terain_for_11\stm32f1xx_it.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\stm32f1xx_it.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
 all_terain_for_11\stm32f1xx_it.o: ../Core/Inc/stm32f1xx_it.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\FreeRTOS.h
+all_terain_for_11\stm32f1xx_it.o: ../Core/Inc/FreeRTOSConfig.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\projdefs.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\portable.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\deprecated_definitions.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\portable\RVDS\ARM_CM3\portmacro.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\mpu_wrappers.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\task.h
+all_terain_for_11\stm32f1xx_it.o: ..\FreeRTOS\include\list.h

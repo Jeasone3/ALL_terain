@@ -27,7 +27,7 @@ volatile Route_t g_route;
 Motor_Struct motorLeft;
 Motor_Struct motorRight;
 uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
-uint8_t g_imu_ready;
+volatile uint8_t g_imu_ready;
 Euler_struct g_euler;
 
 static const char *s_case_name;

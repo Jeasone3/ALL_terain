@@ -1,0 +1,14 @@
+all_terain_for_11\heap_4.o: ..\FreeRTOS\portable\MemMang\heap_4.c
+all_terain_for_11\heap_4.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdlib.h
+all_terain_for_11\heap_4.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\string.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\FreeRTOS.h
+all_terain_for_11\heap_4.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
+all_terain_for_11\heap_4.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\heap_4.o: ../Core/Inc/FreeRTOSConfig.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\projdefs.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\portable.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\deprecated_definitions.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\portable\RVDS\ARM_CM3\portmacro.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\mpu_wrappers.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\task.h
+all_terain_for_11\heap_4.o: ..\FreeRTOS\include\list.h

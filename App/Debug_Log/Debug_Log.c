@@ -1,6 +1,6 @@
 /**
  * @file Debug_Log.c
- * @brief 固定三条日志和一份故障现场；记录轻量，所有显示工作放在主循环。
+ * @brief 固定三条日志和一份故障现场；记录轻量，所有显示工作放在 DisplayTask。
  * @note 不分配动态内存，不调用运动控制函数，不在中断中格式化或通信。
  */
 #include "Debug_Log.h"
@@ -43,7 +43,7 @@ typedef struct {
     uint8_t count;
 } DebugLog_DisplaySnapshot;
 
-/* 主循环和 TIM4 都可能访问；所有更新、复制均在恢复原 PRIMASK 的短临界区内完成。 */
+/* 控制和显示任务都可能访问；所有更新、复制均在恢复原 PRIMASK 的短临界区内完成。 */
 static volatile DebugLog_Record s_records[DEBUG_LOG_CAPACITY];
 static volatile DebugLog_Snapshot s_fault;
 static volatile uint8_t s_count;
@@ -170,6 +170,7 @@ static const char *fault_text(CarFault fault)
         case CAR_FAULT_TURN_TIMEOUT: return "TURN_TO";
         case CAR_FAULT_COMMAND:      return "BAD_CMD";
         case CAR_FAULT_ROUTE_TIMEOUT:return "ROUTE_TO";
+        case CAR_FAULT_CONTROL_PERIOD:return "CTRL_TO";
         default:                    return "BAD_CMD";
     }
 }

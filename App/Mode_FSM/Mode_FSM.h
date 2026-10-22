@@ -34,7 +34,8 @@ typedef enum {
     CAR_FAULT_IMU,                 /* IMU 不可用、读取失败或角度无效 */
     CAR_FAULT_TURN_TIMEOUT,        /* 转弯 5 秒内未进容差，或截止确认期间离开容差 */
     CAR_FAULT_COMMAND,             /* 转后模式或直行 PWM 参数不合法 */
-    CAR_FAULT_ROUTE_TIMEOUT        /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_ROUTE_TIMEOUT,       /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_CONTROL_PERIOD       /* TIM4 通知积压或控制帧执行达到 10 ms */
 } CarFault;
 
 //状态机对象，用于保存当前状态
@@ -55,7 +56,7 @@ typedef struct {
     uint16_t base_pwm;              /* 当前 IMU 直行基础 PWM，与动作一起接受，不代表实测车速 */
 } ModeFSM_t;
 
-/* 中断内维护，外部读取请用 ModeFSM_GetSnapshot，禁止直接修改字段。 */
+/* 由 ControlTask 维护，其他任务读取请用 ModeFSM_GetSnapshot，禁止直接修改字段。 */
 extern volatile ModeFSM_t g_mode_fsm;
 
 /**
@@ -70,9 +71,18 @@ void ModeFSM_Init(void);
  * @brief 执行一帧采样、条件判断、请求处理和当前模式的运动控制。
  * @param 无。
  * @return 无。
- * @note 仅由 TIM4 每 10 ms 调用一次；禁止主循环重复调用。
+ * @note 仅由 ControlTask 接收 TIM4 通知后每 10 ms 调用一次；禁止中断重复调用。
  */
 void ModeFSM_Tick(void);
+
+/**
+ * @brief 控制任务发现节拍失效时，保存现场、取消旧请求并立即停车。
+ * @param 无。
+ * @return 无。
+ * @note 仅由 ControlTask 调用；中止自动路线，后续必须显式提交新动作。
+ *       不补跑丢失的控制帧，故障发生前等待的运动请求不能在下一帧自动重启。
+ */
+void ModeFSM_ControlPeriodFault(void);
 
 //-----------------------------------------------Car_* 接口：提交请求，下一控制帧生效。---------------------------------/
 
@@ -93,7 +103,7 @@ void Car_Track(void);
 void Car_ImuForward(uint16_t base_pwm);
 
 /**
- * @brief 单项目标定用定时直行，从接受动作开始计算，时间到后在控制中断内停车。
+ * @brief 单项目标定用定时直行，从接受动作开始计算，时间到后在控制任务内停车。
  * @param base_pwm 基础 PWM，范围 1 至 1000。
  * @param duration_ms 非零测试时长，向上取整到 10 ms。
  * @return 无。
@@ -136,7 +146,7 @@ void Car_Stop(void);
 
 //-----------------------------------------------状态机快照接口：短暂屏蔽中断，保证一致性。----------------------------/
 /**
- * @brief 取得一致的运动状态副本，供主循环显示或上层读取。
+ * @brief 取得一致的运动状态副本，供其他任务显示或上层读取。
  * @param snapshot 接收副本的指针；传入空指针时不执行复制。
  * @return 无。
  * @note 复制期间短暂屏蔽中断并恢复原状态；格式化和 OLED 通信应在复制后进行。

@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task;..\App\Route;..\App\Debug_Log</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;..\Int\Int_Beep;..\Int\Int_Motor;..\Int\Int_MPU6050;..\Int\Int_OLED;..\Int\Int_Track;..\Com\Com_Attitude;..\Com\Com_Delay_us;..\Com\Com_IIC;..\Com\Com_IMU_Config;..\Com\Com_Limit;..\Com\Com_PID;..\App\IMU_Task;..\App\Mode_FSM;..\App\Track_Task;..\App\Route;..\App\Debug_Log;..\App\RTOS;..\FreeRTOS\include;..\FreeRTOS\portable\RVDS\ARM_CM3</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -880,6 +880,76 @@
         </Group>
         <Group>
           <GroupName>::CMSIS</GroupName>
+        </Group>
+        <Group>
+          <GroupName>App/RTOS</GroupName>
+          <Files>
+            <File>
+              <FileName>App_RTOS.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\RTOS\App_RTOS.c</FilePath>
+            </File>
+            <File>
+              <FileName>App_RTOS.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\App\RTOS\App_RTOS.h</FilePath>
+            </File>
+            <File>
+              <FileName>Control_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\RTOS\Control_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>Display_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\RTOS\Display_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>Recovery_Task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\RTOS\Recovery_Task.c</FilePath>
+            </File>
+            <File>
+              <FileName>FreeRTOSConfig.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Core\Inc\FreeRTOSConfig.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FreeRTOS/Source</GroupName>
+          <Files>
+            <File>
+              <FileName>tasks.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\FreeRTOS\source\tasks.c</FilePath>
+            </File>
+            <File>
+              <FileName>list.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\FreeRTOS\source\list.c</FilePath>
+            </File>
+            <File>
+              <FileName>queue.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\FreeRTOS\source\queue.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>FreeRTOS/Portable</GroupName>
+          <Files>
+            <File>
+              <FileName>port.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\FreeRTOS\portable\RVDS\ARM_CM3\port.c</FilePath>
+            </File>
+            <File>
+              <FileName>heap_4.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\FreeRTOS\portable\MemMang\heap_4.c</FilePath>
+            </File>
+          </Files>
         </Group>
       </Groups>
     </Target>

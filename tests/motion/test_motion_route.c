@@ -36,7 +36,7 @@ Motor_Struct motorLeft;
 Motor_Struct motorRight;
 uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 Gyro_Accel_Struct g_imu_data;
-uint8_t g_imu_ready;
+volatile uint8_t g_imu_ready;
 Euler_struct g_euler;
 
 static RouteStep s_original_plan[ROUTE_STEP_COUNT];
@@ -73,7 +73,6 @@ static uint32_t s_milliseconds;
 static char s_oled_rows[OLED_PAGE_COUNT][OLED_LINE_CHARS + 1u];
 
 pid_real_t __real_PID_calc(pid_type_def *pid, pid_real_t ref, pid_real_t set);
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim);
 
 /**
  * @brief 模拟打开蜂鸣器并记录时刻，用于检查每个指定路口只触发一次。
@@ -2177,26 +2176,95 @@ static void test_pwm_and_timed_motion(void)
 }
 
 /**
- * @brief 验证只有 TIM4 回调运行控制，其他定时器不会重复执行状态机。
+ * @brief 验证直接执行一个控制帧时只有一次采样和一组电机输出。
  * @param 无。
  * @return 无。
- * @note 对 TIM4 使用与 tick 相同的互斥判据，非 TIM4 不产生采样或 PWM。
+ * @note TIM4 只通知任务的边界由 test_rtos_tasks.c 编译真实回调另行验证。
  */
-static void test_timer_entry(void)
+static void test_control_frame_entry(void)
 {
-    TIM_HandleTypeDef timer;
-    begin_case("TIM4 is the single callback entry", 0u);
-    HAL_TIM_PeriodElapsedCallback(NULL);
-    timer.Instance = (void *)(uintptr_t)3u;
-    HAL_TIM_PeriodElapsedCallback(&timer);
+    begin_case("one explicit control frame", 0u);
     CHECK(s_sensor_reads == 0u && s_pid_calls == 0u && s_left_writes == 0u);
-    timer.Instance = TIM4;
-    ++s_frame;
-    s_inside_control_frame = 1u;
-    HAL_TIM_PeriodElapsedCallback(&timer);
-    s_inside_control_frame = 0u;
+    tick();
     CHECK(s_sensor_reads == 1u && s_pid_calls == 1u && s_left_writes == 1u && s_right_writes == 1u);
-    puts("PASS TIM4 exclusive callback");
+    puts("PASS one control frame samples once and writes one motor pair");
+}
+
+/**
+ * @brief 验证节拍故障保存现场、取消旧请求、立即停车和故障后的显式恢复。
+ * @note 使用真实 FSM、Route、PID 和日志，不依赖旧测试中的固定调参值。
+ */
+static void test_control_period_fault(void)
+{
+    char frozen_rows[sizeof(s_oled_rows)];
+    unsigned reads_before;
+    unsigned pid_before;
+    begin_case("control period fault cancels stale requests", 0u);
+    tick();
+    CHECK(g_mode_fsm.status == CAR_RUNNING);
+    CHECK(motorLeft.speed != 0 && motorRight.speed != 0);
+    Car_ImuForward(500u); /* 在故障前尚未接受，必须被清除。 */
+    reads_before = s_sensor_reads;
+    pid_before = s_pid_calls;
+    s_inside_control_frame = 1u;
+    s_irq_mask = 1u;
+    ModeFSM_ControlPeriodFault();
+    CHECK(s_irq_mask == 1u);
+    s_irq_mask = 0u;
+    s_inside_control_frame = 0u;
+    check_stopped(CAR_FAULT, CAR_FAULT_CONTROL_PERIOD);
+    CHECK(s_sensor_reads == reads_before && s_pid_calls == pid_before);
+    CHECK(g_route.enabled == 0u);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("CTRL_TO"));
+    CHECK(strstr(s_oled_rows[4], "L:+0 R:+0") == NULL);
+    memcpy(frozen_rows, s_oled_rows, sizeof(s_oled_rows));
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_CONTROL_PERIOD);
+    CHECK(s_imu_reads == 0u); /* 被取消的 IMU 请求没有偷偷启动。 */
+    CHECK(DebugLog_Display() == OLED_OK);
+    CHECK(memcmp(frozen_rows, s_oled_rows, sizeof(s_oled_rows)) == 0);
+    Car_Track();
+    tick();
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.fault == CAR_FAULT_NONE);
+
+    begin_case("control period fault aborts active route", 1u);
+    tick();
+    s_inside_control_frame = 1u;
+    ModeFSM_ControlPeriodFault();
+    s_inside_control_frame = 0u;
+    CHECK(g_route.enabled == 0u && g_route.state == ROUTE_ABORTED);
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_CONTROL_PERIOD);
+    puts("PASS control deadline fault, stale request cancellation, frozen snapshot and explicit restart");
+}
+
+/**
+ * @brief 用既有短段测试夹具抵达收尾，验证实际转完后恰好 300 帧停车。
+ * @note 不断言实车表项中可调的入口与通行时长，只检查本次迁移必须保持的行为。
+ */
+static void test_rtos_route_finish_timing(void)
+{
+    uint32_t command;
+    unsigned finished_turn_frame;
+    if (TEST_ACTIVE_STEP_COUNT != ROUTE_STEP_COUNT) return;
+    begin_case("RTOS migration keeps final turn and exact 3s", 1u);
+    reach_route_state(8u, ROUTE_FINAL_TURN);
+    command = g_mode_fsm.command_id;
+    s_sample_yaw = 90.0f;
+    ticks(2u);
+    CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.base_pwm == 500u);
+    CHECK(g_mode_fsm.target_yaw == 90.0f);
+    finished_turn_frame = s_frame;
+    ticks(299u);
+    CHECK(g_route.state == ROUTE_FINAL_FORWARD && g_route.state_frames == 299u);
+    CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.command_id == command);
+    tick();
+    CHECK(s_frame - finished_turn_frame == 300u && g_route.state == ROUTE_FINISHED);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    CHECK(g_mode_fsm.command_id == command + 1u && g_route.enabled == 0u);
+    ticks(50u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    puts("PASS retained final heading, exact 300-frame forward and stopped route finish");
 }
 
 /**
@@ -2351,6 +2419,14 @@ static void test_fault_log_lifecycle(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_RTOS_MIGRATION_ONLY
+    test_control_frame_entry();
+    test_control_period_fault();
+    test_rtos_route_finish_timing();
+    test_route_finish_interrupts();
+    puts("All RTOS migration motion scenarios passed.");
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_FINISH_ONLY
     /* 收尾专项入口：绕开旧调参断言，只验证新增时序、实际停车和中断边界。 */
     test_route_ninth_step();
@@ -2384,8 +2460,10 @@ int main(void)
     test_project_exit_and_timeout();
     test_project_beep();
     test_pwm_and_timed_motion();
-    test_timer_entry();
+    test_control_frame_entry();
+    test_control_period_fault();
     test_automatic_logs();
+    test_rtos_route_finish_timing();
     test_fault_log_lifecycle();
     puts("All motion/route integration scenarios passed.");
     return EXIT_SUCCESS;

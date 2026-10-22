@@ -1,7 +1,7 @@
 /**
  * @file Mode_FSM.c
  * @brief 两层运动状态机：统一处理请求，循迹和 IMU 控制互斥运行。
- * @note TIM4 是唯一调度入口；Route 只选择动作，不直接操作 PID 和电机。
+ * @note ControlTask 接受 TIM4 通知后执行；Route 只选择动作，不直接操作 PID 和电机。
  */
 #include "Mode_FSM.h"
 #include "Route.h"
@@ -19,7 +19,7 @@
 
 /* 本帧八路灰度数据；循迹用于控制，IMU 模式用于路线条件检测。 */
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
-/* 由 TIM4 维护的当前运动状态。 */
+/* 由 ControlTask 维护的当前运动状态。 */
 volatile ModeFSM_t g_mode_fsm;
 
 /* 邮箱中的动作类型，与实际执行状态分开保存。 */
@@ -500,7 +500,7 @@ void Car_Stop(void)
 }
 
 /**
- * @brief 将中断维护的状态复制成一致的快照。
+ * @brief 将控制任务维护的状态复制成一致的快照。
  * @param snapshot 输出结构体指针；空指针不做任何处理。
  * @return 无。
  * @note 临界区只复制结构体，禁止把 OLED、串口或等待操作放进临界区。
@@ -519,15 +519,22 @@ void ModeFSM_GetSnapshot(ModeFSM_t *snapshot)
 }
 
 /**
- * @brief 由 HAL 定时器回调进入唯一的小车控制节拍。
- * @param htim 触发回调的定时器句柄；空指针或非 TIM4 均忽略。
+ * @brief 节拍失效时保存停车前现场，取消故障前旧请求并中止路线。
+ * @param 无。
  * @return 无。
- * @note TIM4 周期为 10 ms；主循环和其他中断不得重复执行 ModeFSM_Tick。
+ * @note 与接受请求使用同一短临界区，故障完成后的新请求仍可显式重新启动。
+ *       日志先捕获，随后清 PID、取消路线和输出零 PWM，不依赖下一次通知。
  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+void ModeFSM_ControlPeriodFault(void)
 {
-    if (htim != 0 && htim->Instance == TIM4)
-    {
-        ModeFSM_Tick();
-    }
+    uint32_t saved_primask = __get_PRIMASK();
+    __disable_irq();
+    s_request.pending = 0u;
+    g_mode_fsm.imu_valid = 0u;
+    set_fault(CAR_FAULT_CONTROL_PERIOD);
+    Route_Enable(0u);
+    /* 故障帧不再运行正常 Tick，也必须消费禁用并关闭 Route 的短鸣；不采样、不计时。 */
+    Route_Tick(NULL, 0u);
+    IMUTask_Stop();
+    __set_PRIMASK(saved_primask);
 }

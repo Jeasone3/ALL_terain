@@ -3,7 +3,7 @@
 #define MPU6050_WHO_AM_I_VALUE 0x68U
 #define MPU6050_FRAME_LENGTH   14U  //imu数据帧长度 即 ADC精度
 
-/* 供其他模块读取的六轴数据与通信状态；Tick 在 TIM4 中断里更新 */
+/* 六轴数据由 ControlTask 更新；失联时 RecoveryTask 在 ready=0 期间恢复通信。 */
 //加速度值和欧拉角
 Gyro_Accel_Struct g_imu_data = {0};
 //通信状态
@@ -11,7 +11,7 @@ Gyro_Accel_Struct g_imu_data = {0};
  * @brief IMU 通信状态 0 不能通讯，1=正常
  * 
  */
-uint8_t g_imu_ready = 0; 
+volatile uint8_t g_imu_ready = 0;
 
 
 /* 陀螺零偏：Calibrate 静止取均值后写入，Get_Data 里减掉。初值 0 = 未校准，
@@ -94,7 +94,8 @@ uint8_t Int_MPU6050_Init(void)
         !MPU6050_Write_Reg(MPU_ACCEL_CFG_REG, 0x00))
         return 0;
 
-    g_imu_ready = 1; //可以通讯
+    /* 所有软件 I2C 事务结束后才发布就绪，控制任务从这里开始才允许读取。 */
+    g_imu_ready = 1;
     return 1;
 }
 
@@ -207,8 +208,8 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
     return 1;
 }
 
-/* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；失败后停止读取，
-   由 main 主循环 1s 后重试 Int_MPU6050_Init 恢复 */
+/* ControlTask 每 10 ms 按需调用；失败后不读旧数据，由 RecoveryTask 每秒重试。
+ * 恢复任务不能把 Init 返回值再次写回 ready，以免覆盖本函数抢占后发布的新失败。 */
 void Int_MPU6050_Tick(void)
 {
     if (g_imu_ready)

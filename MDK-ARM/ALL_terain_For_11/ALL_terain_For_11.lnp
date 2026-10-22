@@ -40,6 +40,15 @@
 "all_terain_for_11\oledfont.o"
 "all_terain_for_11\int_mpu6050.o"
 "all_terain_for_11\int_beep.o"
+"all_terain_for_11\app_rtos.o"
+"all_terain_for_11\control_task.o"
+"all_terain_for_11\display_task.o"
+"all_terain_for_11\recovery_task.o"
+"all_terain_for_11\tasks.o"
+"all_terain_for_11\list.o"
+"all_terain_for_11\queue.o"
+"all_terain_for_11\port.o"
+"all_terain_for_11\heap_4.o"
 --library_type=microlib --strict --scatter "ALL_terain_For_11\ALL_terain_For_11.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers

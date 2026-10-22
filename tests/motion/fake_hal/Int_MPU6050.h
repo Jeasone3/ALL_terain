@@ -7,7 +7,8 @@
 #include "IMU_Config.h"
 
 extern Gyro_Accel_Struct g_imu_data;
-extern uint8_t g_imu_ready;
+extern volatile uint8_t g_imu_ready;
+uint8_t Int_MPU6050_Init(void);
 
 /**
  * @brief 在当前测试帧发布预设的采样结果。

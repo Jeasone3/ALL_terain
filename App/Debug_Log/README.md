@@ -1,6 +1,6 @@
 # OLED 调试日志
 
-`Debug_Log` 只记录状态和事件，不参与运动控制。屏幕使用 6×8 字体，显示 5 行状态和 3 条最近日志；主循环每 100 ms 调用一次 `DebugLog_Display()`。
+`Debug_Log` 只记录状态和事件，不参与运动控制。屏幕使用 6×8 字体，显示 5 行状态和 3 条最近日志；DisplayTask每 100 ms 调用一次 `DebugLog_Display()`。
 
 ## 屏幕布局
 
@@ -43,7 +43,7 @@ DebugLog_Write(LOG_ERROR, "USER_ERR");
 
 每条消息最多保存前 11 个字符，固定三条记录满后覆盖最旧记录。ASCII 32 至 126 原样保存，百分号也是普通文本；其他字节替换为 `?`。空指针、空字符串和非法等级忽略。消息不支持中文字体或 printf 格式参数。
 
-运动层只在动作真正接受、转弯完成、停车和故障时记录；Route 在确认路口、稳定有线和丢线的事件发生时记录。短暂事件在中断中保存，不依赖 100 ms 显示轮询，因此不会因两次显示之间事件消失而漏记。
+运动层只在动作真正接受、转弯完成、停车和故障时记录；Route 在确认路口、稳定有线和丢线的事件发生时记录。短暂事件在 ControlTask 中保存，不依赖 100 ms 显示轮询，因此不会因两次显示之间事件消失而漏记。
 
 | 消息 | 含义 |
 | --- | --- |
@@ -53,7 +53,7 @@ DebugLog_Write(LOG_ERROR, "USER_ERR");
 | JUNC_L / JUNC_R / CROSS | 确认左路口、右路口或十字路口 |
 | LINE_ON / LINE_OFF | 稳定找到线或丢线；运行循迹时丢线为 W，其余为 I |
 | STOP | 接受普通停车；故障冻结时不覆盖故障日志 |
-| IMU_ERR / TURN_TO / BAD_CMD | IMU 故障、转弯超时或指令参数错误 |
+| IMU_ERR / TURN_TO / BAD_CMD / CTRL_TO | IMU 故障、转弯超时或指令参数错误 |
 
 ## 故障现场与恢复
 
@@ -66,9 +66,9 @@ DebugLog_Write(LOG_ERROR, "USER_ERR");
 ## 调用节拍与限制
 
 - `DebugLog_Init()` 在 TIM4 启动前只调用一次；初始化记录为空，开机信息由调用者用 `DebugLog_Write(LOG_INFO, "BOOT")` 记录。
-- `DebugLog_Write()` 可在主循环或中断调用，只复制有界文本和时间，不做浮点格式化、不访问 OLED、不驱动电机。
-- `DebugLog_Display()` 只从主循环每 100 ms 调用，不要放在 TIM4 中断里，也不要让多个任务同时访问 OLED。
+- `DebugLog_Write()` 可在DisplayTask或中断调用，只复制有界文本和时间，不做浮点格式化、不访问 OLED、不驱动电机。
+- `DebugLog_Display()` 只从DisplayTask每 100 ms 调用，不要放在 TIM4 中断里，也不要让多个任务同时访问 OLED。
 - 显示函数短暂屏蔽中断复制一致快照，然后恢复原 PRIMASK，所有格式化和 I2C 通信均在恢复后完成。
-- 显示函数返回 `OLED_Update()` 的刷新状态。运行时刷新结果不是 `OLED_OK`，主循环将 `oled_ready` 置零并开始每 1 秒调用 `OLED_Init()` 重连；重连成功后恢复 100 ms 显示。下一次显示会重绘八行，历史日志保留；不要因 OLED 重连再次调用 `DebugLog_Init()`。
+- 显示函数返回 `OLED_Update()` 的刷新状态。运行时刷新结果不是 `OLED_OK`，DisplayTask将 `oled_ready` 置零并开始每 1 秒调用 `OLED_Init()` 重连；重连成功后恢复 100 ms 显示。下一次显示会重绘八行，历史日志保留；不要因 OLED 重连再次调用 `DebugLog_Init()`。
 - 时间由 `HAL_GetTick()` 除以 1000 得到；约 49.7 天后 HAL 毫秒计数回绕，日志秒数也随之回绕。
 - 模块只有三条最近记录，不保存完整运行历史；长时间调试需要在事件处另接串口或其他存储方式。

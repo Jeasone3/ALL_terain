@@ -1,7 +1,8 @@
 param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
-    [switch]$RouteFinishOnly
+    [switch]$RouteFinishOnly,
+    [switch]$RtosOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +63,33 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($RtosOnly) {
+    # 内核 API 替身只驱动任务边界，三个入口及 SysTick/TIM4 回调均编译生产源码。
+    Invoke-MotionTest -Name 'test_rtos_tasks' -Arguments @(
+        '-iquote', (Join-Path $PSScriptRoot 'fake_rtos'),
+        '-I', (Join-Path $projectRoot 'App/RTOS'),
+        '-I', (Join-Path $projectRoot 'Core/Inc'),
+        (Join-Path $PSScriptRoot 'test_rtos_tasks.c'),
+        (Join-Path $projectRoot 'App/RTOS/App_RTOS.c'),
+        (Join-Path $projectRoot 'App/RTOS/Control_Task.c'),
+        (Join-Path $projectRoot 'App/RTOS/Display_Task.c'),
+        (Join-Path $projectRoot 'App/RTOS/Recovery_Task.c'),
+        (Join-Path $projectRoot 'Core/Src/stm32f1xx_it.c')
+    )
+    Invoke-MotionTest -Name 'test_rtos_motion' -Arguments ($motionSources + '-DTEST_RTOS_MIGRATION_ONLY')
+    Invoke-MotionTest -Name 'test_rtos_motion_all' -Arguments ($motionSources + @('-DTEST_RTOS_MIGRATION_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=0u'))
+    Invoke-MotionTest -Name 'test_rtos_motion_limit8' -Arguments ($motionSources + @('-DTEST_RTOS_MIGRATION_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=8u'))
+    Invoke-MotionTest -Name 'test_rtos_debug_log' -Arguments @(
+        (Join-Path $PSScriptRoot 'test_debug_log.c'),
+        (Join-Path $projectRoot 'App/Debug_Log/Debug_Log.c')
+    )
+    Invoke-MotionTest -Name 'test_rtos_attitude' -Arguments @(
+        (Join-Path $PSScriptRoot 'test_attitude.c'),
+        (Join-Path $projectRoot 'Com/Com_Attitude/Attitude.c')
+    )
+    return
+}
 
 if ($RouteFinishOnly) {
     # 单独验证完整路线的收尾及截止 8 的兼容性，不依赖旧参数的全量调参断言。

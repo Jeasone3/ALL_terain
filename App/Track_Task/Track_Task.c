@@ -9,7 +9,7 @@
  * 
  */
 #include "Track_Task.h"
-#include "Mode_FSM.h"   /* ModeFSM_Tick: TIM4 回调入口, 替代原直接调度 */
+#include "Mode_FSM.h"   /* ModeFSM_Tick: ControlTask 内的统一控制入口 */
 
 //全局变量传感器数据
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];

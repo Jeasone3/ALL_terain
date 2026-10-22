@@ -139,7 +139,7 @@ void Attitude_Tick(void)
 {
     if (!g_imu_ready) return;
 
-    /* 取本周期六轴(中断内刚由 Int_MPU6050_Tick 刷新，无竞争)。
+    /* 取本周期六轴(同一 ControlTask 内刚由 Int_MPU6050_Tick 刷新，无竞争)。
        实测模块安装: Y 前 X 右 Z 上(与默认 X 前 Y 右相反)，故输入端互换 x/y，
        使 Mahony 在 (前=Y, 右=X, 上=Z) 体系下运行，pitch/roll 标签才对。
        若符号也反(如前俯显示负值)，再对对应轴取负 */

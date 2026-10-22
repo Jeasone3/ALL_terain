@@ -32,7 +32,7 @@
 #include "Mode_FSM.h"
 #include "Route.h"
 #include "IMU_Task.h"
-#include "Int_OLED.h"
+#include "App_RTOS.h"
 #include "Debug_Log.h"
 #include "Delay_us.h"
 #include "Int_MPU6050.h"
@@ -69,15 +69,7 @@
   extern Motor_Struct motorLeft;
   extern Motor_Struct motorRight;
 
-//循迹数组
-extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
-
-/* g_imu_data / g_imu_ready 已移至 Int_MPU6050 模块，TIM4 中断里更新 */
-
-/* 运动与日志由 TIM4 更新；DebugLog_Display 在主循环复制完整快照并显示。 */
-
-/* 主循环更新，通信状态可在调试器中直接查看。 */
-static volatile OLED_Status g_oled_status = OLED_NOT_INITIALIZED;
+/* 六轴数据由 ControlTask 按模式采样；OLED 与设备恢复由独立任务处理。 */
 
 /* USER CODE END PV */
 
@@ -93,11 +85,11 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief 初始化外设、运动控制器与传感器，再进入前台显示和通信恢复循环。
+  * @brief 初始化外设、运动控制器与传感器，选择一次启动请求后启动三任务。
   * @param 无。
   * @return 程序正常运行时不返回。
-  * @note TIM4 启动后独占运动控制；主循环每 100 ms 显示状态和日志，并重试通信。
-  *       OLED 格式化和 I2C 通信在恢复中断后执行，重连只重绘屏幕，不清除日志或故障现场。
+  * @note 调度前完成 IMU 初始化和校准；ControlTask 启动 TIM4 并独占运动控制，
+  *       DisplayTask 处理 OLED，RecoveryTask 处理失联 IMU，不在主循环重复执行业务。
   */
 int main(void)
 {
@@ -134,12 +126,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* 软件 IIC 的 SDA/SCL 已在 MX_GPIO_Init() 中释放为高，此处不重复 */
 
-  /* OLED 失败只记录状态，后续在主循环重试，不中止控制系统初始化。 */
-  g_oled_status = OLED_Init();
-  uint8_t oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
-
-
-
   //电机对象初始化
   Motor_Init(&motorLeft);
   Motor_Init(&motorRight);
@@ -156,7 +142,7 @@ int main(void)
   
   IMUTask_Init();                          //IMU 角度闭环 PID 初始化
 
-  g_imu_ready = Int_MPU6050_Init();         //获取IMU状态
+  (void)Int_MPU6050_Init();                /* 驱动只在全部配置完成后发布 IMU 就绪。 */
   if (g_imu_ready)
   {
     HAL_Delay(50);                /* 等传感器输出稳定 */
@@ -172,12 +158,12 @@ int main(void)
 
 
   #if TRACK_ONLY_TEST_ENABLE
-  Car_Track();                    /* 只提交一次，由 TIM4 持续执行灰度循迹 PID，不受 IMU 校准结果限制。 */
+  Car_Track();                    /* 只提交一次，由控制任务持续循迹，不受 IMU 校准结果限制。 */
   DebugLog_Write(LOG_INFO, "TRACK_TEST");
   #elif IMU_STRAIGHT_TEST_ENABLE
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
-    /* 只提交一次：接受请求时将当前朝向归零，TIM4 每 10 ms 采样 yaw 并执行角度 PID 差速纠偏。
+    /* 只提交一次：接受请求时将当前朝向归零，控制任务每 10 ms 采样 yaw 并执行角度 PID。
      * 基础 PWM 和持续时间由上方宏配置；到时停车，IMU 读取失败也会故障停车。 */
     Car_ImuForwardTimed(IMU_STRAIGHT_TEST_PWM, IMU_STRAIGHT_TEST_MS);
     DebugLog_Write(LOG_INFO, "IMU_TEST"); /* 限时从接受请求开始，与主循环刷新耗时无关。 */
@@ -200,79 +186,17 @@ int main(void)
 #endif
 
 
-HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入口 */
-
-
-  if (oled_ready != 0U)
-  {
-    g_oled_status = DebugLog_Display();
-    oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
-  }
+  /* 全部请求和校准已经准备完成，控制任务开始运行后才启动 TIM4。 */
+  AppRTOS_Start();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t last_imu_retry_ms = HAL_GetTick();
-  uint32_t last_oled_retry_ms = HAL_GetTick();
-  // uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
   while (1)
   {
-
-
-
-
-
-/* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
-    if (g_imu_ready == 0U &&
-        (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
-    {
-      last_imu_retry_ms = HAL_GetTick();
-      g_imu_ready = Int_MPU6050_Init();
-    }
-
-    // /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
-    // if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
-    // {
-    //   last_print_ms = HAL_GetTick();
-    //   if (g_imu_ready)
-    //   {
-    //     printf("E:%6d,%6d,%6d\r\n",
-    //             (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
-    //   }
-    // }
-
+    /* AppRTOS_Start 正常不返回，所有周期业务均由三个任务执行。 */
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
-    /* OLED 初始化失败后每 1s 重试，成功后重绘全部八行并保留日志。 */
-    if (oled_ready == 0U &&
-        (uint32_t)(HAL_GetTick() - last_oled_retry_ms) >= 1000U) 
-    {
-      last_oled_retry_ms = HAL_GetTick();
-      g_oled_status = OLED_Init();
-      if (g_oled_status == OLED_OK)
-      {
-        oled_ready = 1U;
-        g_oled_status = DebugLog_Display();
-        oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
-      }
-    }
-
-    /* 每 100 ms 显示五行状态与三条最近日志；通信失败转入一秒重连流程。 */
-    static uint32_t last_oled_ms = 0;
-    if (oled_ready != 0U &&
-        (uint32_t)(HAL_GetTick() - last_oled_ms) >= 100U)
-    {
-      last_oled_ms = HAL_GetTick();
-      /* 临界区只复制现场；八行格式化和 I2C 刷新由日志模块在前台完成。 */
-      g_oled_status = DebugLog_Display();
-      if (g_oled_status != OLED_OK)
-      {
-        /* 刷新失败也进入一秒重连流程，OLED 重新上电后需要恢复初始化命令。 */
-        oled_ready = 0U;
-        last_oled_retry_ms = HAL_GetTick();
-      }
-    }
   }
   /* USER CODE END 3 */
 }

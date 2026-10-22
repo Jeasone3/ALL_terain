@@ -1,3 +1,7 @@
+# FreeRTOS 迁移专项
+
+新增 -RtosOnly，任务边界、默认/全部/截止八段、日志及姿态验证说明见 [RTOS 运行说明](E:/Embedded_Development/All-terrain/ALL_terain_For_11/App/RTOS/README.md)。旧全量测试的车辆参数断言与当前源码存在基线不一致，专项通过不代表旧全量通过。
+
 # 运动、分段路线和 OLED 日志验证
 
 在工程根目录运行：

@@ -1,6 +1,6 @@
 # 小车运动、分段路线与调试
 
-当前 TRACK_ONLY_TEST_ENABLE=0u、IMU_STRAIGHT_TEST_ENABLE=1u，启用独立 IMU 角度 PID 直行测试。IMU 初始化与静止校准成功后，以开始动作时的朝向为零度目标，基础 PWM700，运行 5 秒后停车。需要运行九段自动路线时，将两个启动测试开关均设为 0。
+当前运行 FreeRTOS 三任务，两个启动测试开关均为 0，启用原九段自动路线。任务职责、配置和调试器观察值见 [RTOS 运行说明](E:/Embedded_Development/All-terrain/ALL_terain_For_11/App/RTOS/README.md)。测试开关及路线表继续由原源码维护，切换 RTOS 不修改车辆参数。
 
 ## 启动方式
 
@@ -12,7 +12,7 @@
 | 单个项目限时 IMU 测试 | 0 | 1 |
 | 当前分段自动路线 | 0 | 0 |
 
-限时测试使用当前 IMU_STRAIGHT_TEST_PWM=700u、IMU_STRAIGHT_TEST_MS=5000u；接受请求后由 TIM4 每 10 ms 更新 IMU，使用目标 yaw 与实际 yaw 的最短角差进行 PID，左轮输出 base-out，右轮输出 base+out，两轮分别限幅在 0 至 1000。当前直行 Kp=44、Ki=0、Kd=25，实际为 PD 角度闭环；增益位于 App/IMU_Task/IMU_Task.c 的 fwd_params。控制帧计时到时 TEST_DONE 停车，IMU 读取失败时 IMU_ERR 停车。自动路线时长由 g_route_plan 单独配置。
+限时测试使用当前 IMU_STRAIGHT_TEST_PWM=400u、IMU_STRAIGHT_TEST_MS=20000u；接受请求后由 TIM4 通知 ControlTask 每 10 ms 更新 IMU，使用目标 yaw 与实际 yaw 的最短角差进行 PID，左轮输出 base-out，右轮输出 base+out，两轮分别限幅在 0 至 1000。当前直行 Kp=50、Ki=0、Kd=25，实际为 PD 角度闭环；增益位于 App/IMU_Task/IMU_Task.c 的 fwd_params。控制帧计时到时 TEST_DONE 停车，IMU 读取失败时 IMU_ERR 停车。自动路线时长由 g_route_plan 单独配置。
 
 纯循迹不依赖 IMU 校准成功；限时 IMU 测试和自动路线都要求初始化与校准成功。通信重连不会自动恢复运动。上电校准成功的 200 ms 蜂鸣保留，首个右路口另有一次 100 ms 提示。
 
@@ -38,7 +38,7 @@
 
 ## 实际调用顺序与动作接口
 
-TIM4 每 10 ms → 采样八路灰度 → 接受外部请求 → Route 判断阶段 → 接受 Route 本帧请求 → 必要时更新 IMU → 当前唯一控制器 → 两轮 PWM。
+TIM4 每 10 ms → 通知 ControlTask → 采样八路灰度 → 接受外部请求 → Route 判断阶段 → 接受 Route 本帧请求 → 必要时更新 IMU → 当前唯一控制器 → 两轮 PWM。
 
 Route 安排阶段；ModeFSM 接受动作、建立航向基准、判断转弯完成并处理故障。Track_Task 与 IMU_Task 互斥写电机，现有 PID 与极性保持原样。
 
@@ -61,6 +61,6 @@ OLED 的 S 是段号，从 1 开始；P 是当前路线段的标记，本次为 
 
 转弯等待上限为 5 秒，完成要求角差严格小于 5°且连续两帧；提前完成立即开始后续动作。若第 500 帧已经进入容差但尚未满两帧，最多再补一帧（10 ms）确认；补帧期间一旦离开容差立即故障。未进入容差在 5 秒时停车，PID 和右转 -90°的方向约定沿用原值。
 
-转弯末段在容差外按 TURN_MIN_OUT 补足小输出，当前源码为 250 PWM，本次保留；进入容差后输出零，等待两帧确认后衔接循迹。到位容差由 IMU_Task.h 的 IMU_TURN_DONE_TOLERANCE 统一维护，最低转弯 PWM 位于 IMU_Task.c，须实车标定。
+转弯末段在容差外按 TURN_MIN_OUT 补足小输出，当前源码为 210 PWM，本次保留；进入容差后输出零，等待两帧确认后衔接循迹。到位容差由 IMU_Task.h 的 IMU_TURN_DONE_TOLERANCE 统一维护，最低转弯 PWM 位于 IMU_Task.c，须实车标定。
 
 宿主测试和 Keil 编译不替代传感器图案、车身位置、IMU 方向与项目通过能力的实车验证。

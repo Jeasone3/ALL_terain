@@ -17,7 +17,7 @@
 } while (0)
 
 Gyro_Accel_Struct g_imu_data;
-uint8_t g_imu_ready;
+volatile uint8_t g_imu_ready;
 
 /**
  * @brief 检查真实姿态复位与输出偏置的即时和下一帧行为。

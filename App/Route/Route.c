@@ -1,7 +1,7 @@
 /**
  * @file Route.c
  * @brief 按指定路口逐段进入项目，完整路线末尾左转后 IMU 直行 3 秒停车。
- * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
+ * @note Route 只安排阶段；ControlTask 中的 ModeFSM 执行动作。PWM 和距离仍需实车标定。
  */
 #include "Route.h"
 #include "Mode_FSM.h"

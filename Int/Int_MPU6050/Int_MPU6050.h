@@ -22,9 +22,9 @@
 #define MPU_PWR_MGMT2_REG   0x6C   /* 电源管理 2：单轴待机 */
 #define MPU_DEVICE_ID_REG   0x75   /* WHO_AM_I，应回 0x68 */
 
-/* 六轴原始值与通信状态；由 Int_MPU6050_Tick 在 TIM4 中断里更新，其他模块可直接读 */
+/* 六轴由 ControlTask 按需更新；其他任务只读取快照，恢复任务只发布就绪状态。 */
 extern Gyro_Accel_Struct g_imu_data;
-extern uint8_t g_imu_ready;
+extern volatile uint8_t g_imu_ready;
 
 /* 成功返回 1；设备不存在、IIC 错误或配置失败返回 0 */
 uint8_t Int_MPU6050_Init(void);
@@ -36,7 +36,7 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
    陀螺值已减零偏。samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
 uint8_t Int_MPU6050_Calibrate(uint16_t samples);
 
-/* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；放定时中断里 */
+/* ControlTask 每 10 ms 按需调用，ready=0 时不访问设备。 */
 void Int_MPU6050_Tick(void);
 
 #endif /* __INT_MPU6050_H__ */
