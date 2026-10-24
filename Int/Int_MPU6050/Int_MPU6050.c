@@ -14,9 +14,10 @@ Gyro_Accel_Struct g_imu_data = {0};
 uint8_t g_imu_ready = 0; 
 
 
-/* 陀螺零偏：Calibrate 静止取均值后写入，Get_Data 里减掉。初值 0 = 未校准，
-   未校准时减 0 等于原始值，行为不变 */
-static int16_t s_bias_gx = 0, s_bias_gy = 0, s_bias_gz = 0;
+/* 陀螺零偏：Calibrate 静止取均值后写入，Get_Data 里减掉。
+   均值和扣偏结果都保留小数；当前量程一个计数约为 0.061°/s，不能截成整数。
+   初值为零表示尚未校准，不额外改变传感器输出。 */
+static float s_bias_gx = 0.0f, s_bias_gy = 0.0f, s_bias_gz = 0.0f;
 
 
 
@@ -177,9 +178,10 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     }
 
     __disable_irq(); //关中断 避免 Tick 读到半更新的 bias
-    s_bias_gx = (int16_t)(sx / n);
-    s_bias_gy = (int16_t)(sy / n);
-    s_bias_gz = (int16_t)(sz / n);
+    /* 先转成浮点再除，保留不足一个 ADC 计数的静止零偏。 */
+    s_bias_gx = (float)sx / (float)n;
+    s_bias_gy = (float)sy / (float)n;
+    s_bias_gz = (float)sz / (float)n;
     __enable_irq();
     return 1;       //校准成功
 }
@@ -199,10 +201,10 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
     sample.accel.accel_x = MPU6050_Sample(frame[0],  frame[1]);
     sample.accel.accel_y = MPU6050_Sample(frame[2],  frame[3]);
     sample.accel.accel_z = MPU6050_Sample(frame[4],  frame[5]);
-    /* frame[6..7] 是温度，六轴结构体不存；陀螺减零偏见 Calibrate */
-    sample.gyro.gyro_x = MPU6050_Sample(frame[8],  frame[9])   - s_bias_gx;
-    sample.gyro.gyro_y = MPU6050_Sample(frame[10], frame[11]) - s_bias_gy;
-    sample.gyro.gyro_z = MPU6050_Sample(frame[12], frame[13]) - s_bias_gz;
+    /* frame[6..7] 是温度，六轴结构体不存；扣偏后保留 float，避免再次截掉小数。 */
+    sample.gyro.gyro_x = (float)MPU6050_Sample(frame[8],  frame[9]) - s_bias_gx;
+    sample.gyro.gyro_y = (float)MPU6050_Sample(frame[10], frame[11]) - s_bias_gy;
+    sample.gyro.gyro_z = (float)MPU6050_Sample(frame[12], frame[13]) - s_bias_gz;
     *data = sample;
     return 1;
 }

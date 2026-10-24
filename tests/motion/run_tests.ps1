@@ -71,6 +71,18 @@ if ($RouteFinishOnly) {
     return
 }
 
+# 先运行独立 IMU 回归，避免旧路线调参断言阻断姿态与零偏检查。
+Invoke-MotionTest -Name 'test_attitude' -Arguments @(
+    (Join-Path $PSScriptRoot 'test_attitude.c'),
+    (Join-Path $projectRoot 'Com/Com_Attitude/Attitude.c')
+)
+
+Invoke-MotionTest -Name 'test_imu_bias' -Arguments @(
+    (Join-Path $PSScriptRoot 'test_imu_bias.c'),
+    (Join-Path $projectRoot 'Int/Int_MPU6050/Int_MPU6050.c'),
+    (Join-Path $projectRoot 'Com/Com_Attitude/Attitude.c')
+)
+
 Invoke-MotionTest -Name 'test_motion_route' -Arguments $motionSources
 # 单段截止必须允许未填写的后续段；0 则表示执行全部已编写段。
 Invoke-MotionTest -Name 'test_motion_route_limit1' -Arguments ($motionSources + '-DROUTE_DEBUG_STEP_LIMIT=1u')
@@ -86,9 +98,4 @@ Invoke-MotionTest -Name 'test_motion_route_all' -Arguments ($motionSources + '-D
 Invoke-MotionTest -Name 'test_debug_log' -Arguments @(
     (Join-Path $PSScriptRoot 'test_debug_log.c'),
     (Join-Path $projectRoot 'App/Debug_Log/Debug_Log.c')
-)
-
-Invoke-MotionTest -Name 'test_attitude' -Arguments @(
-    (Join-Path $PSScriptRoot 'test_attitude.c'),
-    (Join-Path $projectRoot 'Com/Com_Attitude/Attitude.c')
 )

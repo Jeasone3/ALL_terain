@@ -7,15 +7,17 @@
 #define IMU_ACCEL_LSB_PER_G    16384.0f
 #define IMU_GYRO_LSB_PER_DPS   16.4f
 
-/* 传感器坐标系下的有符号 ADC 原始值；车体轴向取决于模块安装方向。 */
+/* 传感器坐标系下已减零偏的陀螺数据，单位仍为 ADC 计数的等效值。
+ * 零偏均值可能包含小数，必须用 float 保留，否则会留下持续积分的残余角速度。
+ * 除以 IMU_GYRO_LSB_PER_DPS 后得到 °/s，车体轴向仍由模块安装映射确定。 */
 typedef struct 
 {
-    int16_t gyro_x;
-    int16_t gyro_y;
-    int16_t gyro_z;
+    float gyro_x;
+    float gyro_y;
+    float gyro_z;
 }Gyro_struct;
 
-/* 加速度与角速度使用同一传感器坐标系。 */
+/* 加速度保持同一传感器坐标系下的 16 位有符号 ADC 原始值。 */
 typedef struct 
 {
     int16_t accel_x;

@@ -50,9 +50,9 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
+#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
 #define IMU_STRAIGHT_TEST_PWM     400u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
-#define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
+#define IMU_STRAIGHT_TEST_MS      1000000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
 
 /* USER CODE END PD */
 
@@ -138,7 +138,7 @@ int main(void)
   g_oled_status = OLED_Init();
   uint8_t oled_ready = (g_oled_status == OLED_OK) ? 1U : 0U;
 
-
+  
 
   //电机对象初始化
   Motor_Init(&motorLeft);
@@ -147,7 +147,6 @@ int main(void)
   line_following_init(&g_line_controller); //循迹初始化
   
   ModeFSM_Init();                          /* 初始化为停车，明确选择测试或有效路线段后才能运行。 */
-
 
   #if TRACK_ONLY_TEST_ENABLE || IMU_STRAIGHT_TEST_ENABLE
   Route_Enable(0u);                        /* 测试期间只保留灰度检测，不安排自动路线动作。 */
@@ -214,7 +213,7 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
   uint32_t last_oled_retry_ms = HAL_GetTick();
-  // uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
+  uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
   while (1)
   {
 
@@ -230,16 +229,33 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
       g_imu_ready = Int_MPU6050_Init();
     }
 
-    // /* 每 500ms 串口打印六轴原始值，用于测试 MPU6050 是否好使 */
-    // if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
-    // {
-    //   last_print_ms = HAL_GetTick();
-    //   if (g_imu_ready)
-    //   {
-    //     printf("E:%6d,%6d,%6d\r\n",
-    //             (int)g_euler.yaw, (int)g_euler.pitch, (int)g_euler.roll);
-    //   }
-    // }
+    /* 每 100 ms 在前台打印同一控制帧的 yaw、pitch、roll，单位为度，保留两位小数。
+     * 临界区只复制数据，恢复中断后再格式化和发送，避免阻塞 10 ms 控制。 */
+    if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
+    {
+      Euler_struct euler_snapshot;
+      uint8_t imu_valid;
+      uint32_t saved_primask = __get_PRIMASK();
+      last_print_ms = HAL_GetTick();
+
+      __disable_irq();
+      euler_snapshot = g_euler;
+      imu_valid = g_mode_fsm.imu_valid;
+      __set_PRIMASK(saved_primask);
+
+      if (imu_valid != 0u)
+      {
+        printf("Yaw:%.2f Pitch:%.2f Roll:%.2f\r\n",
+               (double)euler_snapshot.yaw,
+               (double)euler_snapshot.pitch,
+               (double)euler_snapshot.roll);
+      }
+      else
+      {
+        /* 停车、循迹或 IMU 故障时没有新姿态，不能把保留值当成实时测量。 */
+        printf("Yaw:-- Pitch:-- Roll:--\r\n");
+      }
+    }
 
     /* USER CODE END WHILE */
 

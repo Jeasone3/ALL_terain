@@ -22,7 +22,8 @@
 #define MPU_PWR_MGMT2_REG   0x6C   /* 电源管理 2：单轴待机 */
 #define MPU_DEVICE_ID_REG   0x75   /* WHO_AM_I，应回 0x68 */
 
-/* 六轴原始值与通信状态；由 Int_MPU6050_Tick 在 TIM4 中断里更新，其他模块可直接读 */
+/* 六轴测量值与通信状态：加速度为原始 ADC 值，陀螺为保留小数的已扣偏计数值。
+   由 Int_MPU6050_Tick 在 TIM4 中断里更新，其他模块可直接读。 */
 extern Gyro_Accel_Struct g_imu_data;
 extern uint8_t g_imu_ready;
 
@@ -33,7 +34,8 @@ uint8_t Int_MPU6050_Init(void);
 uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
 
 /* 设备静止时调用：采 samples 帧陀螺取均值作为零偏；之后 Get_Data 返回的
-   陀螺值已减零偏。samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
+   陀螺值已减零偏，均值和扣偏结果均保留小数。
+   samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
 uint8_t Int_MPU6050_Calibrate(uint16_t samples);
 
 /* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；放定时中断里 */

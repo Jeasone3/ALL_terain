@@ -74,10 +74,10 @@ void Attitude_SetYawOffset(float deg)
 /**
  * @brief 使用六轴 Mahony 算法更新内部四元数，融合角速度与重力方向。
  * @param gx 车体系前向轴角速度，单位 rad/s。
- * @param gy 车体系右向轴角速度，单位 rad/s。
+ * @param gy 车体系左向轴角速度，单位 rad/s。
  * @param gz 车体系向上轴角速度，单位 rad/s；沿用现有 yaw 方向约定。
  * @param ax 车体系前向加速度，任意同量纲单位，内部归一化。
- * @param ay 车体系右向加速度，与 ax 使用同一量纲。
+ * @param ay 车体系左向加速度，与 ax 使用同一量纲。
  * @param az 车体系向上加速度，与 ax 使用同一量纲。
  * @return 无。
  * @note 固定以 10 ms 积分，更新四元数和重力误差积分，不直接改 g_euler。
@@ -95,10 +95,11 @@ static void mahony_update(float gx, float gy, float gz,
         recipNorm = 1.0f / sqrtf(ax*ax + ay*ay + az*az);
         ax *= recipNorm; ay *= recipNorm; az *= recipNorm;
 
-        /* 估计重力方向(机体系下)，对应 q 旋转矩阵第三列 */
+        /* 估计机体系中的半重力向量；三轴必须使用相同的 1/2 比例。
+         * 若 X/Y 为半向量而 Z 为完整分量，倾斜时会产生错误的重力校正。 */
         halfvx = q1*q3 - q0*q2;
         halfvy = q0*q1 + q2*q3;
-        halfvz = q0*q0 - q1*q1 - q2*q2 + q3*q3;
+        halfvz = 0.5f * (q0*q0 - q1*q1 - q2*q2 + q3*q3);
 
         /* 误差 = 测量(加速度) × 估计(重力) */
         ex = (ay*halfvz - az*halfvy);
@@ -133,21 +134,21 @@ static void mahony_update(float gx, float gy, float gz,
  * @return 无。
  * @note 在同一 10 ms 控制入口中紧跟成功的 Int_MPU6050_Tick 调用；ready=0 时不更新。
  *       循迹模式可暂停本函数；不能用旧的 ready 值代替上层对本周期采样成功的检查。
- *       保留当前模块安装映射：传感器 Y 为前、X 为右、Z 为上，不翻转任何轴符号。
+ *       传感器 Y 为前、X 为右、Z 为上；输入统一为前、左、上的右手车体系。
  */
 void Attitude_Tick(void)
 {
     if (!g_imu_ready) return;
 
     /* 取本周期六轴(中断内刚由 Int_MPU6050_Tick 刷新，无竞争)。
-       实测模块安装: Y 前 X 右 Z 上(与默认 X 前 Y 右相反)，故输入端互换 x/y，
-       使 Mahony 在 (前=Y, 右=X, 上=Z) 体系下运行，pitch/roll 标签才对。
-       若符号也反(如前俯显示负值)，再对对应轴取负 */
+       当前安装为 Y 前、X 右、Z 上，转换为车体 X 前、Y 左、Z 上：
+       车体 X=传感器 Y、车体 Y=-传感器 X、车体 Z=传感器 Z。
+       加速度与角速度使用同一右手映射；Z 轴不变，保留左转 yaw 增大的约定。 */
     float gx = (float)g_imu_data.gyro.gyro_y / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
-    float gy = (float)g_imu_data.gyro.gyro_x / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
+    float gy = -(float)g_imu_data.gyro.gyro_x / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
     float gz = (float)g_imu_data.gyro.gyro_z / IMU_GYRO_LSB_PER_DPS * ATT_DEG2RAD;
     float ax = (float)g_imu_data.accel.accel_y;
-    float ay = (float)g_imu_data.accel.accel_x;
+    float ay = -(float)g_imu_data.accel.accel_x;
     float az = (float)g_imu_data.accel.accel_z;
 
     mahony_update(gx, gy, gz, ax, ay, az);
