@@ -36,7 +36,7 @@ static float s_target_yaw = 0.0f;
 /* 直行参数 */
 #define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
-#define FWD_DEADBAND      1.0f      /* 死区 */
+#define FWD_DEADBAND      1.5f      /* 死区 */
 
 /**
  * @brief 计算从当前航向转到目标航向的最短角差，避免跨越 ±180° 时绕远路。
@@ -75,7 +75,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 保留当前直行增益，仅调整输出限幅；仍需实车整定。 */
-    pid_real_t fwd_params[3] = {50.0f, 0.0f, 25.0f};
+    pid_real_t fwd_params[3] = {50.0f, 10.0f, 25.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 
