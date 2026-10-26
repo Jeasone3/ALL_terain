@@ -35,6 +35,11 @@ typedef struct {
     uint8_t line_mask;               /* bit0 至 bit7 对应 IN1 至 IN8，1 表示在线 */
     int16_t left_pwm;
     int16_t right_pwm;
+    /* 临时诊断：gz(°/s，已扣静态零偏) 与加速度模长相对 1g 的偏差。
+     * 用来区分上下坡偏航根因——gz 残余零偏 / 安装泄漏 / 加速度动态污染。
+     * 定位后连同下方显示改动一起移除。 */
+    float gz_dps;
+    float accel_norm_dev;
 } DebugLog_Snapshot;
 
 typedef struct {
@@ -71,6 +76,16 @@ static void capture_state_locked(DebugLog_Snapshot *snapshot)
         if (g_sensor_data[channel] == LINE_RAW_VALUE) {
             snapshot->line_mask |= (uint8_t)(1u << channel);
         }
+    }
+
+    /* 临时诊断：gz(°/s) 与加速度模长偏差(|a|/1g - 1)。gyro_z 已扣静态零偏。 */
+    snapshot->gz_dps = (float)g_imu_data.gyro.gyro_z / IMU_GYRO_LSB_PER_DPS;
+    {
+        float ax = (float)g_imu_data.accel.accel_x;
+        float ay = (float)g_imu_data.accel.accel_y;
+        float az = (float)g_imu_data.accel.accel_z;
+        float norm = sqrtf(ax*ax + ay*ay + az*az);
+        snapshot->accel_norm_dev = norm / IMU_ACCEL_LSB_PER_G - 1.0f;
     }
 }
 
@@ -418,7 +433,12 @@ OLED_Status DebugLog_Display(void)
         OLED_PrintLine(2u, "E:%s N:%lu", error_text,
                        (unsigned long)display.state.motion.state_frames);
     }
-    OLED_PrintLine(3u, "G:%s I:%u", line_text, (unsigned int)(display.state.imu_ready != 0u));
+    (void)line_text; /* 临时诊断期间第3行不显示灰度，避免 unused 警告。 */
+    /* 临时诊断行：z=gz(°/s，已扣静态零偏)，a=加速度模长相对 1g 的偏差。
+     * 用来定位上下坡偏航根因；定位后恢复 G:%s I:%u 显示。 */
+    OLED_PrintLine(3u, "z:%+.1f a:%+.2f",
+                   (double)display.state.gz_dps,
+                   (double)display.state.accel_norm_dev);
     OLED_PrintLine(4u, "L:%+d R:%+d", (int)display.state.left_pwm, (int)display.state.right_pwm);
     first_log_row = (uint8_t)(DEBUG_LOG_CAPACITY - display.count);
     for (row = 0u; row < DEBUG_LOG_CAPACITY; row++) {

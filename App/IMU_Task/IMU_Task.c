@@ -75,7 +75,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
 
     /* 保留当前直行增益，仅调整输出限幅；仍需实车整定。 */
-    pid_real_t fwd_params[3] = {50.0f, 10.0f, 25.0f};
+    pid_real_t fwd_params[3] = {75.0f, 0.3f, 35.0f};
     PID_init(&s_fwd_pid, PID_POSITION, fwd_params, FWD_MAX_OUT, 0.0f);
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 

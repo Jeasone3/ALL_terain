@@ -81,7 +81,8 @@ void Attitude_SetYawOffset(float deg)
  * @param az 车体系向上加速度，与 ax 使用同一量纲。
  * @return 无。
  * @note 固定以 10 ms 积分，更新四元数和重力误差积分，不直接改 g_euler。
- *       加速度三轴全零时跳过重力校正；六轴算法没有绝对航向参考，yaw 仍会漂移。
+ *       加速度三轴全零时跳过重力校正；六轴无磁力计，yaw 对重力不可观，
+ *       故 ez 不反馈到 gz，yaw 纯靠陀螺 z 积分；ex/ey 仍校正 roll/pitch。
  */
 static void mahony_update(float gx, float gy, float gz,
                           float ax, float ay, float az)
@@ -106,13 +107,17 @@ static void mahony_update(float gx, float gy, float gz,
         ey = (az*halfvx - ax*halfvz);
         ez = (ax*halfvy - ay*halfvx);
 
-        /* PI 反馈 */
+        /* PI 反馈。六轴无磁力计，yaw 对重力不可观：ez 项没有绝对参考，
+         * 动态(上坡/下坡、颠簸)时把加速度噪声/线加速度耦合进 gz 积分，
+         * 且 ezInt 持续累积造成 yaw 单向偏航。故禁用 ez 反馈，yaw 纯靠
+         * 陀螺 z 积分(已做静态零偏校准，平地慢漂移可控)；ex/ey 仍校正
+         * roll/pitch。ez 计算保留，便于日后九轴扩展接磁力计。 */
         exInt += ex * ATT_KI * ATT_DT;
         eyInt += ey * ATT_KI * ATT_DT;
-        ezInt += ez * ATT_KI * ATT_DT;
+        /* ezInt += ez * ATT_KI * ATT_DT; */   /* 六轴禁用 yaw 重力反馈 */
         gx += ATT_KP*ex + exInt;
         gy += ATT_KP*ey + eyInt;
-        gz += ATT_KP*ez + ezInt;
+        /* gz += ATT_KP*ez + ezInt; */          /* 同上 */
     }
 
     /* 四元数积分：q' = 0.5 * q ⊗ omega */
