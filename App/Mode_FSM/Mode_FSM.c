@@ -369,14 +369,14 @@ void ModeFSM_Tick(void)
     //如果请求不为空
     if (external_command != 0u)
     {
-        stop_this_frame = (uint8_t)(request.command == COMMAND_STOP); //停车帧
+        stop_this_frame = (uint8_t)(request.command == COMMAND_STOP); //判断外部请求是否为停车
         apply_request(&request);
     }
     
     //路径规划
     Route_Tick(g_sensor_data, external_command);
 
-    /* 第二次取请求：Route 本帧的决策立即生效；停车帧不再取新请求。 */
+    //执行Route请求
     if (stop_this_frame == 0u && take_request(&request) != 0u)
     {   //不是停车，有执行请求
         apply_request(&request);

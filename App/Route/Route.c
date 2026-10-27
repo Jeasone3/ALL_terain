@@ -296,7 +296,7 @@ static void begin_step(void)
     g_route.project_id = step->project_id;
     reset_junction();
     enter_state(ROUTE_FOLLOW);
-    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK)
+    if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK) //上电后首次进入循迹
     {
         Car_Track();
     }
@@ -449,6 +449,8 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     {
         return;
     }
+
+    //开始进行路线表
     if (g_route.state == ROUTE_READY) {
         begin_step();
         return;
@@ -459,7 +461,8 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     }
 
     /* 截止后仅更新显示计时和保留接管检查，不再计路线超时或派发后续动作。 */
-    if (g_route.state == ROUTE_CRUISE) return;
+    if (g_route.state == ROUTE_CRUISE) 
+        return;
     
     //计算已运行时间
     elapsed_ms = g_route.state_frames * ROUTE_FRAME_MS;
@@ -467,7 +470,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     step = &g_route_plan[g_route.step_index];
 
     switch (g_route.state) {
-    case ROUTE_FOLLOW:
+    case ROUTE_FOLLOW: //一般巡线
         /* 斜着进入十字时可能先确认单侧路口，新事件会先被单侧图案锁存。
          * 十字仍须连续两帧确认，但不再要求第二个新事件；接受后立即离开 FOLLOW，
          * 同一十字不会重复提交动作。左右单侧路口仍保留原有的新事件要求。 */
@@ -486,7 +489,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             return;
         }
         break;
-    case ROUTE_APPROACH:
+    case ROUTE_APPROACH: //转向前移
         if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) { //到达前移时间
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
@@ -497,7 +500,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             return;
         }
         break;
-    case ROUTE_TURN:
+    case ROUTE_TURN:     //陀螺仪转向
         if (g_mode_fsm.turn_count != s_turn_count_before) {
             if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
                 /* FSM 已在转弯完成帧接入循迹；不重复请求 TRACK，也不开始入口或 IMU 通行。 */
@@ -523,7 +526,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         break;
 
-    case ROUTE_ENTRY:
+    case ROUTE_ENTRY: //项目入口通过循迹对正
         if (elapsed_ms >= step->entry_ms) {
             begin_project(step);
             return;

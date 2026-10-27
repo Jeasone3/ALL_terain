@@ -49,7 +49,7 @@
 /* USER CODE BEGIN PD */
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
-#define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
+#define TRACK_ONLY_TEST_ENABLE    1u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
 #define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
 #define IMU_STRAIGHT_TEST_PWM     300u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
 #define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
@@ -93,11 +93,8 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief 初始化外设、运动控制器与传感器，再进入前台显示和通信恢复循环。
-  * @param 无。
-  * @return 程序正常运行时不返回。
-  * @note TIM4 启动后独占运动控制；主循环每 100 ms 显示状态和日志，并重试通信。
-  *       OLED 格式化和 I2C 通信在恢复中断后执行，重连只重绘屏幕，不清除日志或故障现场。
+  * @brief  The application entry point.
+  * @retval int
   */
 int main(void)
 {
@@ -294,10 +291,8 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
 }
 
 /**
-  * @brief 配置 HSE 和 PLL，使系统及控制定时器使用既定时钟。
-  * @param 无。
-  * @return 无。
-  * @note 在初始化定时器前调用；配置失败进入 Error_Handler，不能在控制中断中调用。
+  * @brief System Clock Configuration
+  * @retval None
   */
 void SystemClock_Config(void)
 {
@@ -340,10 +335,8 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief 处理 HAL 外设初始化等系统级错误，禁止继续执行失效的初始化流程。
-  * @param 无。
-  * @return 无，进入等待循环。
-  * @note 屏蔽中断后不返回；运行时运动故障由 ModeFSM 单独处理并输出停车。
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
   */
 void Error_Handler(void)
 {
@@ -357,11 +350,11 @@ void Error_Handler(void)
 }
 #ifdef USE_FULL_ASSERT
 /**
-  * @brief 提供 HAL 参数断言失败的调试入口。
-  * @param file 发生断言的源文件名称。
-  * @param line 发生断言的行号，从 1 开始。
-  * @return 无。
-  * @note 仅 USE_FULL_ASSERT 开启时编译；可在此设置断点查看 file 和 line。
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {

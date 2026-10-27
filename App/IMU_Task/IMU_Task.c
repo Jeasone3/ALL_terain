@@ -130,9 +130,11 @@ void IMUTask_TurnTick(void)
      * 进入容差后先停转，避免最低 PWM 在完成确认期间继续把车身推过目标。 */
     if (fabsf(error) < IMU_TURN_DONE_TOLERANCE) {
         out = 0.0f;
-    } else if (fabsf(out) < TURN_MIN_OUT) {
-        if (error > 0.0f) out = TURN_MIN_OUT;
-        else out = -TURN_MIN_OUT;
+    }else if(fabsf(out) < TURN_MIN_OUT) { //如果输出小于最低PWM，则补足最低PWM
+        if (error > 0.0f) 
+            out = TURN_MIN_OUT;
+        else 
+            out = -TURN_MIN_OUT;
     }
 
     /* error>0 时 L<0、R>0，左转增大 yaw；error<0 时反向，右转减小 yaw。 */
