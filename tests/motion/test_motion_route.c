@@ -935,7 +935,8 @@ static void calibrate_test_plan(void)
             g_route_plan[i].entry_ms = 30u;
             g_route_plan[i].pass_ms = 50u;
         }
-        g_route_plan[i].timeout_ms = 1000u; /* 大于真实的 500 ms 前移，其他短场景仍有独立截止边界。 */
+        /* 倒退固定为 2 秒，短场景也必须为这一阶段保留足够的超时余量。 */
+        g_route_plan[i].timeout_ms = (i == 7u && g_route_plan[i].action == ROUTE_ACTION_LEFT) ? 3000u : 1000u;
     }
 }
 
@@ -955,6 +956,8 @@ static void drive_route_frame(void)
                     step->trigger_junction == JUNCTION_LEFT ? 0x0Fu : 0xFFu);
     } else if (g_route.state == ROUTE_TURN) {
         s_sample_yaw = step->action == ROUTE_ACTION_LEFT ? 90.0f : -90.0f;
+    } else if (g_route.state == ROUTE_REVERSE) {
+        s_sample_yaw = 90.0f;
     } else if (g_route.state == ROUTE_FINAL_TURN || g_route.state == ROUTE_FINAL_FORWARD) {
         s_sample_yaw = 90.0f;
     } else if (g_route.state == ROUTE_OBSTACLE) {
@@ -2343,6 +2346,247 @@ static void test_fault_log_lifecycle(void)
 }
 
 /**
+ * @brief 验证状态机仅对路线表第 8 项倒退，并检查纠偏方向、PWM 边界和故障。
+ * @param 无。
+ * @return 无。
+ * @note 链接真实 IMU PID；倒退不能把前进差速整体取反，也不能误触发转弯完成判断。
+ */
+static void test_reverse_motion(void)
+{
+    unsigned direction;
+    if (TEST_ACTIVE_STEP_COUNT < 8u) return;
+    for (direction = 0u; direction < 2u; ++direction) {
+        unsigned track_before, resets;
+        uint32_t command, turns;
+        begin_case("eighth table entry hands off directly to reverse with correct heading correction", 1u);
+        /* 修改显示用段号后仍按数组第 8 项判断，不把 project_id 当作数组下标。 */
+        if (direction == 1u) g_route_plan[7].project_id = 80u;
+        reach_route_state(7u, ROUTE_TURN);
+        CHECK(g_mode_fsm.imu_state == IMU_TURN_LEFT && CLOSE(g_mode_fsm.target_yaw, 90.0f));
+        track_before = s_track_pid_calls;
+        resets = s_resets;
+        command = g_mode_fsm.command_id;
+        turns = g_mode_fsm.turn_count;
+        s_sample_yaw = 90.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.turn_count == turns + 1u && g_mode_fsm.imu_state == IMU_REVERSE);
+        CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.state_frames == 1u);
+        CHECK(motorLeft.speed == -300 && motorRight.speed == -300);
+        CHECK(s_track_pid_calls == track_before && s_resets == resets);
+        CHECK(g_mode_fsm.command_id == command && CLOSE(g_mode_fsm.target_yaw, 90.0f));
+        tick();
+        CHECK(g_route.state == ROUTE_REVERSE);
+        Route_Enable(0u);
+        tick(); /* 单独观察运动控制时取消路线调度；保留当前倒退，避免到时切换到下一动作。 */
+        CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.imu_state == IMU_REVERSE);
+        s_sample_yaw = direction == 0u ? 88.0f : 92.0f;
+        tick();
+        CHECK(motorLeft.speed >= -1000 && motorLeft.speed <= 0);
+        CHECK(motorRight.speed >= -1000 && motorRight.speed <= 0);
+        CHECK(direction == 0u ? motorLeft.speed < motorRight.speed : motorLeft.speed > motorRight.speed);
+        s_sample_yaw = direction == 0u ? 40.0f : 140.0f;
+        ticks(510u); /* 倒退超过转弯超时也不能再次判转完或触发 TURN_TO。 */
+        CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.turn_count == turns + 1u);
+        CHECK(g_mode_fsm.imu_state == IMU_REVERSE && g_mode_fsm.command_id == command);
+        CHECK(motorLeft.speed >= -1000 && motorLeft.speed <= 0);
+        CHECK(motorRight.speed >= -1000 && motorRight.speed <= 0);
+        CHECK(direction == 0u ? motorLeft.speed < motorRight.speed : motorLeft.speed > motorRight.speed);
+        CHECK(s_track_pid_calls == track_before && s_resets == resets);
+        s_sample_yaw = 0.0f;
+        Car_TurnLeft90(MODE_IMU);
+        tick();
+        s_sample_yaw = 90.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.imu_state == IMU_FORWARD && motorLeft.speed == 500 && motorRight.speed == 500);
+        s_sample_yaw = 0.0f;
+        Car_TurnLeft90(MODE_TRACK);
+        tick();
+        s_sample_yaw = 90.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.imu_state == IMU_FORWARD);
+        CHECK(g_route.step_index == 7u); /* 中止后即使仍停留在第 8 项，手动左转也不能倒退。 */
+    }
+
+    begin_case("STOP cannot be overwritten by an ordinary turn request", 0u);
+    Car_Stop();
+    Car_TurnLeft90(MODE_TRACK);
+    tick();
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+
+    begin_case("disabled eighth-step turn keeps ordinary handoff", 1u);
+    reach_route_state(7u, ROUTE_TURN);
+    Route_Enable(0u);
+    s_sample_yaw = 90.0f;
+    ticks(2u);
+    CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.mode == MODE_TRACK);
+    CHECK(g_mode_fsm.imu_state == IMU_FORWARD);
+
+    begin_case("IMU loss stops reverse and cannot resume automatically", 1u);
+    reach_route_state(7u, ROUTE_TURN);
+    s_sample_yaw = 90.0f;
+    ticks(2u);
+    s_sample_ok = 0u;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+    s_sample_ok = g_imu_ready = 1u;
+    ticks(220u);
+    check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+    puts("PASS eighth-index condition, manual turn isolation, heading correction, bounds and IMU failure");
+}
+
+/**
+ * @brief 验证第 8 项按实际生产参数倒退 200 帧、循迹 300 帧，再 IMU 通行 900 帧。
+ * @param 无。
+ * @return 无。
+ * @note 其他段使用短场景参数；第 8 项恢复真实表项，完整路线和截止 8 均检查后续行为。
+ */
+static void test_route_big_step_reverse(void)
+{
+    unsigned reverse_frame, entry_frame, track_before, imu_before, resets;
+    uint32_t command, turns;
+    if (TEST_ACTIVE_STEP_COUNT < 8u) return;
+    begin_case("big step reverses 2 seconds then tracks 3 seconds before IMU passage", 1u);
+    g_route_plan[7] = s_original_plan[7];
+    CHECK(Route_IsCalibrated());
+    CHECK(g_route_plan[7].action == ROUTE_ACTION_LEFT);
+    CHECK(g_route_plan[7].base_pwm == 400u && g_route_plan[7].entry_ms == 3000u);
+    CHECK(g_route_plan[7].pass_ms == 9000u);
+    reach_route_state(7u, ROUTE_TURN);
+    command = g_mode_fsm.command_id;
+    turns = g_mode_fsm.turn_count;
+    track_before = s_track_pid_calls;
+    resets = s_resets;
+    ticks(37u); /* 左转未完成时不能提前消耗倒退时间。 */
+    CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.turn_count == turns);
+    s_sample_yaw = 90.0f;
+    tick();
+    CHECK(g_mode_fsm.turn_count == turns);
+    tick();
+    CHECK(g_mode_fsm.turn_count == turns + 1u && g_mode_fsm.imu_state == IMU_REVERSE);
+    CHECK(motorLeft.speed == -300 && motorRight.speed == -300);
+    CHECK(g_mode_fsm.base_pwm == 300u);
+    reverse_frame = s_frame;
+    set_sensors(0xFFu);
+    tick();
+    CHECK(g_route.state == ROUTE_REVERSE && g_route.state_frames == 1u);
+    CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[0], "REV R:REV") != NULL);
+    ticks(198u);
+    CHECK(g_route.state == ROUTE_REVERSE && g_route.state_frames == 199u);
+    CHECK(g_mode_fsm.state_frames == 200u && g_mode_fsm.command_id == command);
+    CHECK(s_track_pid_calls == track_before && s_resets == resets && !g_route.junction_event);
+    CHECK(motorLeft.speed == -300 && motorRight.speed == -300);
+    imu_before = s_imu_reads;
+    tick();
+    CHECK(s_frame - reverse_frame == 200u);
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 0u);
+    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == command + 1u);
+    CHECK(s_imu_reads == imu_before && s_track_pid_calls == track_before + 1u);
+    entry_frame = s_frame;
+    set_sensors(0x20u);
+    tick();
+    CHECK(motorLeft.speed > motorRight.speed); /* 入口必须实际运行灰度 PID。 */
+    set_sensors(0xFFu);
+    ticks(298u);
+    CHECK(g_route.state == ROUTE_ENTRY && g_route.state_frames == 299u);
+    CHECK(g_mode_fsm.command_id == command + 1u && !g_route.junction_event);
+    s_sample_yaw = 0.0f;
+    tick();
+    CHECK(s_frame - entry_frame == 300u);
+    CHECK(g_route.state == ROUTE_OBSTACLE && g_route.state_frames == 0u);
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.imu_state == IMU_FORWARD);
+    CHECK(g_mode_fsm.base_pwm == 400u && g_mode_fsm.command_id == command + 2u);
+    CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+    CHECK(s_resets == resets + 1u && CLOSE(g_mode_fsm.target_yaw, 0.0f));
+    track_before = s_track_pid_calls;
+    ticks(899u);
+    CHECK(g_route.state == ROUTE_OBSTACLE && g_route.state_frames == 899u);
+    CHECK(s_track_pid_calls == track_before && g_mode_fsm.command_id == command + 2u);
+    tick();
+    CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == command + 3u);
+    CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT == 8u ? ROUTE_CRUISE : ROUTE_RECOVER));
+    CHECK(g_route.step_index == 7u && g_mode_fsm.turn_count == turns + 1u);
+    set_sensors(0x18u);
+    ticks(2u);
+    if (TEST_ACTIVE_STEP_COUNT == 8u) {
+        CHECK(g_route.state == ROUTE_CRUISE && g_route.step_index == 7u);
+        ticks(1200u);
+        CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.command_id == command + 3u);
+    } else {
+        CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 8u);
+        g_route_plan[8].project_id = 8u; /* 相同显示段号不应让第 9 个数组表项也执行倒退。 */
+        reach_route_state(8u, ROUTE_TURN);
+        s_sample_yaw = 90.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.imu_state == IMU_FORWARD);
+        /* 第 9 项及最终收尾仍沿用原转后动作，只有数组第 8 项才倒退。 */
+        reach_route_state(8u, ROUTE_FINAL_TURN);
+        s_sample_yaw = 90.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.base_pwm == 500u);
+        reach_route_state(8u, ROUTE_FINISHED);
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    }
+    puts("PASS big-step production timing, junction masking, ninth-step compatibility and debug cutoff");
+}
+
+/**
+ * @brief 验证新增倒退阶段的停车、接管、禁用、IMU 故障和路线超时均不会自动续跑。
+ * @param 无。
+ * @return 无。
+ * @note 同时覆盖第 8 项转弯与循迹边界；禁用沿用原接口语义，仅取消路线而不主动停车。
+ */
+static void test_route_reverse_interrupts(void)
+{
+    static const RouteState phases[] = {ROUTE_TURN, ROUTE_REVERSE, ROUTE_ENTRY, ROUTE_OBSTACLE};
+    unsigned i, action;
+    if (TEST_ACTIVE_STEP_COUNT < 8u) return;
+    for (i = 0u; i < sizeof(phases) / sizeof(phases[0]); ++i) {
+        for (action = 0u; action < 4u; ++action) {
+            uint32_t command;
+            if (action == 3u && phases[i] == ROUTE_ENTRY) continue; /* 循迹期间不读取 IMU。 */
+            begin_case("big-step phase cancellation cannot auto-resume", 1u);
+            reach_route_state(7u, phases[i]);
+            if (action == 0u) Car_Stop();
+            else if (action == 1u) Car_Track();
+            else if (action == 2u) Route_Enable(0u);
+            else s_sample_ok = 0u;
+            tick();
+            if (action == 0u) check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            if (action == 1u) CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.status == CAR_RUNNING);
+            if (action == 3u) check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+            s_sample_ok = g_imu_ready = 1u;
+            tick();
+            CHECK(g_route.state == ROUTE_ABORTED && g_route.step_index == 7u);
+            command = g_mode_fsm.command_id;
+            Route_Enable(1u);
+            ticks(550u);
+            CHECK(g_route.state == ROUTE_ABORTED && g_mode_fsm.command_id == command);
+            if (action == 0u) check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            if (action == 3u) check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        }
+    }
+    begin_case("reverse stage obeys route timeout", 1u);
+    reach_route_state(7u, ROUTE_REVERSE);
+    g_route_plan[7].timeout_ms = 50u; /* 运行中注入更短截止，单独触发倒退阶段的超时分支。 */
+    ticks(4u);
+    check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
+    CHECK(g_route.state == ROUTE_REVERSE && !g_route.enabled);
+    Route_Enable(1u);
+    ticks(550u);
+    /* 路线超时沿用原语义：停止调度并保留超时阶段现场，不自动改成 ABORT。 */
+    CHECK(g_route.state == ROUTE_REVERSE);
+    check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
+
+    begin_case("reverse duration must fit stage timeout before start", 0u);
+    Car_Stop();
+    tick();
+    calibrate_test_plan();
+    g_route_plan[7].timeout_ms = 2000u;
+    CHECK(!Route_Start() && g_route.state == ROUTE_UNCALIBRATED && g_route.step_index == 7u);
+    puts("PASS reverse-phase cancellation, fault stop, route timeout and parameter validation");
+}
+
+/**
  * @brief 运行运动与路线的行为场景，任何断言失败都会返回非零退出码。
  * @param 无。
  * @return EXIT_SUCCESS 表示全部场景通过；断言失败由 CHECK 立即退出。
@@ -2351,6 +2595,14 @@ static void test_fault_log_lifecycle(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_ROUTE_REVERSE_ONLY
+    /* 倒退专项使用当前生产参数，独立于旧测试中尚未同步的 PID 与路线调参断言。 */
+    test_reverse_motion();
+    test_route_big_step_reverse();
+    test_route_reverse_interrupts();
+    puts("All big-step reverse scenarios passed.");
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_FINISH_ONLY
     /* 收尾专项入口：绕开旧调参断言，只验证新增时序、实际停车和中断边界。 */
     test_route_ninth_step();
@@ -2365,6 +2617,9 @@ int main(void)
     }
     test_real_pid_forward_deadband();
     test_default_and_mailbox();
+    test_reverse_motion();
+    test_route_big_step_reverse();
+    test_route_reverse_interrupts();
     test_turn_handoffs();
     test_turn_minimum_drive();
     test_turn_filter_and_timeout();

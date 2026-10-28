@@ -4,9 +4,16 @@
 
     ./tests/motion/run_tests.ps1
     ./tests/motion/run_tests.ps1 -RouteFinishOnly
+    ./tests/motion/run_tests.ps1 -RouteReverseOnly
     ./tests/motion/build_keil.ps1
 
 宿主脚本使用 GCC C99，开启 -Wall -Wextra -Werror -pedantic。产物位于 TEMP/all-terrain-motion-tests。Keil 脚本使用当前源码完整重编译，AXF/HEX/日志写入独立临时目录，不覆盖仓库旧构建产物，不烧录硬件。
+
+`-RouteReverseOnly` 专项使用当前第 8 项生产参数，覆盖默认 9、全部段 0 和截止 8：普通 LEFT 表项在状态机中按数组下标 7 判断，左转确认当帧直接倒退、300 PWM 保持转后航向、精确 200 帧倒退、300 帧循迹、400 PWM 的 900 帧 IMU 通行，以及第 9 项和最终收尾的兼容性。还检查修改显示用 project_id 不影响数组下标判断、第 8 项中止后手动左转不倒退、转弯完成前禁用时保持普通转后模式、倒退纠偏方向与 PWM 边界、停车优先、阶段接管/禁用、IMU 故障、路线超时和启动参数校验。此专项不调用含旧调参断言的全量场景；全量结果需单独记录。
+
+2026-10-28 大台阶倒退变更验证：上述三种配置的倒退专项全部通过。Keil ARMCC 5.06 update 7 完整重编译生成 HEX，结果为 0 Error(s)、2 Warning(s)；两个警告来自既有 Attitude.c 的 ez、ezInt 未使用，构建脚本因要求零警告而返回失败。修改前运行全量宿主测试已在 test_attitude 编译时被 ez 未使用的 -Werror 阻断，本次不改姿态算法，不能记为全量回归通过。补全 DebugLog 原有两个诊断字段的显式零初始化，以满足倒退专项的严格编译检查。未烧录、未实车验证。
+
+同日按用户思路简化：第 8 项恢复普通 LEFT 表项，转弯完成时用 if 判断数组下标 7，去掉专用路线动作、专用转弯请求和额外的转后倒退标志。更新后的三种配置专项再次全部通过，包括中止后的手动转弯隔离；完整编译再次生成 HEX，仍为 0 Error(s)、上述 2 Warning(s)。
 
 2026-10-16 收尾变更验证：`-RouteFinishOnly` 在默认 9、全部段 0 和截止 8 三种配置下通过，验证第九段原有 1 秒/5 秒时序、原地左转、保持目标航向直行精确 3 秒后停车，以及中断、故障和显式重启。Keil ARMCC 5.06 update 7 完整重编译为 0 Error(s)、0 Warning(s)，未烧录或实车验证。修改前的全量测试已在默认循迹场景失败：旧断言预期 PWM400，当前源码为 PWM500；本次未修改这些既有调参断言，不能视为全量回归通过。
 

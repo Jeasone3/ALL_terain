@@ -22,20 +22,20 @@ line_following_t g_line_controller;
 
 /* 默认位置权重表: 关于中心对称, 负左正右; 改通道数时只需改 GRAYSCALE_SENSOR_CHANNELS */
 static const float k_default_weights[GRAYSCALE_SENSOR_CHANNELS] = {
-    -8.0f, -3.0f, -2.0f, -1.0f, 1.0f, 2.0f, 3.0f, 8.0f
+    -5.0f, -3.0f, -2.0f, -1.0f, 1.0f, 2.0f, 3.0f, 5.0f
 };
 
 void line_following_init(line_following_t *controller)
 {
     /* 快速小幅抖动的试车起点：降低比例纠偏，关闭积分，保留原微分参数；需实车整定。 */
-    pid_real_t pid_params[3] = {130.0f, 0.0f, 100.0f};
+    pid_real_t pid_params[3] = {110.0f, 0.0f, 30.0f};
     PID_init(&controller->pid, PID_POSITION, pid_params,
              /*max_out=*/1000.0f, /*max_iout=*/100.0f);
     PID_set_integral_separation(&controller->pid, 8.0f);   /* 近似原"动态积分限幅" */
     PID_set_deriv_filter(&controller->pid, 0.7f);          /* 微分低通, 抗噪 */
 
     /* 单位: PWM 量纲 0-1000(无编码器, 直接驱动占空比) */
-    controller->base_speed = 500;
+    controller->base_speed = 400;
     controller->max_speed  = 1000;
 
     for (uint8_t i = 0; i < GRAYSCALE_SENSOR_CHANNELS; i++) {

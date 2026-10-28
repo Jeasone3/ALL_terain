@@ -18,7 +18,9 @@
 
 第七段：FOLLOW 等十字 → 短鸣并 ENTRY 直行循迹 2000 ms → OBSTACLE 以 500 PWM IMU 直行 4000 ms → RECOVER 循迹并确认窄线。
 
-第八段：保留用户当前表项，FOLLOW 等十字 → 短鸣、前移、左转 90° → ENTRY 配置 1 ms（按 10 ms 控制帧执行）→ OBSTACLE 以 600 PWM IMU 直行 7000 ms → RECOVER 循迹并确认窄线。
+第八段（大台阶）：FOLLOW 等十字 → 短鸣、按现有配置前移 → TURN 左转 90° → REVERSE 保持转后航向、以 300 PWM 倒退 2000 ms → ENTRY 灰度循迹 3000 ms → OBSTACLE 以 400 PWM IMU 直行 9000 ms → RECOVER 循迹并确认窄线。表项使用普通 LEFT；运动状态机在转弯完成处判断 `g_route.step_index == 7u`（数组第 8 项），再进入倒退。倒退 PWM 在 Mode_FSM.c 的该分支设置，时长为 Route.c 中的 ROUTE_REVERSE_MS；后续 IMU 通行 PWM 仍由 base_pwm 设置，入口循迹时间由 entry_ms 设置。
+
+大台阶沿用 Car_TurnLeft90(MODE_TRACK)，运动层在左转确认完成的当帧检查路线许可、TURN 阶段和第 8 项下标，再直接输出倒退 PWM。路线被接管或中止后，手动左转仍按原转后模式执行。倒退沿用转弯的 +90°目标，不重置姿态；首个倒退帧计入 2000 ms。到时切换循迹并从零计算 3000 ms，随后才建立新的 IMU 直行基准。倒退期间屏蔽路口，保留停车优先、IMU 故障停车与路线阶段超时；OLED 显示 REV 和 R:REV。启动检查要求阶段超时大于固定倒退时长。
 
 第九段：FOLLOW 等下一个十字 → 短鸣、前移、IMU 闭环左转 90° → ENTRY 循迹 1000 ms → OBSTACLE 以 600 PWM IMU 直行 5000 ms → FINAL_TURN 原地 IMU 左转 90° → FINAL_FORWARD 以 500 PWM 保持转后航向直行 3000 ms → FINISHED 停车。
 

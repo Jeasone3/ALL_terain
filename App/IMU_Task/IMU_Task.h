@@ -12,7 +12,7 @@
  */
 
 /* 转弯控制和状态机共用同一到位容差，避免控制器停转后状态机仍认为未到位。 */
-#define IMU_TURN_DONE_TOLERANCE 2.0f
+#define IMU_TURN_DONE_TOLERANCE 1.0f
 
 /**
  * @brief 初始化转弯和直行 PID，保留当前参数并清除历史。
@@ -54,6 +54,14 @@ void IMUTask_TurnTick(void);
  * @note 采用 1° 死区和 ±100 PWM 纠偏上限，两轮输出不反转；调用前保证 IMU 有效。
  */
 void IMUTask_ForwardTick(uint16_t base_pwm);
+
+/**
+ * @brief 运行一帧保持当前目标航向的倒退 PID，使用负基础 PWM 加减差速。
+ * @param base_pwm 已由运动层校验的正值 PWM 幅度，范围 1 至 1000。
+ * @return 无。
+ * @note 两轮输出限制在 [-1000, 0]，只改变行进方向，航向纠偏符号保持不变；IMU 须有效。
+ */
+void IMUTask_ReverseTick(uint16_t base_pwm);
 
 /**
  * @brief 保留旧的临时前移接口，以固定 yaw=0° 为目标执行一帧直行。

@@ -15,6 +15,7 @@
 #define ROUTE_TURN_APPROACH_MS   700u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
+#define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -28,14 +29,14 @@
  * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 600u, 2000u, 4000u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 570u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 8000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 2000u, 5000u, 10000u, JUNCTION_RIGHT}, //栅格
+    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
+    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
     {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
     {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
     {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
     {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 草坪 */
-    {ROUTE_ACTION_LEFT,     8u, 400u, 800u, 9000u, 10000u, JUNCTION_CROSS}, /* 大台阶 */
+    {ROUTE_ACTION_LEFT,     8u, 400u, 600u, 9000u, 10000u, JUNCTION_CROSS}, /* 大台阶：状态机判断第 8 项，左转后倒退 2 秒、循迹 3 秒 */
     {ROUTE_ACTION_LEFT,     9u, 600u, 800u, 3000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
 };
 
@@ -200,7 +201,7 @@ static uint8_t confirm_exit(const uint16_t *sensor_data)
 }
 
 /**
- * @brief 更新监测；入口、通行、恢复、转弯和调试截止阶段屏蔽路口图案。
+ * @brief 更新监测；入口、通行、恢复、转弯、倒退和调试截止阶段屏蔽路口图案。
  * @param sensor_data 有效八路数组或空指针。
  * @return 无。
  * @note 事件只持续一帧，日志在控制入口即时保存，前台不轮询单帧事件。
@@ -222,7 +223,8 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_RECOVER || g_route.state == ROUTE_READY ||
         g_route.state == ROUTE_APPROACH || g_route.state == ROUTE_TURN ||
         g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
-        g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED) {
+        g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
+        g_route.state == ROUTE_REVERSE) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -245,6 +247,7 @@ static void update_conditions(const uint16_t *sensor_data)
  * @return 全部有效时返回 ROUTE_ACTIVE_STEP_COUNT，否则返回无效段的下标。
  * @note 不检查调试截止点之后的参数，避免尚未填写的后续项目阻止当前短段试车。
  *       项目入口与通行时间必须非零，阶段超时必须大于入口、通行和转弯前移时间。
+ *       第 8 项左转后的阶段超时还须大于固定的 2 秒倒退时间。
  *       RIGHT_TRACK 可接后续路段，入口、通行和对应 PWM 为零，不虚构项目时长。
  */
 static uint16_t invalid_step(void)
@@ -258,6 +261,9 @@ static uint16_t invalid_step(void)
              step->trigger_junction != JUNCTION_CROSS) ||
             step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
             step->project_id == 0u) {
+            return i;
+        }
+        if (i == 7u && step->action == ROUTE_ACTION_LEFT && step->timeout_ms <= ROUTE_REVERSE_MS) {
             return i;
         }
         if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
@@ -325,7 +331,8 @@ static void begin_recovery(void)
     enter_state(ROUTE_RECOVER);
     reset_junction();
     /* 转弯完成已自动接循迹时保留 PID 历史，不再提交重复的 TRACK 请求。 */
-    if (g_mode_fsm.mode != MODE_TRACK) Car_Track();
+    if (g_mode_fsm.mode != MODE_TRACK)
+     Car_Track();
 }
 
 /**
@@ -493,7 +500,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) { //到达前移时间
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
-            if (step->action == ROUTE_ACTION_LEFT) 
+            if (step->action == ROUTE_ACTION_LEFT)
                 Car_TurnLeft90(MODE_TRACK);
             else 
                 Car_TurnRight90(MODE_TRACK);
@@ -502,6 +509,13 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         break;
     case ROUTE_TURN:     //陀螺仪转向
         if (g_mode_fsm.turn_count != s_turn_count_before) {
+            if (g_route.step_index == 7u && step->action == ROUTE_ACTION_LEFT) {
+                enter_state(ROUTE_REVERSE);
+                /* FSM 在转完当帧已开始倒退；继承这一帧，保证 2 秒从实际倒退开始计算。
+                 * 不重发动作或重置姿态，继续保持左转的 +90°目标航向。 */
+                g_route.state_frames = g_mode_fsm.state_frames;
+                return;
+            }
             if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
                 /* FSM 已在转弯完成帧接入循迹；不重复请求 TRACK，也不开始入口或 IMU 通行。 */
                 if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
@@ -522,6 +536,14 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             if (g_route.state_frames * ROUTE_FRAME_MS >= step->entry_ms) {
                 begin_project(step); /* 入口配置不足一帧时，也从实际转完的帧边界计算。 */
             }
+            return;
+        }
+        break;
+
+    case ROUTE_REVERSE: //大台阶入口先后退，再由灰度循迹向前对正
+        if (elapsed_ms >= ROUTE_REVERSE_MS) {
+            enter_state(ROUTE_ENTRY);
+            Car_Track(); /* 本帧开始前进循迹，入口的 3 秒单独从零计时。 */
             return;
         }
         break;

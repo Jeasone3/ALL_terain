@@ -207,7 +207,7 @@ static void apply_request(const CarRequest *request)
         break;
     case COMMAND_LEFT:
     case COMMAND_RIGHT:
-        g_mode_fsm.base_pwm = 500u; // 转弯基础PWM固定为500
+        g_mode_fsm.base_pwm = 500u; // 转弯后的普通 IMU 直行基础 PWM
         g_mode_fsm.imu_state = request->command == COMMAND_LEFT ? IMU_TURN_LEFT : IMU_TURN_RIGHT;
         g_mode_fsm.target_yaw = request->command == COMMAND_LEFT ? 90.0f : -90.0f;
         g_mode_fsm.after_turn_mode = request->next_mode; // 转弯完成后的模式
@@ -242,17 +242,31 @@ static void apply_request(const CarRequest *request)
  * @brief 记录转弯完成，并按开始时指定的模式自动衔接。
  * @param 无。
  * @return 无。
- * @note 完成日志先于状态重置；接 IMU 直行时不复位姿态，保持原 ±90°目标。
+ * @note 完成日志先于状态重置；接 IMU 前进或倒退时不复位姿态，保持原 ±90°目标。
  *       接循迹时取消本帧角度有效标记，屏幕显示 --；本帧只运行后续控制器。
  */
 static void finish_turn(void)
 {
-    DebugLog_Write(LOG_INFO, g_mode_fsm.after_turn_mode == MODE_TRACK ? "DONE>TRK" : "DONE>IMU");
-    
+    /* 路线表第 8 项的数组下标为 7；只在这一项的自动左转完成后先倒退。
+     * 同时检查路线阶段与许可，避免路线被接管后，手动左转仍误用大台阶动作。
+     * 保留转弯的 +90°目标，本帧直接倒退，不先执行一帧前进循迹。 */
+    if (g_route.enabled && g_route.state == ROUTE_TURN && g_route.step_index == 7u &&
+        g_mode_fsm.imu_state == IMU_TURN_LEFT && g_mode_fsm.after_turn_mode == MODE_TRACK)
+    {
+        DebugLog_Write(LOG_INFO, "DONE>REV");
+        g_mode_fsm.mode = MODE_IMU;
+        g_mode_fsm.imu_state = IMU_REVERSE;
+        g_mode_fsm.base_pwm = 300u; /* 大台阶倒退的基础 PWM；后续通行仍读取表中的 400 PWM */
+    }
+    else
+    {
+        DebugLog_Write(LOG_INFO, g_mode_fsm.after_turn_mode == MODE_TRACK ? "DONE>TRK" : "DONE>IMU");
+        g_mode_fsm.imu_state = IMU_FORWARD;
+        g_mode_fsm.mode = g_mode_fsm.after_turn_mode;
+    }
+
     g_mode_fsm.turn_count++; //转弯次数+1
     g_mode_fsm.state_frames = 0u; // 重置状态帧计数
-    g_mode_fsm.imu_state = IMU_FORWARD; // 转弯完成，IMU 状态恢复为前进
-    g_mode_fsm.mode = g_mode_fsm.after_turn_mode; // 转弯完成，切换到指定的模式
     if (g_mode_fsm.mode == MODE_TRACK) //如果是循迹模式，重置目标角度和角度有效标记
     {
         g_mode_fsm.target_yaw = 0.0f;
@@ -299,7 +313,7 @@ static void update_imu(void)
     g_mode_fsm.imu_valid = 1u;
 
     /* 直行只需要有效角度；转弯才需要完成确认和超时判断。 */
-    if (g_mode_fsm.imu_state == IMU_FORWARD)
+    if (g_mode_fsm.imu_state == IMU_FORWARD || g_mode_fsm.imu_state == IMU_REVERSE)
     {
         return;
     }
@@ -413,6 +427,10 @@ void ModeFSM_Tick(void)
     else if (g_mode_fsm.imu_state == IMU_FORWARD) //直行态
     {
         IMUTask_ForwardTick(g_mode_fsm.base_pwm);
+    }
+    else if (g_mode_fsm.imu_state == IMU_REVERSE) //保持转后航向倒退
+    {
+        IMUTask_ReverseTick(g_mode_fsm.base_pwm);
     }
     else//转弯态
     {

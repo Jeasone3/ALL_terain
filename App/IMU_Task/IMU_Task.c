@@ -146,15 +146,15 @@ void IMUTask_TurnTick(void)
 
 
 /**
- * @brief 执行给定航向的一帧直行控制，统一普通直行和旧的临时前移逻辑。
+ * @brief 执行给定航向的一帧前进或倒退控制，共用航向 PID 与差速方向。
  * @param target 本帧保持的目标 yaw，单位为度；不改全局动作目标。
- * @param base_pwm 本次动作接受的基础 PWM；改变 PWM 不在此处重置姿态或 PID。
+ * @param base_pwm 带方向的基础 PWM，正值前进、负值倒退；不在此处重置姿态或 PID。
  * @return 无。
- * @note 采用 1° 死区、±100 PWM 纠偏限幅；基础 PWM 由动作参数提供。
+ * @note 保留当前死区和 PID 限幅；两轮输出限制在基础 PWM 对应的方向，防止纠偏时反转。
  *       死区仅令 PID 输入误差归零，已有微分历史仍按原滤波系数衰减。
  *       会写两轮电机，调用前必须保证 IMU 有效及控制器互斥。
  */
-static void imu_forward_tick(float target, uint16_t base_pwm)
+static void imu_straight_tick(float target, int16_t base_pwm)
 {
     float error = imu_angle_error(target, g_euler.yaw);
 
@@ -164,9 +164,11 @@ static void imu_forward_tick(float target, uint16_t base_pwm)
     }
     float out  = PID_calc(&s_fwd_pid, target - error, target);
     float base = (float)base_pwm;
+    float min_pwm = base_pwm < 0 ? -MOTOR_MAX_SPEED : 0.0f; /* 倒退允许负 PWM，前进下限为零 */
+    float max_pwm = base_pwm < 0 ? 0.0f : MOTOR_MAX_SPEED;  /* 倒退纠偏不能令某一轮向前 */
     /* 正误差需要左转：左轮减速、右轮加速；负误差需要右转，差速方向相反。 */
-    int16_t L = (int16_t)Com_Limit(base - out, 0.0f, MOTOR_MAX_SPEED);
-    int16_t R = (int16_t)Com_Limit(base + out, 0.0f, MOTOR_MAX_SPEED);
+    int16_t L = (int16_t)Com_Limit(base - out, min_pwm, max_pwm);
+    int16_t R = (int16_t)Com_Limit(base + out, min_pwm, max_pwm);
     Motor_SetSpeed(&motorLeft,  L);
     Motor_SetSpeed(&motorRight, R);
 }
@@ -180,7 +182,7 @@ static void imu_forward_tick(float target, uint16_t base_pwm)
  */
 void Temp_Turn_Forward(void)
 {
-    imu_forward_tick(0.0f, (uint16_t)FWD_BASE_SPEED);
+    imu_straight_tick(0.0f, (int16_t)FWD_BASE_SPEED);
 }
 
 /**
@@ -192,7 +194,19 @@ void Temp_Turn_Forward(void)
  */
 void IMUTask_ForwardTick(uint16_t base_pwm)
 {
-    imu_forward_tick(s_target_yaw, base_pwm);
+    imu_straight_tick(s_target_yaw, (int16_t)base_pwm);
+}
+
+/**
+ * @brief 执行一帧保持当前目标航向的倒退，沿用直行 PID 的角差与差速符号。
+ * @param base_pwm 已由运动层校验的正值 PWM 幅度，范围 1 至 1000。
+ * @return 无。
+ * @note 只将基础 PWM 取负，不能把两轮前进输出整体取负，否则航向纠偏方向也会反转。
+ *       两轮输出均限制在 [-1000, 0]；调用前须取得本帧有效 IMU 数据。
+ */
+void IMUTask_ReverseTick(uint16_t base_pwm)
+{
+    imu_straight_tick(s_target_yaw, -(int16_t)base_pwm);
 }
 
 /**

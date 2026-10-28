@@ -19,7 +19,8 @@ typedef enum {
 typedef enum {
     IMU_FORWARD = 0,               /* 保持目标航向直行 */
     IMU_TURN_LEFT,                 /* 相对动作起点左转 90° */
-    IMU_TURN_RIGHT                 /* 相对动作起点右转 90° */
+    IMU_TURN_RIGHT,                /* 相对动作起点右转 90° */
+    IMU_REVERSE                    /* 保持目标航向倒退，两轮 PWM 均不大于零 */
 } ImuState;
 
 /* 运行状态同时适用于循迹和 IMU 模式。 */
@@ -52,7 +53,7 @@ typedef struct {
     uint32_t turn_count;            /* 已完成转弯总数，上层比较前后值获取完成事件 */
     uint32_t command_id;            /* 已接受指令序号，用于调试动作切换 */
     uint8_t imu_valid;              /* 1：本帧角度有效；0：循迹、停车或读取失败 */
-    uint16_t base_pwm;              /* 当前 IMU 直行基础 PWM，与动作一起接受，不代表实测车速 */
+    uint16_t base_pwm;              /* 当前 IMU 前进或倒退的基础 PWM 幅度，与动作一起接受，不代表实测车速 */
 } ModeFSM_t;
 
 /* 中断内维护，外部读取请用 ModeFSM_GetSnapshot，禁止直接修改字段。 */

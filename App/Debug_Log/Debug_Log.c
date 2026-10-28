@@ -123,7 +123,7 @@ void DebugLog_Init(void)
         {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
          MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u},
         {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u},
-        0.0f, 0u, 0u, 0, 0
+        0.0f, 0u, 0u, 0, 0, 0.0f, 0.0f /* 包括现有 gz 与加速度诊断字段，一并显式初始化 */
     };
     uint32_t saved_primask = __get_PRIMASK();
 
@@ -290,6 +290,7 @@ static const char *route_name(RouteState state)
         case ROUTE_FINAL_TURN: return "END_L";
         case ROUTE_FINAL_FORWARD: return "END_F";
         case ROUTE_FINISHED: return "DONE";
+        case ROUTE_REVERSE:  return "REV";
         default:            return "?";
     }
 }
@@ -314,7 +315,7 @@ static const char *status_name(const ModeFSM_t *motion)
 /**
  * @brief 将快照中的运动模式及 IMU 子状态转成动作缩写。
  * @param motion 完整运动快照，内部保证指针有效。
- * @return TRK、FWD、L90、R90；非法 IMU 子状态返回 ?。
+ * @return TRK、FWD、REV、L90、R90；非法 IMU 子状态返回 ?。
  * @note 冻结的故障快照保留故障发生时动作；普通停车显示运动层保留的当前模式与子状态。
  */
 static const char *action_name(const ModeFSM_t *motion)
@@ -324,6 +325,7 @@ static const char *action_name(const ModeFSM_t *motion)
     }
     switch (motion->imu_state) {
         case IMU_FORWARD:    return "FWD";
+        case IMU_REVERSE:    return "REV";
         case IMU_TURN_LEFT:  return "L90";
         case IMU_TURN_RIGHT: return "R90";
         default:            return "?";
