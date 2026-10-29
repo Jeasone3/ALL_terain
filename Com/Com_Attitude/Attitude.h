@@ -57,4 +57,12 @@ void Attitude_Reset(void);
  */
 void Attitude_SetYawOffset(float deg);
 
+/**
+ * @brief 设置 yaw 突变剔除开关：受控快转(对齐/转弯)时关，循迹/直行时开。
+ * @param enable 1 启用剔除(防御传感器尖峰)；0 禁用(允许正常快转的大角速度)。
+ * @return 无。
+ * @note 不重置姿态基准；ModeFSM 每帧在 Attitude_Tick 前调用。默认 1(启用)。
+ */
+void Attitude_SetSpikeCheck(uint8_t enable);
+
 #endif /* __ATTITUDE_H__ */

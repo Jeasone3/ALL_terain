@@ -5,9 +5,14 @@
     ./tests/motion/run_tests.ps1
     ./tests/motion/run_tests.ps1 -RouteFinishOnly
     ./tests/motion/run_tests.ps1 -RouteReverseOnly
+    ./tests/motion/run_tests.ps1 -RouteStartOnly
     ./tests/motion/build_keil.ps1
 
 宿主脚本使用 GCC C99，开启 -Wall -Wextra -Werror -pedantic。产物位于 TEMP/all-terrain-motion-tests。Keil 脚本使用当前源码完整重编译，AXF/HEX/日志写入独立临时目录，不覆盖仓库旧构建产物，不烧录硬件。
+
+`-RouteStartOnly` 分别以 `ROUTE_START_STEP=1u` 至 `9u` 编译并运行，还覆盖从第 6 项启动、截止设为 0 或 8。链接真实路线和运动状态机，使用当前生产表项的时间与 PWM，检查跳过项的无效参数不阻止启动、实际范围内的无效项仍阻止启动、READY 段号、按表位置而非 project_id 选择、后续项目逐项执行、每项路口提示、第 8 项倒退启用时完整执行 200 帧、完整路线收尾直行 300 帧后停车、旧截止持续循迹，以及显式重启仍从配置项开始。保留当前倒退入口的注释停用状态。主机传感器图案和航向均为模拟输入，不能替代实车测试。
+
+2026-10-29 指定起始项变更：当前工作区已同步加入绝对航向与入口对齐流程。路线仅放行“ALIGN 状态、车辆已停车且对齐完成计数改变”这一明确完成事件，下一帧衔接前移或项目通行；外部 STOP 仍优先中止。专项另外检查对齐中和完成后立即 STOP 的取消边界。最终工作区源码的 11 种起始/截止配置专项全部通过；ARMCC 拒绝起始项 0、10 及起始 9/截止 8 的非法配置。Keil 完整重编译生成 HEX，0 Error(s)、2 Warning(s)，警告来自既有 Attitude.c 的 ez、ezInt，零警告构建脚本因此返回失败。全量旧参数测试未据此记为通过；未烧录或实车验证。
 
 `-RouteReverseOnly` 专项使用当前第 8 项生产参数，覆盖默认 9、全部段 0 和截止 8：普通 LEFT 表项在状态机中按数组下标 7 判断，左转确认当帧直接倒退、300 PWM 保持转后航向、精确 200 帧倒退、300 帧循迹、400 PWM 的 900 帧 IMU 通行，以及第 9 项和最终收尾的兼容性。还检查修改显示用 project_id 不影响数组下标判断、第 8 项中止后手动左转不倒退、转弯完成前禁用时保持普通转后模式、倒退纠偏方向与 PWM 边界、停车优先、阶段接管/禁用、IMU 故障、路线超时和启动参数校验。此专项不调用含旧调参断言的全量场景；全量结果需单独记录。
 

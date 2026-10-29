@@ -121,8 +121,8 @@ void DebugLog_Init(void)
     DebugLog_Record empty_record = { 0u, LOG_INFO, { 0 } };
     DebugLog_Snapshot empty_state = {
         {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
-         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u},
-        {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u},
+         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u, 0u}, /* 对齐完成计数从零开始 */
+        {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f}, /* 理想航向归零 */
         0.0f, 0u, 0u, 0, 0, 0.0f, 0.0f /* 包括现有 gz 与加速度诊断字段，一并显式初始化 */
     };
     uint32_t saved_primask = __get_PRIMASK();

@@ -28,6 +28,7 @@ static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
 static float s_yaw_offset = 0.0f;   /* 输出 yaw = raw_yaw - s_yaw_offset */
 static float s_last_yaw = 0.0f;          /* 上一帧最终输出 yaw，突变剔除基准 */
 static uint8_t s_yaw_initialized = 0;    /* 首帧/复位后首帧标志：跳过判断直接采纳 */
+static uint8_t s_spike_check = 1u;       /* 突变剔除开关：受控快转(对齐/转弯)时由 ModeFSM 置 0，循迹/直行时保留防御 */
 
 /**
  * @brief 初始化姿态解算器，使内部状态和对外欧拉角从同一零基准开始。
@@ -73,6 +74,17 @@ void Attitude_SetYawOffset(float deg)
     Attitude_Reset();
     s_yaw_offset = -deg;             /* raw=0 → 输出 = 0 - (-deg) = deg */
     g_euler.yaw = deg;
+}
+
+/**
+ * @brief 设置 yaw 突变剔除开关：受控快转(对齐/转弯)时关，循迹/直行时开。
+ * @param enable 1 启用剔除(防御传感器尖峰)；0 禁用(允许正常快转的大角速度)。
+ * @return 无。
+ * @note 不重置姿态基准；ModeFSM 每帧在 Attitude_Tick 前调用。默认 1(启用)。
+ */
+void Attitude_SetSpikeCheck(uint8_t enable)
+{
+    s_spike_check = enable;
 }
 
 /**
@@ -173,15 +185,18 @@ void Attitude_Tick(void)
     g_euler.roll  = roll  * ATT_RAD2DEG;
     g_euler.yaw   = yaw   * ATT_RAD2DEG - s_yaw_offset;
 
-    /* 帧间 yaw 突变剔除：当前帧相对上一帧最终输出的最短角差 ≥ 阈值时，
-       判为异常帧，丢弃当前 yaw，沿用上一帧最终输出（冻结式）。
-       连续异常时输出停在异常前好值，传感器恢复即解冻。 */
-    if (s_yaw_initialized) {
+    /* 帧间 yaw 突变剔除(限幅式)：当前帧相对上一帧最终输出的最短角差 ≥ 阈值时，
+       不丢弃整帧，而把角差 clamp 到 ±阈值内再叠加到上帧输出。
+       单帧尖峰被压到阈值(暂态振荡 1~2 帧自恢复)；真实大角速度按阈值速率保留，
+       台阶持续冲击下不累积冻结误差。
+       s_spike_check 由 ModeFSM 控制：受控快转(对齐/转弯)时关，避免正常快转被误判限幅。 */
+    if (s_spike_check && s_yaw_initialized) {
         float dyaw = fmodf(g_euler.yaw - s_last_yaw, 360.0f);
         if (dyaw > 180.0f)  dyaw -= 360.0f;
         else if (dyaw < -180.0f) dyaw += 360.0f;
         if (fabsf(dyaw) >= ATT_YAW_SPIKE_THRESH) {
-            g_euler.yaw = s_last_yaw;   /* 抛弃本帧，沿用上一帧最终输出 */
+            dyaw = copysignf(ATT_YAW_SPIKE_THRESH, dyaw);   /* 限幅：保留方向，幅值压到阈值 */
+            g_euler.yaw = fmodf(s_last_yaw + dyaw + 180.0f, 360.0f) - 180.0f;   /* 归一化到 [-180,180) */
         }
     }
     s_last_yaw = g_euler.yaw;           /* 基准更新为本次最终输出（含替换后的值） */

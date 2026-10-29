@@ -2,7 +2,8 @@ param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
     [switch]$RouteFinishOnly,
-    [switch]$RouteReverseOnly
+    [switch]$RouteReverseOnly,
+    [switch]$RouteStartOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,6 +64,19 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($RouteStartOnly) {
+    # 逐项验证从第 1 至 9 项启动、接入后续项目与最终收尾，另外覆盖旧截止配置。
+    foreach ($startStep in 1..9) {
+        Invoke-MotionTest -Name "test_route_start_$startStep" -Arguments ($motionSources + @(
+            '-DTEST_ROUTE_START_ONLY', "-DROUTE_START_STEP=$($startStep)u"))
+    }
+    Invoke-MotionTest -Name 'test_route_start6_all' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_START_ONLY', '-DROUTE_START_STEP=6u', '-DROUTE_DEBUG_STEP_LIMIT=0u'))
+    Invoke-MotionTest -Name 'test_route_start6_limit8' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_START_ONLY', '-DROUTE_START_STEP=6u', '-DROUTE_DEBUG_STEP_LIMIT=8u'))
+    return
+}
 
 if ($RouteReverseOnly) {
     # 验证第 8 项的倒退、入口、通行计时及取消边界，覆盖完整路线与截止 8。

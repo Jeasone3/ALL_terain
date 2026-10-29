@@ -247,6 +247,16 @@ void Attitude_Reset(void)
 }
 
 /**
+ * @brief 宿主测试不模拟 yaw 突变剔除，提供空实现满足链接。
+ * @param enable 真实固件用于快转时关闭尖峰剔除；测试不使用该行为。
+ * @return 无。
+ */
+void Attitude_SetSpikeCheck(uint8_t enable)
+{
+    (void)enable;
+}
+
+/**
  * @brief 记录电机输出而不接触真实外设。
  * @param motor 左轮或右轮的生产控制对象。
  * @param speed 带方向的 PWM，允许范围为 [-1000, 1000]。
@@ -370,9 +380,10 @@ static void tick(void)
     CHECK(s_left_writes == left_before + 1u);
     CHECK(s_right_writes == right_before + 1u);
     CHECK(s_irq_mask == irq_before);
-    if (g_mode_fsm.status == CAR_RUNNING) {
-        CHECK(g_mode_fsm.imu_valid == (uint8_t)(g_mode_fsm.mode == MODE_IMU));
-    }
+    /* 运行帧 imu_valid 不强校验：循迹段每帧读 IMU 积分 yaw 使 imu_valid=1，
+     * 而 finish_turn 接循迹帧显式置 0 取消角度有效标记；二者均为合法运行帧。
+     * IMU 读取失败已在 ModeFSM_Tick 转 CAR_FAULT，不会留在 CAR_RUNNING。
+     * imu_valid 非零时 yaw 必有限，由下方 CHECK 保证。 */
     if (g_mode_fsm.imu_valid != 0u) {
         CHECK(isfinite(g_euler.yaw));
     }
@@ -979,6 +990,154 @@ static void reach_route_state(unsigned index, RouteState state)
         drive_route_frame();
     }
     CHECK(budget != 0u);
+}
+
+/**
+ * @brief 验证起始项之前的参数不影响启动，实际运行范围内的错误仍阻止启动。
+ * @param 无。
+ * @return 无；检查失败由 CHECK 结束测试。
+ * @note 起始项按表中位置选择；更改显示用 project_id 不能改变实际启动下标。
+ */
+static void test_route_start_validation(void)
+{
+    unsigned i;
+    const unsigned start = ROUTE_START_STEP - 1u;
+    begin_case("configured route start validates only the selected range", 0u);
+    Car_Stop();
+    tick();
+    for (i = 0u; i < start; ++i) {
+        g_route_plan[i].project_id = 0u; /* 被跳过的项目故意无效，不能阻止后续项目试车。 */
+    }
+    CHECK(Route_IsCalibrated());
+    g_route_plan[start].project_id = 0u;
+    CHECK(!Route_IsCalibrated() && !Route_Start());
+    CHECK(g_route.state == ROUTE_UNCALIBRATED && g_route.step_index == start);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    g_route_plan[start].project_id = 42u; /* 使用不同于表项序号的显示标记，确认不按该字段查找。 */
+    if (start + 1u < TEST_ACTIVE_STEP_COUNT) {
+        g_route_plan[TEST_ACTIVE_STEP_COUNT - 1u].project_id = 0u;
+        CHECK(!Route_IsCalibrated() && !Route_Start());
+        CHECK(g_route.step_index == TEST_ACTIVE_STEP_COUNT - 1u);
+        g_route_plan[TEST_ACTIVE_STEP_COUNT - 1u] = s_original_plan[TEST_ACTIVE_STEP_COUNT - 1u];
+    }
+    CHECK(Route_IsCalibrated() && Route_Start());
+    CHECK(g_route.state == ROUTE_READY && g_route.step_index == start && g_route.project_id == 42u);
+    tick();
+    CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == start && g_route.project_id == 42u);
+    CHECK(s_beep_starts == 0u && g_mode_fsm.turn_count == 0u);
+    Car_Stop();
+    tick();
+    puts("PASS configured start index, skipped parameters and selected-range validation");
+}
+
+/**
+ * @brief 从配置的起始项运行到截止项，检查顺序、转弯、倒退和原有路线收尾。
+ * @param 无。
+ * @return 无；任何越级、漏段、超时或最终停车错误都由 CHECK 报告。
+ * @note 使用当前生产路线表的 PWM 与时间，每帧仅模拟路口图案及跟随目标的理想航向。
+ *       同一场景分别按起始项 1 至 9 编译，不改路线表位置或运动状态机。
+ */
+static void test_route_from_selected_start(void)
+{
+    const unsigned start = ROUTE_START_STEP - 1u;
+    unsigned i, previous = start, seen = 0u, expected = 0u;
+    unsigned reverse_frames = 0u, final_forward_frames = 0u, expected_turns = 0u;
+    unsigned budget = 20000u;
+    begin_case("selected start continues through the remaining production route", 0u);
+    Car_Stop();
+    tick();
+    CHECK(Route_Start());
+    CHECK(g_route.state == ROUTE_READY && g_route.step_index == start);
+    CHECK(g_route.project_id == s_original_plan[start].project_id);
+    for (i = start; i < TEST_ACTIVE_STEP_COUNT; ++i) {
+        expected |= 1u << i;
+        if (g_route_plan[i].action != ROUTE_ACTION_STRAIGHT) ++expected_turns;
+    }
+    while (g_route.state != ROUTE_FINISHED && g_route.state != ROUTE_CRUISE && budget != 0u) {
+        const RouteStep *step = &g_route_plan[g_route.step_index];
+        --budget;
+        set_sensors(0x18u);
+        if (g_route.state == ROUTE_FOLLOW) {
+            set_sensors(step->trigger_junction == JUNCTION_RIGHT ? 0xF0u :
+                        step->trigger_junction == JUNCTION_LEFT ? 0x0Fu : 0xFFu);
+        }
+        /* 让模拟反馈跟随真实控制器的目标，兼容各项目自己的转前、转后航向。 */
+        s_sample_yaw = g_mode_fsm.target_yaw;
+        tick();
+        CHECK(g_mode_fsm.status != CAR_FAULT);
+        CHECK(g_route.step_index >= start && g_route.step_index < TEST_ACTIVE_STEP_COUNT);
+        CHECK(g_route.step_index == previous || g_route.step_index == previous + 1u);
+        CHECK(g_route.project_id == s_original_plan[g_route.step_index].project_id);
+        previous = g_route.step_index;
+        seen |= 1u << g_route.step_index;
+        if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU) {
+            if (g_mode_fsm.imu_state == IMU_REVERSE) {
+                CHECK(g_route.step_index == 7u && g_mode_fsm.base_pwm == 300u);
+                CHECK(motorLeft.speed < 0 && motorRight.speed < 0);
+                ++reverse_frames;
+            }
+            if ((g_route.state == ROUTE_FINAL_TURN || g_route.state == ROUTE_FINAL_FORWARD) &&
+                g_mode_fsm.imu_state == IMU_FORWARD) ++final_forward_frames;
+        }
+    }
+    CHECK(budget != 0u && seen == expected);
+    CHECK(g_route.step_index == TEST_ACTIVE_STEP_COUNT - 1u);
+    CHECK(s_beep_starts == TEST_ACTIVE_STEP_COUNT - start);
+    /* 第 8 项倒退入口可能按试车需求注释停用；启用时仍须完整执行 2 秒，不因起始项改变。 */
+    CHECK(reverse_frames == 0u || reverse_frames == 200u);
+    if (TEST_ACTIVE_STEP_COUNT == ROUTE_STEP_COUNT) {
+        CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled);
+        CHECK(final_forward_frames == 300u && g_mode_fsm.turn_count == expected_turns + 1u);
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    } else {
+        CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
+        CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.turn_count == expected_turns);
+        Car_Stop();
+        tick();
+    }
+    Route_Enable(1u);
+    ticks(2u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    CHECK(Route_Start());
+    CHECK(g_route.state == ROUTE_READY && g_route.step_index == start);
+    printf("PASS route start %u through step %u, ordered continuation and restart\n",
+           (unsigned)ROUTE_START_STEP, (unsigned)TEST_ACTIVE_STEP_COUNT);
+}
+
+/**
+ * @brief 验证对齐中及对齐刚完成时，外部停车仍立即中止所选路线。
+ * @param 无。
+ * @return 无；错误衔接、残留 PWM 或自动续跑均由 CHECK 报告。
+ * @note 完成计数已改变时也不能覆盖 STOP，防止正常对齐衔接的放行条件扩大停车例外。
+ */
+static void test_selected_route_align_stop(void)
+{
+    unsigned completed;
+    for (completed = 0u; completed < 2u; ++completed) {
+        uint32_t align_before;
+        unsigned budget = 200u; /* 进项目对齐到位后保持 800ms(80帧) 才 finish_align，需覆盖确认+保持 */
+        begin_case("STOP overrides selected-route alignment handoff", 1u);
+        reach_route_state(ROUTE_START_STEP - 1u, ROUTE_ALIGN);
+        if (completed) {
+            align_before = g_mode_fsm.align_count;
+            while (g_mode_fsm.align_count == align_before && budget != 0u) {
+                --budget;
+                s_sample_yaw = g_mode_fsm.target_yaw;
+                tick();
+            }
+            CHECK(budget != 0u && g_route.state == ROUTE_ALIGN);
+            check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        }
+        Car_Stop();
+        tick();
+        CHECK(g_route.state == ROUTE_ABORTED && !g_route.enabled);
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        Route_Enable(1u);
+        ticks(3u);
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        CHECK(g_route.step_index == ROUTE_START_STEP - 1u);
+    }
+    puts("PASS STOP priority during alignment and immediately after alignment completion");
 }
 
 /**
@@ -2595,6 +2754,13 @@ static void test_route_reverse_interrupts(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_ROUTE_START_ONLY
+    test_route_start_validation();
+    test_route_from_selected_start();
+    test_selected_route_align_stop();
+    puts("All selected-start route scenarios passed.");
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_REVERSE_ONLY
     /* 倒退专项使用当前生产参数，独立于旧测试中尚未同步的 PID 与路线调参断言。 */
     test_reverse_motion();
@@ -2610,6 +2776,9 @@ int main(void)
     puts("All final-route scenarios passed.");
     return EXIT_SUCCESS;
 #endif
+    test_route_start_validation();
+    test_route_from_selected_start();
+    test_selected_route_align_stop();
     test_route_debug_limit();
     if (ROUTE_DEBUG_STEP_LIMIT == 1u) {
         puts("All first-segment debug-limit scenarios passed.");

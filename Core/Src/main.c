@@ -186,7 +186,7 @@ int main(void)
 #else
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
-    (void)Route_Start();          /* 检查本次调试范围；成功后循迹出发，等待指定的首个右路口。 */
+    (void)Route_Start();          /* 检查本次调试范围；从 ROUTE_START_STEP 对应项目的触发路口前循迹出发。 */
   }
   else
   {

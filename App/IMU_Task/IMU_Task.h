@@ -13,6 +13,8 @@
 
 /* 转弯控制和状态机共用同一到位容差，避免控制器停转后状态机仍认为未到位。 */
 #define IMU_TURN_DONE_TOLERANCE 1.0f
+/* 对齐到位容差：项目入口对齐到 90° 倍数的 ±2°，比转弯 1° 宽松；实车可调 1-3°。 */
+#define IMU_ALIGN_DONE_TOLERANCE 2.0f
 
 /**
  * @brief 初始化转弯和直行 PID，保留当前参数并清除历史。
@@ -46,6 +48,15 @@ float IMUTask_GetError(void);
  *       调用前 IMU 必须有效，且本周期不运行循迹或直行 PID。
  */
 void IMUTask_TurnTick(void);
+
+/**
+ * @brief 运行一帧原地对齐 PID，电机输出同 TurnTick，但限幅更低、转速更柔。
+ * @param 无。
+ * @return 无。
+ * @note 功能切换时把车慢转到 g_route.ideal_yaw；复用转弯 PID 增益，仅换 ALIGN_* 限幅。
+ *       容差用 IMU_ALIGN_DONE_TOLERANCE；调用前 IMU 必须有效。
+ */
+void IMUTask_AlignTick(void);
 
 /**
  * @brief 运行一帧保持当前目标航向的直行 PID，使用 base±out 差速纠偏。

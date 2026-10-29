@@ -33,6 +33,9 @@ static float s_target_yaw = 0.0f;
 #define TURN_MAX_OUT      600.0f
 #define TURN_MAX_IOUT     50.0f
 #define TURN_MIN_OUT      210.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
+/* 对齐用更柔的限幅：功能切换时慢转到 ideal_yaw，避免快速过冲；首轮标定值，可调 */
+#define ALIGN_MAX_OUT     500.0f
+#define ALIGN_MIN_OUT     200.0f
 /* 直行参数 */
 #define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */
@@ -69,7 +72,7 @@ static float imu_angle_error(float target, float yaw)
 void IMUTask_Init(void)
 {
     /* 转弯 PID 起点: Kp=8(90°误差->720), Ki=0.1, Kd=0.5; 需实测整定 */
-    pid_real_t turn_params[3] = {8.0f, 0.1f, 0.5f};
+    pid_real_t turn_params[3] = {9.0f, 0.1f, 0.5f};
     PID_init(&s_turn_pid, PID_POSITION, turn_params, TURN_MAX_OUT, TURN_MAX_IOUT);
     PID_set_integral_separation(&s_turn_pid, 30.0f);   /* 大误差暂停积分防超调 */
     PID_set_deriv_filter(&s_turn_pid, 0.7f);
@@ -135,6 +138,43 @@ void IMUTask_TurnTick(void)
             out = TURN_MIN_OUT;
         else 
             out = -TURN_MIN_OUT;
+    }
+
+    /* error>0 时 L<0、R>0，左转增大 yaw；error<0 时反向，右转减小 yaw。 */
+    int16_t L = (int16_t)Com_Limit(-out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+    int16_t R = (int16_t)Com_Limit( out, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+    Motor_SetSpeed(&motorLeft,  L);
+    Motor_SetSpeed(&motorRight, R);
+}
+
+
+/**
+ * @brief 运行一帧原地对齐 PID，复用转弯 PID 增益，但限幅更低、转速更柔。
+ * @param 无。
+ * @return 无。
+ * @note 功能切换时把车慢转到 g_route.ideal_yaw（90° 倍数）；逻辑同 IMUTask_TurnTick，
+ *       仅换容差为 IMU_ALIGN_DONE_TOLERANCE、限幅为 ALIGN_MAX_OUT/ALIGN_MIN_OUT。
+ *       PID_calc 内部仍按 TURN_MAX_OUT 限幅，故输出后再用 ALIGN_MAX_OUT 二次限幅。
+ *       进入对齐容差后输出零，等待状态机连续帧确认完成。
+ */
+void IMUTask_AlignTick(void)
+{
+    float error = IMUTask_GetError();
+
+    /* 与 TurnTick 相同的 PID 计算，使用最短角差作为等效反馈。 */
+    float out = PID_calc(&s_turn_pid, s_target_yaw - error, s_target_yaw);
+
+    /* PID 内部按 TURN_MAX_OUT(600) 限幅；对齐需要更柔，再用 ALIGN_MAX_OUT(350) 二次限幅。 */
+    out = Com_Limit(out, -ALIGN_MAX_OUT, ALIGN_MAX_OUT);
+
+    if (fabsf(error) < IMU_ALIGN_DONE_TOLERANCE) {
+        out = 0.0f;
+    } else if (fabsf(out) < ALIGN_MIN_OUT) {
+        /* 容差外的小输出补足最低对齐 PWM，帮助克服末段静摩擦。 */
+        if (error > 0.0f)
+            out = ALIGN_MIN_OUT;
+        else
+            out = -ALIGN_MIN_OUT;
     }
 
     /* error>0 时 L<0、R>0，左转增大 yaw；error<0 时反向，右转减小 yaw。 */

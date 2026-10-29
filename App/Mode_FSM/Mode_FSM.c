@@ -15,6 +15,8 @@
 
 #define TURN_DONE_TOLERANCE IMU_TURN_DONE_TOLERANCE /* 与转弯控制共用到位容差，单位：度 */
 #define TURN_DONE_FRAMES 2u      /* 误差连续两帧在容差内才算完成 */
+#define ALIGN_DONE_FRAMES 10u   /* 对齐要求连续 10 帧(100ms)在容差内才完成，避免过冲振荡时偶然判完成 */
+#define ALIGN_HOLD_FRAMES 80u   /* 进项目对齐到位后原地保持 80 帧(800ms) 再切 IMU 直行，等待角度稳定对齐项目 */
 #define TURN_TIMEOUT_FRAMES 500u /* 最多等待 5 秒；提前转完立即衔接，截止时已进容差最多补一帧 */
 
 /* 本帧八路灰度数据；循迹用于控制，IMU 模式用于路线条件检测。 */
@@ -31,7 +33,9 @@ typedef enum
     COMMAND_LEFT,                   //左转
     COMMAND_RIGHT,              //右转
     COMMAND_STOP,                   //停车  
-    COMMAND_ROUTE_TIMEOUT        //路线超时停车
+    COMMAND_ROUTE_TIMEOUT,       //路线超时停车
+    COMMAND_ALIGN,              //功能切换时原地对齐到 ideal_yaw
+    COMMAND_ALIGN_HOLD          //进项目对齐：到位后原地保持 800ms 再切 IMU 直行
 } CarCommand;
 
 
@@ -49,6 +53,9 @@ typedef struct
 /* 单个请求邮箱：正常请求最后一个生效，同帧停车请求优先。 存储外部命令信息 */
 static volatile CarRequest s_request;
 static uint8_t s_turn_done_frames; // 转弯完成帧数
+static uint8_t s_align_done_frames; // 对齐完成帧数
+static uint8_t s_align_hold;        /* 本次对齐是否到位后保持 800ms，由 apply_request 按 command 设置 */
+static uint8_t s_align_hold_frames; /* 对齐到位后已保持帧数，达到 ALIGN_HOLD_FRAMES 才 finish_align */
 static uint32_t s_forward_limit_frames; /* 单项目测试最多执行帧数；0 表示普通持续直行 */
 
 /**
@@ -116,6 +123,8 @@ static void reset_controllers(float target_yaw)
     g_line_controller.line_lost = false;
     IMUTask_SetTarget(target_yaw);
     s_turn_done_frames = 0u;
+    s_align_done_frames = 0u;
+    s_align_hold_frames = 0u; /* 清保持计数；s_align_hold 在 switch 里设置，此处不清 */
 }
 
 /**
@@ -181,14 +190,15 @@ static void apply_request(const CarRequest *request)
     g_mode_fsm.imu_valid = 0u; /* 新动作必须等待本帧有效采样。 */
     s_forward_limit_frames = 0u;
 
-    /* 只有新 IMU 动作重建零度基准；STOP 保留原模式，TRACK 不复位姿态。 */
+    /* yaw 全程连续：不在每次 IMU 动作重建零度基准，由开机 Attitude_Init 建立唯一参考。
+     * 循迹期间 update_imu 不调用、yaw 冻结；IMU 段目标统一取 g_route.ideal_yaw（90° 倍数）。 */
     if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK) //IMU 动作
     {
         g_mode_fsm.mode = MODE_IMU;
-        Attitude_Reset();
     }
 
     /* 每个动作的状态设置与日志放在同一分支，避免分开维护两套动作判断。 */
+    s_align_hold = 0u; /* 默认非保持；仅 COMMAND_ALIGN_HOLD 在下方 switch 内覆盖为 1 */
     switch (request->command) //根据请求的动作类型设置状态
     {
     case COMMAND_TRACK:
@@ -198,6 +208,7 @@ static void apply_request(const CarRequest *request)
     case COMMAND_IMU_FORWARD:
     case COMMAND_IMU_TIMED:
         g_mode_fsm.base_pwm = request->base_pwm; // 设置基础 PWM
+        g_mode_fsm.target_yaw = g_route.ideal_yaw; // 绝对目标航向，偏差不累积
         if (request->command == COMMAND_IMU_TIMED) { // 设置前进时间
             s_forward_limit_frames = request->duration_ms / 10u; // 计算前进的帧数
             if (request->duration_ms % 10u != 0u) // 向上取整，如果有余数则加一帧
@@ -209,7 +220,9 @@ static void apply_request(const CarRequest *request)
     case COMMAND_RIGHT:
         g_mode_fsm.base_pwm = 500u; // 转弯后的普通 IMU 直行基础 PWM
         g_mode_fsm.imu_state = request->command == COMMAND_LEFT ? IMU_TURN_LEFT : IMU_TURN_RIGHT;
-        g_mode_fsm.target_yaw = request->command == COMMAND_LEFT ? 90.0f : -90.0f;
+        /* 绝对目标：Route 提交转弯前已把 ideal_yaw 更新为转后朝向（90° 倍数），
+         * 起点偏则转完仍对齐理想坐标系，偏差不累积。 */
+        g_mode_fsm.target_yaw = g_route.ideal_yaw;
         g_mode_fsm.after_turn_mode = request->next_mode; // 转弯完成后的模式
         
         if (request->command == COMMAND_LEFT)
@@ -221,7 +234,17 @@ static void apply_request(const CarRequest *request)
             command_text = request->next_mode == MODE_TRACK ? "R90>TRK" : "R90>IMU";
         }
         break;
-    
+
+    case COMMAND_ALIGN:
+    case COMMAND_ALIGN_HOLD:
+        /* 功能切换对齐：原地慢转到 ideal_yaw，不重建零度基准；base_pwm 不使用保持 0。
+         * COMMAND_ALIGN_HOLD 用于进项目切换，到位后原地保持 800ms 再切 IMU 直行；
+         * 普通 COMMAND_ALIGN（路口转弯前前移）到位即完成，保持原快速行为。 */
+        g_mode_fsm.imu_state = IMU_ALIGN;
+        g_mode_fsm.target_yaw = g_route.ideal_yaw;
+        s_align_hold = (uint8_t)(request->command == COMMAND_ALIGN_HOLD);
+        command_text = s_align_hold ? "ALIGN_H" : "ALIGN";
+        break;
         case COMMAND_STOP:
         g_mode_fsm.status = CAR_STOPPED;
         command_text = "STOP";
@@ -247,23 +270,22 @@ static void apply_request(const CarRequest *request)
  */
 static void finish_turn(void)
 {
-    /* 路线表第 8 项的数组下标为 7；只在这一项的自动左转完成后先倒退。
-     * 同时检查路线阶段与许可，避免路线被接管后，手动左转仍误用大台阶动作。
-     * 保留转弯的 +90°目标，本帧直接倒退，不先执行一帧前进循迹。 */
-    if (g_route.enabled && g_route.state == ROUTE_TURN && g_route.step_index == 7u &&
-        g_mode_fsm.imu_state == IMU_TURN_LEFT && g_mode_fsm.after_turn_mode == MODE_TRACK)
-    {
-        DebugLog_Write(LOG_INFO, "DONE>REV");
-        g_mode_fsm.mode = MODE_IMU;
-        g_mode_fsm.imu_state = IMU_REVERSE;
-        g_mode_fsm.base_pwm = 300u; /* 大台阶倒退的基础 PWM；后续通行仍读取表中的 400 PWM */
-    }
-    else
-    {
-        DebugLog_Write(LOG_INFO, g_mode_fsm.after_turn_mode == MODE_TRACK ? "DONE>TRK" : "DONE>IMU");
-        g_mode_fsm.imu_state = IMU_FORWARD;
-        g_mode_fsm.mode = g_mode_fsm.after_turn_mode;
-    }
+    /* 大台阶后退暂时停用，保留原分支便于恢复；转完后直接衔接指定模式。
+     * Route 中对应的倒退阶段入口也已注释，避免继续等待原来的 2 秒倒退计时。 */
+    // if (g_route.enabled && g_route.state == ROUTE_TURN && g_route.step_index == 7u &&
+    //     g_mode_fsm.imu_state == IMU_TURN_LEFT && g_mode_fsm.after_turn_mode == MODE_TRACK)
+    // {
+    //     DebugLog_Write(LOG_INFO, "DONE>REV");
+    //     g_mode_fsm.mode = MODE_IMU;
+    //     g_mode_fsm.imu_state = IMU_REVERSE;
+    //     g_mode_fsm.base_pwm = 300u; /* 大台阶倒退的基础 PWM；后续通行仍读取表中的 400 PWM */
+    // }
+    // else
+    // {
+    DebugLog_Write(LOG_INFO, g_mode_fsm.after_turn_mode == MODE_TRACK ? "DONE>TRK" : "DONE>IMU");
+    g_mode_fsm.imu_state = IMU_FORWARD;
+    g_mode_fsm.mode = g_mode_fsm.after_turn_mode;
+    // }
 
     g_mode_fsm.turn_count++; //转弯次数+1
     g_mode_fsm.state_frames = 0u; // 重置状态帧计数
@@ -276,45 +298,76 @@ static void finish_turn(void)
 }
 
 /**
- * @brief 取得本帧有效 IMU 角度，并检查转弯完成与超时。
+ * @brief 记录对齐完成：停车并递增 align_count，供 Route 轮询衔接下一个功能。
  * @param 无。
- * @return 无；发生故障时更新 status，由 ModeFSM_Tick 的统一出口停车。
- * @note 先读六轴、确认成功、再解算角度；仅有限 yaw 才设置本帧 imu_valid。
- *       禁止用读取失败前的旧 yaw 执行 PID，读取失败和超时均先锁存故障现场。
- *       第 500 帧已进入 5° 容差而确认不足两帧时，最多补足后一帧（10 ms）。
- *       补帧期间一旦离开容差立即超时停车；未进入容差时在第 500 帧停车。
+ * @return 无。
+ * @note 对齐到 g_route.ideal_yaw 后调用；不重建零度基准，yaw 保持连续。
+ *       本帧由 ModeFSM_Tick 统一出口停车，下一帧 Route 提交新动作。
+ */
+static void finish_align(void)
+{
+    DebugLog_Write(LOG_INFO, "ALIGN_DONE");
+    g_mode_fsm.status = CAR_STOPPED;
+    g_mode_fsm.align_count++;
+    g_mode_fsm.state_frames = 0u;
+    s_align_hold = 0u;       /* 防御清零，下一动作从干净状态开始 */
+    s_align_hold_frames = 0u;
+    reset_controllers(g_mode_fsm.target_yaw);
+}
+
+/**
+ * @brief 检查转弯与对齐的完成和超时；IMU 读取与姿态解算已在 ModeFSM_Tick 每帧完成。
+ * @param 无。
+ * @return 无；超时故障时更新 status，由 ModeFSM_Tick 的统一出口停车。
+ * @note 本帧 IMU 无效（imu_valid=0）时直接返回，故障已在 ModeFSM_Tick 锁存。
+ *       禁止用旧 yaw 判完成；第 500 帧已进容差而确认不足两帧时最多补一帧。
  */
 static void update_imu(void)
 {
     float error;
-    //陀螺仪没准备好
-    if (g_imu_ready == 0u)
-    {
-        set_fault(CAR_FAULT_IMU);
+    /* IMU 读取与 Attitude_Tick 已在 ModeFSM_Tick 每帧执行；本帧无效时故障已设置，直接返回。 */
+    if (g_mode_fsm.imu_valid == 0u)
         return;
-    }
-    //读取陀螺仪数据
-    Int_MPU6050_Tick();
-    //检查是否读取成功
-    if (g_imu_ready == 0u)
-    {
-        set_fault(CAR_FAULT_IMU);
-        return;
-    }
-    //姿态解算
-    Attitude_Tick();
-    //检查是否解算成功
-    if (!isfinite(g_euler.yaw))
-    {
-        set_fault(CAR_FAULT_IMU);
-        return;
-    }
-    //标志位
-    g_mode_fsm.imu_valid = 1u;
 
     /* 直行只需要有效角度；转弯才需要完成确认和超时判断。 */
     if (g_mode_fsm.imu_state == IMU_FORWARD || g_mode_fsm.imu_state == IMU_REVERSE)
     {
+        return;
+    }
+
+    /* 对齐：误差进 IMU_ALIGN_DONE_TOLERANCE 连续 ALIGN_DONE_FRAMES 帧即到位。
+     * 进项目对齐（s_align_hold）到位后原地保持 ALIGN_HOLD_FRAMES 帧(800ms) 再 finish_align，
+     * 期间 imu_state 仍 IMU_ALIGN、status 仍 CAR_RUNNING，AlignTick 容差内输出 0 = 停车，
+     * 漂出容差则清计数自动重新对齐；路口转弯前对齐(s_align_hold=0)到位即完成，行为不变。
+     * 复用转弯超时机制：保持期间 s_align_done_frames>=ALIGN_DONE_FRAMES，超时分支不触发。 */
+    if (g_mode_fsm.imu_state == IMU_ALIGN)
+    {
+        error = IMUTask_GetError();
+        if (fabsf(error) < IMU_ALIGN_DONE_TOLERANCE)
+            s_align_done_frames++;
+        else
+        {
+            s_align_done_frames = 0u;
+            s_align_hold_frames = 0u; /* 漂出容差：保持计数清零，重新累积到位确认 */
+        }
+        if (s_align_done_frames >= ALIGN_DONE_FRAMES)
+        {
+            if (s_align_hold)
+            {
+                s_align_hold_frames++;
+                if (s_align_hold_frames >= ALIGN_HOLD_FRAMES)
+                    finish_align();
+            }
+            else
+            {
+                finish_align();
+            }
+        }
+        else if (g_mode_fsm.state_frames + 1u >= TURN_TIMEOUT_FRAMES && s_align_done_frames == 0u)
+        {
+            g_mode_fsm.state_frames++;
+            set_fault(CAR_FAULT_TURN_TIMEOUT);
+        }
         return;
     }
     
@@ -350,10 +403,13 @@ static void update_imu(void)
 void ModeFSM_Init(void)
 {
     ModeFSM_t initial = {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
-                         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u};
+                         MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u, 0u};
     g_mode_fsm = initial;    //不直接修改动作，避免中断时出错
     s_request.pending = 0u;
     s_turn_done_frames = 0u;
+    s_align_done_frames = 0u;
+    s_align_hold = 0u;
+    s_align_hold_frames = 0u;
     s_forward_limit_frames = 0u;
 
     DebugLog_Init();
@@ -396,6 +452,33 @@ void ModeFSM_Tick(void)
         apply_request(&request);
     }
 
+    /* 受控快转（对齐/转弯）时禁用 yaw 突变剔除：正常快转不该被当传感器异常冻结 yaw，
+     * 否则 PWM≥400 时车体角速度≥500°/s 触发剔除，对齐 PID 读不到真实 yaw 而失效。
+     * 循迹和直行时保留剔除，防御传感器尖峰。放在 apply_request 后，imu_state 已是本帧生效值。 */
+    Attitude_SetSpikeCheck(
+        !(g_mode_fsm.mode == MODE_IMU &&
+          (g_mode_fsm.imu_state == IMU_ALIGN ||
+           g_mode_fsm.imu_state == IMU_TURN_LEFT ||
+           g_mode_fsm.imu_state == IMU_TURN_RIGHT)));
+
+    /* 每帧读 IMU 并解算 yaw，使姿态全程连续跟踪实际朝向（含循迹期间的偏航）。
+     * 循迹段若不积分 yaw，进 IMU 对齐时 error=ideal_yaw-yaw=0，无法纠正循迹偏航；
+     * 循迹段的积分漂移由每次切换点的对齐清除。IMU 失败时运行中故障停车。
+     * 放在 apply_request 之后，避免新动作的 status=RUNNING 覆盖本帧 IMU 故障。 */
+    Int_MPU6050_Tick();
+    if (g_imu_ready != 0u)
+    {
+        Attitude_Tick();
+        if (isfinite(g_euler.yaw))
+            g_mode_fsm.imu_valid = 1u;
+        else if (g_mode_fsm.status == CAR_RUNNING)
+            set_fault(CAR_FAULT_IMU);
+    }
+    else if (g_mode_fsm.status == CAR_RUNNING)
+    {
+        set_fault(CAR_FAULT_IMU);
+    }
+
     /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
     if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU &&
         g_mode_fsm.imu_state == IMU_FORWARD && s_forward_limit_frames != 0u &&
@@ -431,6 +514,10 @@ void ModeFSM_Tick(void)
     else if (g_mode_fsm.imu_state == IMU_REVERSE) //保持转后航向倒退
     {
         IMUTask_ReverseTick(g_mode_fsm.base_pwm);
+    }
+    else if (g_mode_fsm.imu_state == IMU_ALIGN) //功能切换原地对齐
+    {
+        IMUTask_AlignTick();
     }
     else//转弯态
     {
@@ -503,6 +590,30 @@ void Car_TurnLeft90(CarMode next_mode)
 void Car_TurnRight90(CarMode next_mode)
 {
     submit_request(COMMAND_RIGHT, next_mode, 500u, 0u);
+}
+
+/**
+ * @brief 请求原地对齐到 g_route.ideal_yaw，完成后停车等 Route 衔接。
+ * @param 无。
+ * @return 无。
+ * @note 功能切换时调用；目标由 FSM 在 apply_request 直接取 g_route.ideal_yaw，
+ *       不重建零度基准；到位后 align_count++，Route 轮询到变化即提交下一动作。
+ */
+void Car_AlignTo(void)
+{
+    submit_request(COMMAND_ALIGN, MODE_IMU, 0u, 0u);
+}
+
+/**
+ * @brief 请求原地对齐到 g_route.ideal_yaw，到位后原地保持 800ms 再停车等 Route 衔接。
+ * @param 无。
+ * @return 无。
+ * @note 进项目切换（循迹对正→IMU 项目通行）时调用；相对 Car_AlignTo 多一段到位保持，
+ *       等待角度稳定对齐项目后再由 Route 提交 IMU 直行。路口转弯前前移仍用 Car_AlignTo。
+ */
+void Car_AlignToHold(void)
+{
+    submit_request(COMMAND_ALIGN_HOLD, MODE_IMU, 0u, 0u);
 }
 
 /**

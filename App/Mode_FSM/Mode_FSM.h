@@ -20,7 +20,8 @@ typedef enum {
     IMU_FORWARD = 0,               /* 保持目标航向直行 */
     IMU_TURN_LEFT,                 /* 相对动作起点左转 90° */
     IMU_TURN_RIGHT,                /* 相对动作起点右转 90° */
-    IMU_REVERSE                    /* 保持目标航向倒退，两轮 PWM 均不大于零 */
+    IMU_REVERSE,                   /* 保持目标航向倒退，两轮 PWM 均不大于零 */
+    IMU_ALIGN                      /* 功能切换时原地慢转到 g_route.ideal_yaw 对齐理想坐标系 */
 } ImuState;
 
 /* 运行状态同时适用于循迹和 IMU 模式。 */
@@ -54,6 +55,7 @@ typedef struct {
     uint32_t command_id;            /* 已接受指令序号，用于调试动作切换 */
     uint8_t imu_valid;              /* 1：本帧角度有效；0：循迹、停车或读取失败 */
     uint16_t base_pwm;              /* 当前 IMU 前进或倒退的基础 PWM 幅度，与动作一起接受，不代表实测车速 */
+    uint32_t align_count;           /* 已完成对齐总数，Route 比较前后值获取对齐完成事件，仿 turn_count */
 } ModeFSM_t;
 
 /* 中断内维护，外部读取请用 ModeFSM_GetSnapshot，禁止直接修改字段。 */
@@ -125,6 +127,23 @@ void Car_TurnLeft90(CarMode next_mode);
  * @note 直接原地转弯；非法 next_mode 会进入指令故障并停车。
  */
 void Car_TurnRight90(CarMode next_mode);
+
+/**
+ * @brief 请求原地对齐到 g_route.ideal_yaw（90° 倍数），完成后停车等 Route 衔接。
+ * @param 无。
+ * @return 无。
+ * @note 功能切换时调用；目标直接取 g_route.ideal_yaw，不重建零度基准；到位后 align_count++。
+ */
+void Car_AlignTo(void);
+
+/**
+ * @brief 请求原地对齐到 g_route.ideal_yaw，到位后原地保持 800ms 再停车等 Route 衔接。
+ * @param 无。
+ * @return 无。
+ * @note 进项目切换（循迹对正→IMU 项目通行）时调用；比 Car_AlignTo 多一段到位保持，
+ *       等待角度稳定对齐项目后再启动陀螺仪。路口转弯前前移仍用 Car_AlignTo。
+ */
+void Car_AlignToHold(void);
 
 /**
  * @brief 提交停车请求，下一控制帧清 PID 并将两轮输出置零。

@@ -19,6 +19,7 @@ typedef enum {
     ROUTE_APPROACH,                /* 按标定时间前移到转弯中心 */
     ROUTE_TURN,                    /* 等待运动层完成 90 度转弯 */
     ROUTE_READY,                   /* 已检查标定参数，下一控制帧开始 */
+    ROUTE_ALIGN,                   /* 功能切换前原地慢转到 ideal_yaw 对齐理想坐标系 */
     ROUTE_ENTRY,                   /* 入口对正：保持灰度循迹，按 entry_ms 计时 */
     ROUTE_OBSTACLE,                /* 项目通行：保持 IMU 航向，按 pass_ms 计时 */
     ROUTE_RECOVER,                 /* 恢复循迹并再次确认窄黑线，屏蔽重复路口 */
@@ -61,8 +62,15 @@ typedef struct {
 
 #define ROUTE_STEP_COUNT 9u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
-/* 集中设置本次调试截止段数：9 或 0 均执行完整路线及末尾左转、直行 3 秒停车。
- * 1 至 8 只运行对应前缀，截止后持续循迹，不执行完整路线的收尾动作。
+/* 本次从路线表第几项开始，使用 1 至 9 的表项序号，不按 project_id 查找。
+ * 例如设为 6u：从第 6 项对应路口前循迹出发，顺序执行第 6、7、8、9 项及原有收尾。
+ * 默认 1u 保持从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
+#ifndef ROUTE_START_STEP
+#define ROUTE_START_STEP 8u
+#endif
+
+/* 集中设置本次调试截止段数：9 或 0 均执行到路线末尾，再左转、直行 3 秒停车。
+ * 1 至 8 只运行起始项至截止项，截止后持续循迹，不执行完整路线的收尾动作。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
 #define ROUTE_DEBUG_STEP_LIMIT 9u
@@ -70,6 +78,14 @@ typedef struct {
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT
 #error ROUTE_DEBUG_STEP_LIMIT_exceeds_defined_route_steps
+#endif
+
+#if ROUTE_START_STEP < 1u || ROUTE_START_STEP > ROUTE_STEP_COUNT
+#error ROUTE_START_STEP_outside_defined_route_steps
+#endif
+
+#if ROUTE_DEBUG_STEP_LIMIT != 0u && ROUTE_START_STEP > ROUTE_DEBUG_STEP_LIMIT
+#error ROUTE_START_STEP_exceeds_debug_step_limit
 #endif
 
 /* 只在停车且 Route 未运行时修改；实际部署编辑 Route.c 后重新编译。
@@ -87,6 +103,7 @@ typedef struct {
     uint32_t state_frames;         /* 当前阶段已完成的 10 ms 控制帧数 */
     uint16_t step_index;           /* 当前表项，内部从 0 开始，屏幕从 1 显示 */
     uint8_t project_id;            /* 当前路线段号，与表项中的 project_id 一致 */
+    float ideal_yaw;               /* 绝对理想朝向(90°倍数)：IMU 动作目标参考，偏差不累积 */
 } Route_t;
 
 extern volatile Route_t g_route;
@@ -102,9 +119,9 @@ void Route_Init(void);
 uint8_t Route_IsCalibrated(void);
 
 /**
- * @brief 停车状态下从起点开始本次启用的路线段。
+ * @brief 停车状态下从 ROUTE_START_STEP 指定的表项开始，随后按原顺序执行。
  * @return 1：已准备，下一控制帧开始；0：未标定或车辆尚未停车。
- * @note 被打断后必须将车辆放回起点再显式调用；单纯 Enable(1) 不恢复进度。
+ * @note 被打断后须将车放回所选项目的触发路口前，再显式调用；Enable(1) 不恢复进度。
  */
 uint8_t Route_Start(void);
 
