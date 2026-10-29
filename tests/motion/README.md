@@ -2,15 +2,19 @@
 
 在工程根目录运行：
 
-    ./tests/motion/run_tests.ps1
-    ./tests/motion/run_tests.ps1 -RouteFinishOnly
-    ./tests/motion/run_tests.ps1 -RouteReverseOnly
+    ./tests/motion/run_tests.ps1 -RouteAfterPlatformOnly
     ./tests/motion/run_tests.ps1 -RouteStartOnly
     ./tests/motion/build_keil.ps1
 
 宿主脚本使用 GCC C99，开启 -Wall -Wextra -Werror -pedantic。产物位于 TEMP/all-terrain-motion-tests。Keil 脚本使用当前源码完整重编译，AXF/HEX/日志写入独立临时目录，不覆盖仓库旧构建产物，不烧录硬件。
 
-`-RouteStartOnly` 分别以 `ROUTE_START_STEP=1u` 至 `9u` 编译并运行，还覆盖从第 6 项启动、截止设为 0 或 8。链接真实路线和运动状态机，使用当前生产表项的时间与 PWM，检查跳过项的无效参数不阻止启动、实际范围内的无效项仍阻止启动、READY 段号、按表位置而非 project_id 选择、后续项目逐项执行、每项路口提示、第 8 项倒退启用时完整执行 200 帧、完整路线收尾直行 300 帧后停车、旧截止持续循迹，以及显式重启仍从配置项开始。保留当前倒退入口的注释停用状态。主机传感器图案和航向均为模拟输入，不能替代实车测试。
+2026-10-30 高台后路线重构：`-RouteAfterPlatformOnly` 的 5 种配置均通过，覆盖默认从第 10 项启动、从第 9 项离台衔接、截止设为 0/9/10。验证首次十字直接交给普通表项、单侧升级十字、前移 680 ms、恢复两帧窄线、右侧路口右转后精确循迹 2000 帧再单次停车，以及 STOP、接管、禁用、IMU 故障和超时。
+
+`-RouteStartOnly` 的 13 种配置均通过：分别从第 1～11 项启动，另覆盖从第 6 项启动、截止设为 0 或 8。使用生产表项验证顺序、启动范围检查、提示音、显式重启，以及高台直行 300 帧、倒车 330 帧、离台直行 500 帧和末项循迹 2000 帧。第 8 项原倒退入口保持停用。
+
+本次同时比对源码：第 1～9 项表项逐字一致，高台动作执行代码及原有时间/PWM 未变，FSM、循迹/IMU 控制器和底层配置未变。Keil 完整重编译生成 AXF/HEX，0 Error(s)、2 Warning(s)，警告为既有 Attitude.c 的 ez、ezInt 未使用；脚本要求零警告，因此返回失败。构建产物位于 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-4c0fdcf0faf143b1beffffef2703720d`，未烧录、未实车验证。
+
+以下为历史记录。旧全量测试及 `-RouteFinishOnly`、`-RouteReverseOnly` 仍含历史调参或九段路线收尾断言，不作为本次验收入口；本次没有据此声称全量回归通过。
 
 2026-10-29 指定起始项变更：当前工作区已同步加入绝对航向与入口对齐流程。路线仅放行“ALIGN 状态、车辆已停车且对齐完成计数改变”这一明确完成事件，下一帧衔接前移或项目通行；外部 STOP 仍优先中止。专项另外检查对齐中和完成后立即 STOP 的取消边界。最终工作区源码的 11 种起始/截止配置专项全部通过；ARMCC 拒绝起始项 0、10 及起始 9/截止 8 的非法配置。Keil 完整重编译生成 HEX，0 Error(s)、2 Warning(s)，警告来自既有 Attitude.c 的 ez、ezInt，零警告构建脚本因此返回失败。全量旧参数测试未据此记为通过；未烧录或实车验证。
 

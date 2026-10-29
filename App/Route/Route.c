@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按路线表依次通过路口和项目，石块通行后进入 S13 终点停车流程。
+ * @brief 按路线表依次通过路口和项目，高台离台后完成两次右转，再循迹 20 秒停车。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -18,10 +18,8 @@
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
 #define ROUTE_REVERSE_DRIVE_MS 3300u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
-#define ROUTE_S1_IMU_MS        5000u /* 高台右转后 IMU 直行 3 秒 PWM300，再切循迹找十字 */
+#define ROUTE_S1_IMU_MS        5000u /* 高台右转后 IMU 直行 5 秒 PWM300，再切循迹找十字 */
 #define ROUTE_S1_PWM           300u  /* S1 直行基础 PWM（慢速清出高台区域） */
-#define ROUTE_S13_IMU_MS       1000u /* 末段路口后 IMU 直行 1 秒停车 */
-#define ROUTE_S13_PWM          500u  /* S13 直行基础 PWM */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -36,9 +34,9 @@
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
  * 项目时间：entry_ms 为转后或直行路口后的循迹时间；pass_ms 为随后保持 IMU 航向的通行时间。
- *           U 型隧道和方形隧道的 pass_ms 为 0，整段使用循迹；base_pwm 保留原值供参数检查。
+ *           pass_ms 为 0 时只执行 entry_ms 循迹；base_pwm 保留非零供参数检查，不执行 IMU 通行。
  * 校准选项：cal_before = 1 表示转前对齐并保持、重建 yaw 基准；cal_after = 1 表示转后再做一次。
- * 后续流程：final_seq = 1 接高台及 S1；final_seq = 2 接 S13 终点；省略时按普通表项衔接。
+ * 后续流程：final_seq = 1 接高台及 S1；final_seq = 2 在本项定时循迹结束后停车；省略时普通衔接。
  *           高台内部的原地转弯由专用状态执行，不使用表内路口转弯的前移时间。
  *
  * 未列出的项目参数与校准选项保持为 0；全程循迹左弯使用循迹模块已有的速度与 PID 参数。
@@ -82,52 +80,14 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .final_seq = 1u
     },
 
-    /* 高台及 S1 之后：道路转弯、U 型隧道、方形隧道、石块。 */
-    {   /* 10 S2+S3：十字右转，转前、转后均校准，再恢复循迹。 */
+    /* 高台及 S1 之后回到普通路线表：十字右转、右侧路口右转、循迹 20 秒停车。 */
+    {   /* 10 十字右转后循迹：与第 4 项相同，确认离开原路口后再等下一项。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u, .cal_before = 1u, .cal_after = 1u
-    },
-    {   /* 11 S3：右侧路口右转后循迹。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 10000u
     },
-    {   /* 12 S4：全程灰度循迹沿左弯行驶，恢复居中窄线后接下一项。 */
-        .action = ROUTE_ACTION_FOLLOW_LEFT, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
-    },
-    {   /* 13 S5+S6 U 型隧道：左转前后均校准，随后循迹 15 秒，不进入 IMU 通行。 */
-        .action = ROUTE_ACTION_LEFT, .project_id = 13u, .trigger_junction = JUNCTION_LEFT,
-        .base_pwm = 500u, .entry_ms = 15000u, .pass_ms = 0u, .timeout_ms = 20000u,
-        .cal_before = 1u, .cal_after = 1u
-    },
-    {   /* 14 S7a：左侧路口左转后循迹。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 14u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
-    },
-    {   /* 15 S7b：十字右转后循迹。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 15u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u
-    },
-    {   /* 16 S8a：十字右转，转前校准，转后直接恢复循迹。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u, .cal_before = 1u
-    },
-    {   /* 17 S8b+S9 方形隧道：左转前后均校准，随后循迹 15 秒，不进入 IMU 通行。 */
-        .action = ROUTE_ACTION_LEFT, .project_id = 17u, .trigger_junction = JUNCTION_LEFT,
-        .base_pwm = 500u, .entry_ms = 15000u, .pass_ms = 0u, .timeout_ms = 20000u,
-        .cal_before = 1u, .cal_after = 1u
-    },
-    {   /* 18 S10a：左侧路口左转后循迹。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 18u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
-    },
-    {   /* 19 S10b：右侧路口右转后循迹；当前调试截止项。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_RIGHT,
-        .timeout_ms = 10000u
-    },
-    {   /* 20 S10c+S11+S12 石块：十字左转，循迹 2 秒，入口对齐后 IMU 通行 7 秒，再接 S13。 */
-        .action = ROUTE_ACTION_LEFT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 2000u, .pass_ms = 7000u, .timeout_ms = 12000u,
+    {   /* 11 右侧路口：与第 5 项使用相同的右转流程，转完循迹 20 秒后停车，不进入 IMU 通行。 */
+        .action = ROUTE_ACTION_RIGHT, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
+        .base_pwm = 500u, .entry_ms = 20000u, .pass_ms = 0u, .timeout_ms = 30000u,
         .final_seq = 2u
     }
 };
@@ -322,7 +282,7 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
         g_route.state == ROUTE_REVERSE ||
         g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN ||
-        g_route.state == ROUTE_S1_IMU || g_route.state == ROUTE_S13_IMU) {
+        g_route.state == ROUTE_S1_IMU) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -559,7 +519,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
- *       完整路线最后一个项目结束后原地左转，自动接 IMU 直行 3 秒并停车；短段调试仍循迹。
+ *       第 9 项通行后执行原高台及离台动作，再接普通表项；第 11 项转后定时循迹结束停车。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -773,7 +733,14 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_ENTRY: //项目入口通过循迹对正
         if (elapsed_ms >= step->entry_ms) {
-            if (step->pass_ms == 0u)
+            if (step->final_seq == 2u) {
+                /* 末项复用入口循迹计时：从转完实际开始循迹的首帧起算，到时只停车一次。
+                 * 先关闭本轮调度，避免下一帧把正常停车当作外部接管而改写 FINISHED。 */
+                s_active = g_route.enabled = 0u;
+                enter_state(ROUTE_FINISHED);
+                Car_Stop();
+                DebugLog_Write(LOG_INFO, "ROUTE_DONE");
+            } else if (step->pass_ms == 0u)
                 begin_recovery(); /* 纯循迹项目(隧道)：入口循迹到时直接恢复循迹，不走 IMU 通行 */
             else
                 begin_project(step);
@@ -791,11 +758,6 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 enter_state(ROUTE_FINAL_TURN);
                 g_route.ideal_yaw += route_action_yaw_delta(ROUTE_ACTION_LEFT);
                 Car_TurnLeft90(MODE_IMU);
-            } else if (step->final_seq == 2u) {
-                /* 末段通行到时进 S13：循迹等左转路口，再 IMU 直行 1 秒停车。 */
-                reset_junction();
-                enter_state(ROUTE_S13_WAIT);
-                Car_Track();
             } else if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
                 /* 调试截止：持续循迹，不执行收尾。 */
                 reset_junction();
@@ -844,54 +806,27 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成接 S1 直行
         if (g_mode_fsm.turn_count != s_turn_count_before) {
-            /* 右转完成不停车，进 S1：IMU 直行 3 秒 PWM200，再切循迹找十字路口。 */
+            /* 右转完成不停车，进 S1：IMU 直行 5 秒 PWM300，再切循迹找十字路口。 */
             enter_state(ROUTE_S1_IMU);
             Car_ImuForward(ROUTE_S1_PWM);
             DebugLog_Write(LOG_INFO, "S1_FWD");
         }
         return;
 
-    case ROUTE_S1_IMU: //高台右转后 IMU 直行 3 秒 PWM200
+    case ROUTE_S1_IMU: //高台右转后 IMU 直行 5 秒 PWM300
         if (elapsed_ms >= ROUTE_S1_IMU_MS) {
-            enter_state(ROUTE_S1_WAIT);
-            Car_Track(); /* 3 秒到，切循迹找十字路口 */
-            DebugLog_Write(LOG_INFO, "S1_TRACK");
-        }
-        return;
-
-    case ROUTE_S1_WAIT: //S1 直行后循迹等十字路口，再进 step10
-        if (g_route.junction == JUNCTION_CROSS) { /* CROSS 电平触发，仿 ROUTE_FOLLOW */
-            ++g_route.step_index; /* 从 step9 推进到 step10 */
-            if (g_route.step_index + 1u > ROUTE_ACTIVE_STEP_COUNT) {
-                /* 调试截止：step10 超出 active，持续循迹不执行后续。 */
+            if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+                /* 截止在第 9 项时仍完整执行离台动作，到此持续循迹，不进入下一表项。 */
                 enter_state(ROUTE_CRUISE);
                 reset_junction();
                 Car_Track();
                 DebugLog_Write(LOG_INFO, "DEBUG_END");
             } else {
-                reset_junction();
-                begin_step(); /* 进入 step10 表项循迹等路口 */
+                /* 离台完成立即交回普通路线表，由第 10 项统一检测并处理第一个十字。
+                 * begin_step 清除旧路口确认状态，并在 IMU→TRACK 时只提交一次循迹请求。 */
+                finish_step();
             }
-            return;
-        }
-        break;
-
-    case ROUTE_S13_WAIT: //末段 IMU 通行后循迹等左转路口，再直行 1 秒
-        if (g_route.junction == JUNCTION_LEFT && g_route.junction_event) {
-            reset_junction();
-            enter_state(ROUTE_S13_IMU);
-            Car_ImuForward(ROUTE_S13_PWM); /* 左转路口后 IMU 直行 1 秒停车，不转弯 */
-            DebugLog_Write(LOG_INFO, "S13_FWD");
-            return;
-        }
-        break;
-
-    case ROUTE_S13_IMU: //末段路口后 IMU 直行 1 秒，停车结束
-        if (elapsed_ms >= ROUTE_S13_IMU_MS) {
-            s_active = g_route.enabled = 0u;
-            enter_state(ROUTE_FINISHED);
-            Car_Stop();
-            DebugLog_Write(LOG_INFO, "ROUTE_DONE");
+            DebugLog_Write(LOG_INFO, "S1_TRACK");
         }
         return;
 

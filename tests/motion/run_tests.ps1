@@ -4,7 +4,7 @@ param(
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
     [switch]$RouteStartOnly,
-    [switch]$RouteFollowLeftOnly
+    [switch]$RouteAfterPlatformOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,18 +66,23 @@ $motionSources = @(
     '-Wl,--wrap=PID_calc'
 )
 
-if ($RouteFollowLeftOnly) {
-    # 从第 12 项验证循迹左弯，覆盖正常衔接第 13 项和以第 12 项为调试截止两种配置。
-    Invoke-MotionTest -Name 'test_route_follow_left' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_FOLLOW_LEFT_ONLY', '-DROUTE_START_STEP=12u'))
-    Invoke-MotionTest -Name 'test_route_follow_left_limit12' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_FOLLOW_LEFT_ONLY', '-DROUTE_START_STEP=12u', '-DROUTE_DEBUG_STEP_LIMIT=12u'))
+if ($RouteAfterPlatformOnly) {
+    # 使用真实表项，覆盖默认第 10 项启动、第 9 项离台衔接、全部段及截止 9/10。
+    Invoke-MotionTest -Name 'test_route_after_platform' -Arguments ($motionSources + '-DTEST_ROUTE_AFTER_PLATFORM_ONLY')
+    Invoke-MotionTest -Name 'test_route_after_platform_all' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=0u'))
+    Invoke-MotionTest -Name 'test_route_after_platform_start9' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u'))
+    Invoke-MotionTest -Name 'test_route_after_platform_limit9' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u', '-DROUTE_DEBUG_STEP_LIMIT=9u'))
+    Invoke-MotionTest -Name 'test_route_after_platform_limit10' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=10u'))
     return
 }
 
 if ($RouteStartOnly) {
-    # 逐项验证从第 1 至 9 项启动、接入后续项目与最终收尾，另外覆盖旧截止配置。
-    foreach ($startStep in 1..9) {
+    # 逐项验证从第 1 至 11 项启动、完整高台离台时序和末项 20 秒循迹停车，另外覆盖旧截止配置。
+    foreach ($startStep in 1..11) {
         Invoke-MotionTest -Name "test_route_start_$startStep" -Arguments ($motionSources + @(
             '-DTEST_ROUTE_START_ONLY', "-DROUTE_START_STEP=$($startStep)u"))
     }
