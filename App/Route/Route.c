@@ -12,7 +12,7 @@
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
-#define ROUTE_TURN_APPROACH_MS   700u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
+#define ROUTE_TURN_APPROACH_MS   660u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
