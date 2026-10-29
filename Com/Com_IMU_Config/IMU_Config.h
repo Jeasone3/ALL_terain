@@ -39,5 +39,9 @@ typedef struct
     float roll;
 }Euler_struct;
 
+/* 帧间 yaw 突变剔除阈值(度)：当前帧相对上一帧最终输出的最短角差 ≥ 此值时，
+ * 丢弃当前帧 yaw，沿用上一帧最终输出。详见 Attitude.c 中 Attitude_Tick。 */
+#define ATT_YAW_SPIKE_THRESH  5.0f
+
 
 #endif /* __IMU_CONFIG_H__ */

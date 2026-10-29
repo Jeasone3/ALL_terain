@@ -26,6 +26,8 @@ Euler_struct g_euler = {0};
 static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
 static float s_yaw_offset = 0.0f;   /* 输出 yaw = raw_yaw - s_yaw_offset */
+static float s_last_yaw = 0.0f;          /* 上一帧最终输出 yaw，突变剔除基准 */
+static uint8_t s_yaw_initialized = 0;    /* 首帧/复位后首帧标志：跳过判断直接采纳 */
 
 /**
  * @brief 初始化姿态解算器，使内部状态和对外欧拉角从同一零基准开始。
@@ -54,6 +56,8 @@ void Attitude_Reset(void)
     s_yaw_offset = 0.0f;
     /* 立即清除外部旧角度，不能等下一次解算才更新，否则新动作可能使用上一动作反馈。 */
     g_euler.yaw = g_euler.pitch = g_euler.roll = 0.0f;
+    s_last_yaw = 0.0f;
+    s_yaw_initialized = 0;   /* 复位后首帧重新初始化基准，避免用上一动作旧值误判 */
 }
 
 /**
@@ -168,4 +172,18 @@ void Attitude_Tick(void)
     g_euler.pitch = pitch * ATT_RAD2DEG;
     g_euler.roll  = roll  * ATT_RAD2DEG;
     g_euler.yaw   = yaw   * ATT_RAD2DEG - s_yaw_offset;
+
+    /* 帧间 yaw 突变剔除：当前帧相对上一帧最终输出的最短角差 ≥ 阈值时，
+       判为异常帧，丢弃当前 yaw，沿用上一帧最终输出（冻结式）。
+       连续异常时输出停在异常前好值，传感器恢复即解冻。 */
+    if (s_yaw_initialized) {
+        float dyaw = fmodf(g_euler.yaw - s_last_yaw, 360.0f);
+        if (dyaw > 180.0f)  dyaw -= 360.0f;
+        else if (dyaw < -180.0f) dyaw += 360.0f;
+        if (fabsf(dyaw) >= ATT_YAW_SPIKE_THRESH) {
+            g_euler.yaw = s_last_yaw;   /* 抛弃本帧，沿用上一帧最终输出 */
+        }
+    }
+    s_last_yaw = g_euler.yaw;           /* 基准更新为本次最终输出（含替换后的值） */
+    s_yaw_initialized = 1;
 }
