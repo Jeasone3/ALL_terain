@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按路线表依次通过路口和项目，高台离台后完成两次右转，再循迹 20 秒停车。
+ * @brief 按路线表依次通过路口和项目，高台后转弯完成进入第 13 项循迹 20 秒，再保持循迹。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -33,6 +33,7 @@
  * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 680 ms，再转 90°。
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
+ *           TRACK_TIMED 无需路口，直接按 entry_ms 循迹，到时接下一项；末项继续保持循迹。
  * 项目时间：entry_ms 为转后或直行路口后的循迹时间；pass_ms 为随后保持 IMU 航向的通行时间。
  *           pass_ms 为 0 时只执行 entry_ms 循迹；base_pwm 保留非零供参数检查，不执行 IMU 通行。
  * 校准选项：cal_before = 1 表示转前对齐并保持、重建 yaw 基准；cal_after = 1 表示转后再做一次。
@@ -80,15 +81,22 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .final_seq = 1u
     },
 
-    /* 高台及 S1 之后回到普通路线表：十字右转、右侧路口右转、循迹 20 秒停车。 */
+    /* 高台及 S1 之后回到普通路线表：十字右转、右侧路口右转、左侧路口左转后持续循迹。 */
     {   /* 10 十字右转后循迹：与第 4 项相同，确认离开原路口后再等下一项。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
         .timeout_ms = 10000u
     },
-    {   /* 11 右侧路口：与第 5 项使用相同的右转流程，转完循迹 20 秒后停车，不进入 IMU 通行。 */
-        .action = ROUTE_ACTION_RIGHT, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
-        .base_pwm = 500u, .entry_ms = 20000u, .pass_ms = 0u, .timeout_ms = 30000u,
-        .final_seq = 2u
+    {   /* 11 右侧路口：与第 5 项相同，右转后恢复循迹，确认窄线后再等左侧路口。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
+        .timeout_ms = 10000u
+    },
+    {   /* 12 左侧路口：复用第 5 项的对齐、前移与转弯流程，左转 90°后直接接第 13 项。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 10000u
+    },
+    {   /* 13 定时循迹：从第 12 项转完实际开始循迹的首帧起计时 20 秒，到时继续保持循迹。 */
+        .action = ROUTE_ACTION_TRACK_TIMED, .project_id = 13u, .trigger_junction = JUNCTION_NONE,
+        .entry_ms = 20000u, .timeout_ms = 30000u
     }
 };
 
@@ -313,6 +321,13 @@ static uint16_t invalid_step(void)
     uint16_t i;
     for (i = ROUTE_START_STEP - 1u; i < ROUTE_ACTIVE_STEP_COUNT; ++i) {
         const RouteStep *step = &g_route_plan[i];
+        /* 独立循迹项不依赖路口，也不使用项目 PWM 或 IMU 通行时间。 */
+        if (step->action == ROUTE_ACTION_TRACK_TIMED) {
+            if (step->trigger_junction != JUNCTION_NONE || step->project_id == 0u ||
+                step->entry_ms == 0u || step->timeout_ms <= step->entry_ms ||
+                step->base_pwm != 0u || step->pass_ms != 0u) return i;
+            continue;
+        }
         if ((step->action != ROUTE_ACTION_LEFT && step->action != ROUTE_ACTION_RIGHT &&
              step->action != ROUTE_ACTION_STRAIGHT && step->action != ROUTE_ACTION_RIGHT_TRACK &&
              step->action != ROUTE_ACTION_LEFT_TRACK && step->action != ROUTE_ACTION_FOLLOW_LEFT) ||
@@ -371,7 +386,7 @@ static void enter_state(RouteState state)
 }
 
 /**
- * @brief 进入当前路线段，先循迹等待该段指定类型的路口。
+ * @brief 进入当前路线段；普通项循迹等指定路口，TRACK_TIMED 直接开始定时循迹。
  * @param 无。
  * @return 无。
  * @note 每次表项只调用一次；不会在 while(1) 重复重置 PID 或航向。
@@ -381,7 +396,7 @@ static void begin_step(void)
     const RouteStep *step = &g_route_plan[g_route.step_index];
     g_route.project_id = step->project_id;
     reset_junction();
-    enter_state(ROUTE_FOLLOW);
+    enter_state(step->action == ROUTE_ACTION_TRACK_TIMED ? ROUTE_ENTRY : ROUTE_FOLLOW);
     if (g_mode_fsm.status != CAR_RUNNING || g_mode_fsm.mode != MODE_TRACK) //上电后首次进入循迹
     {
         Car_Track();
@@ -519,7 +534,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
- *       第 9 项通行后执行原高台及离台动作，再接普通表项；第 11 项转后定时循迹结束停车。
+ *       第 12 项左转后直接接第 13 项定时循迹，计时结束继续保持循迹，等待后续路线扩充。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -696,6 +711,11 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                     enter_state(ROUTE_CRUISE);
                     reset_junction();
                     DebugLog_Write(LOG_INFO, "DEBUG_END");
+                } else if (g_route_plan[g_route.step_index + 1u].action == ROUTE_ACTION_TRACK_TIMED) {
+                    /* 转完直接接独立循迹项，不等窄线或新路口；首个循迹帧已由运动层执行。
+                     * 保留这一帧计时及现有 PID 历史，避免漏算 10 ms 或重复提交循迹请求。 */
+                    finish_step();
+                    g_route.state_frames = g_mode_fsm.state_frames;
                 } else {
                     begin_recovery(); /* 先确认离开原路口，才允许下一段接收新事件。 */
                 }
@@ -733,7 +753,16 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_ENTRY: //项目入口通过循迹对正
         if (elapsed_ms >= step->entry_ms) {
-            if (step->final_seq == 2u) {
+            if (step->action == ROUTE_ACTION_TRACK_TIMED) {
+                /* 独立循迹项到时只推进调度，不切换控制器；末项继续循迹，留待后续追加表项。 */
+                if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+                    enter_state(ROUTE_CRUISE);
+                    reset_junction();
+                    DebugLog_Write(LOG_INFO, "DEBUG_END");
+                } else {
+                    finish_step();
+                }
+            } else if (step->final_seq == 2u) {
                 /* 末项复用入口循迹计时：从转完实际开始循迹的首帧起算，到时只停车一次。
                  * 先关闭本轮调度，避免下一帧把正常停车当作外部接管而改写 FINISHED。 */
                 s_active = g_route.enabled = 0u;

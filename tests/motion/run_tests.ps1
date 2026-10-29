@@ -67,22 +67,14 @@ $motionSources = @(
 )
 
 if ($RouteAfterPlatformOnly) {
-    # 使用真实表项，覆盖默认第 10 项启动、第 9 项离台衔接、全部段及截止 9/10。
+    # 按当前调试起点做一次关键专项，验证第 11 项衔接第 12 项左转及持续循迹。
     Invoke-MotionTest -Name 'test_route_after_platform' -Arguments ($motionSources + '-DTEST_ROUTE_AFTER_PLATFORM_ONLY')
-    Invoke-MotionTest -Name 'test_route_after_platform_all' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=0u'))
-    Invoke-MotionTest -Name 'test_route_after_platform_start9' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u'))
-    Invoke-MotionTest -Name 'test_route_after_platform_limit9' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u', '-DROUTE_DEBUG_STEP_LIMIT=9u'))
-    Invoke-MotionTest -Name 'test_route_after_platform_limit10' -Arguments ($motionSources + @(
-        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_DEBUG_STEP_LIMIT=10u'))
     return
 }
 
 if ($RouteStartOnly) {
-    # 逐项验证从第 1 至 11 项启动、完整高台离台时序和末项 20 秒循迹停车，另外覆盖旧截止配置。
-    foreach ($startStep in 1..11) {
+    # 按需逐项验证起始配置、完整高台离台时序及末项左转后持续循迹，另外覆盖旧截止配置。
+    foreach ($startStep in 1..12) {
         Invoke-MotionTest -Name "test_route_start_$startStep" -Arguments ($motionSources + @(
             '-DTEST_ROUTE_START_ONLY', "-DROUTE_START_STEP=$($startStep)u"))
     }

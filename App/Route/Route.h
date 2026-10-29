@@ -41,7 +41,8 @@ typedef enum {
     ROUTE_ACTION_STRAIGHT,         /* 接受指定路口后继续循迹，直接入口对正 */
     ROUTE_ACTION_RIGHT_TRACK,      /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
     ROUTE_ACTION_LEFT_TRACK,       /* 前移、IMU 左转后恢复循迹，不进入入口与 IMU 通行 */
-    ROUTE_ACTION_FOLLOW_LEFT       /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
+    ROUTE_ACTION_FOLLOW_LEFT,      /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
+    ROUTE_ACTION_TRACK_TIMED       /* 不等路口，直接循迹 entry_ms；到时接下一项或保持循迹 */
 } RouteAction;
 
 /**
@@ -52,6 +53,7 @@ typedef enum {
  *       LEFT_TRACK / RIGHT_TRACK 均先对齐、前移、转 90°，再恢复循迹；项目参数均为 0。
  *       FOLLOW_LEFT 全程由循迹 PID 沿左弯行驶，项目参数也为 0，不执行 IMU 对齐与转弯。
  *       LEFT / RIGHT 转后按 entry_ms 循迹；STRAIGHT 接受路口后直接按 entry_ms 循迹。
+ *       TRACK_TIMED 不等路口，trigger_junction 为 NONE，仅使用 entry_ms 和 timeout_ms。
  *       pass_ms 为 0 时只定时循迹；base_pwm 保留非零供参数检查，不控制循迹速度。
  *       第 8 项转后倒退暂时停用，直接入口循迹；具体时间以路线表为准。
  *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。
@@ -62,7 +64,7 @@ typedef struct {
     RouteAction action;            /* 路口继续循迹，或先前移转弯 */
     uint8_t project_id;             /* 本次路线段号，从 1 开始 */
     uint16_t base_pwm;              /* 本段 IMU 通行 PWM，不控制转弯前移；纯循迹项仅用于参数检查 */
-    uint32_t entry_ms;              /* 入口灰度循迹持续时间；RIGHT_TRACK/LEFT_TRACK 不使用 */
+    uint32_t entry_ms;              /* 入口或 TRACK_TIMED 的循迹时间；RIGHT_TRACK/LEFT_TRACK 不使用 */
     uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK/LEFT_TRACK 不使用，纯循迹项目为 0 */
     uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
     RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
@@ -71,7 +73,7 @@ typedef struct {
     uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时接高台；2=ENTRY 定时循迹到时停车 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 11u       /* 当前路线表共 11 项；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 13u       /* 当前路线表共 13 项；后续追加表项时同步增加 */
 
 /* 本次从路线表第几项开始，使用 1 至 ROUTE_STEP_COUNT 的表项序号，不按 project_id 查找。
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
@@ -80,12 +82,12 @@ typedef struct {
 #define ROUTE_START_STEP 10u
 #endif
 
-/* 调试截止表项：11 或 0 均执行到第 11 项循迹 20 秒后停车，1 至 10 不运行截止项之后的表项。
+/* 调试截止表项：13 或 0 均执行第 13 项循迹 20 秒，到时继续保持循迹，不停车。
  * 第 9 项的高台及 S1 属于该项自身的后续流程，截止为 9 时仍会执行，随后持续循迹。
- * 当前设为 11：执行已编写的全部后续路线；截止为 10 时十字右转后持续循迹。
+ * 当前设为 13：执行全部已编写路线；截止为 12 时左转后直接持续循迹，不执行第 13 项计时。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 11u
+#define ROUTE_DEBUG_STEP_LIMIT 13u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT

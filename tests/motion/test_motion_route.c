@@ -1042,18 +1042,18 @@ static void test_route_start_validation(void)
 }
 
 /**
- * @brief 从配置的起始项运行到截止项，检查顺序、高台离台及末项定时循迹停车。
+ * @brief 从配置的起始项运行到截止项，检查顺序、高台离台及末项左转后持续循迹。
  * @param 无。
  * @return 无；任何越级、漏段、超时或最终停车错误都由 CHECK 报告。
  * @note 使用当前生产路线表的 PWM 与时间，每帧仅模拟路口图案及跟随目标的理想航向。
- *       同一场景分别按起始项 1 至 11 编译，不改生产路线参数或运动状态机。
+ *       同一场景可按起始项 1 至 12 编译，不改生产路线参数或运动状态机。
  */
 static void test_route_from_selected_start(void)
 {
     const unsigned start = ROUTE_START_STEP - 1u;
     unsigned i, previous = start, seen = 0u, expected = 0u;
     unsigned reverse_frames = 0u, platform_reverse_frames = 0u, final_forward_frames = 0u;
-    unsigned s1_forward_frames = 0u, final_track_frames = 0u, expected_turns = 0u;
+    unsigned s1_forward_frames = 0u, expected_turns = 0u;
     unsigned budget = 20000u;
     begin_case("selected start continues through the remaining production route", 0u);
     Car_Stop();
@@ -1063,7 +1063,8 @@ static void test_route_from_selected_start(void)
     CHECK(g_route.project_id == s_original_plan[start].project_id);
     for (i = start; i < TEST_ACTIVE_STEP_COUNT; ++i) {
         expected |= 1u << i;
-        if (g_route_plan[i].action != ROUTE_ACTION_STRAIGHT) ++expected_turns;
+        if (g_route_plan[i].action != ROUTE_ACTION_STRAIGHT &&
+            g_route_plan[i].action != ROUTE_ACTION_TRACK_TIMED) ++expected_turns;
     }
     while (g_route.state != ROUTE_FINISHED && g_route.state != ROUTE_CRUISE && budget != 0u) {
         const RouteStep *step = &g_route_plan[g_route.step_index];
@@ -1100,11 +1101,6 @@ static void test_route_from_selected_start(void)
                 ++s1_forward_frames;
             }
         }
-        if (g_route.step_index == 10u && g_mode_fsm.status == CAR_RUNNING &&
-            g_mode_fsm.mode == MODE_TRACK &&
-            (g_route.state == ROUTE_TURN || g_route.state == ROUTE_ENTRY)) {
-            ++final_track_frames;
-        }
     }
     CHECK(budget != 0u && seen == expected);
     CHECK(g_route.step_index == TEST_ACTIVE_STEP_COUNT - 1u);
@@ -1119,16 +1115,10 @@ static void test_route_from_selected_start(void)
         CHECK(final_forward_frames == 0u && platform_reverse_frames == 0u && s1_forward_frames == 0u);
     }
     CHECK(g_mode_fsm.turn_count == expected_turns);
-    if (TEST_ACTIVE_STEP_COUNT == ROUTE_STEP_COUNT) {
-        CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled);
-        CHECK(final_track_frames == 2000u);
-        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
-    } else {
-        CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
-        CHECK(g_mode_fsm.mode == MODE_TRACK && final_track_frames == 0u);
-        Car_Stop();
-        tick();
-    }
+    CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
+    CHECK(g_mode_fsm.mode == MODE_TRACK);
+    Car_Stop();
+    tick();
     Route_Enable(1u);
     ticks(2u);
     check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
@@ -2822,7 +2812,8 @@ static void post_platform_reach(unsigned index, RouteState state)
         const RouteStep *step = &g_route_plan[g_route.step_index];
         --budget;
         set_sensors(g_route.state == ROUTE_FOLLOW ?
-                    (step->trigger_junction == JUNCTION_CROSS ? 0xFFu : 0xF0u) : 0x18u);
+                    (step->trigger_junction == JUNCTION_CROSS ? 0xFFu :
+                     step->trigger_junction == JUNCTION_LEFT ? 0x0Fu : 0xF0u) : 0x18u);
         post_platform_tick();
         CHECK(g_mode_fsm.status != CAR_FAULT);
         CHECK(g_route.state != ROUTE_CRUISE && g_route.state != ROUTE_FINISHED);
@@ -2958,60 +2949,79 @@ static void test_post_platform_cross(void)
 }
 
 /**
- * @brief 验证第 11 项转后实际运行 2000 帧循迹后停车，宽线不触发额外路线动作。
+ * @brief 验证第 12 项左转完成后直接进入第 13 项，循迹 20 秒到时继续循迹。
  * @param 无。
- * @return 无；同时检查保留循迹 PID 历史、一次停车、禁止自动续跑及显式重启。
+ * @return 无；检查左口防抖、前移时间、转向、窄线恢复及取消原 20 秒停车。
  */
-static void test_post_platform_timed_finish(void)
+static void test_post_platform_left_turn(void)
 {
-    unsigned i, track_before, resets, beep;
+    unsigned i, resets, beep;
     uint32_t turns, command;
     float yaw;
-    if (TEST_ACTIVE_STEP_COUNT < 11u) return;
-    post_platform_start("step11 right turn starts exactly 2000 tracking frames then stops once");
-    post_platform_reach(10u, ROUTE_FOLLOW);
-    CHECK(g_route_plan[10].entry_ms == 20000u && g_route_plan[10].pass_ms == 0u);
-    CHECK(g_route_plan[10].base_pwm == 500u && g_route_plan[10].final_seq == 2u);
+    if (TEST_ACTIVE_STEP_COUNT < 12u) return;
+    post_platform_start("step11 right turn recovers before step12 left turn and continuous tracking");
+    CHECK(g_route_plan[10].action == ROUTE_ACTION_RIGHT_TRACK);
+    CHECK(g_route_plan[10].entry_ms == 0u && g_route_plan[10].final_seq == 0u);
+    post_platform_reach(10u, ROUTE_RECOVER);
+    set_sensors(0x0Fu);
+    ticks(3u);
+    CHECK(g_route.state == ROUTE_RECOVER && g_route.step_index == 10u);
+    set_sensors(0x18u);
+    tick();
+    CHECK(g_route.state == ROUTE_RECOVER);
+    tick();
+    CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 11u);
+    CHECK(g_route_plan[11].action == ROUTE_ACTION_LEFT_TRACK);
+    /* 第 12 项只接受新的左侧路口，右侧路口不能触发左转。 */
+    set_sensors(0xF0u);
+    ticks(2u);
+    CHECK(g_route.state == ROUTE_FOLLOW);
     set_sensors(0x18u);
     ticks(2u);
     beep = s_beep_starts;
     yaw = g_route.ideal_yaw;
-    set_sensors(0xF0u);
+    set_sensors(0x0Fu);
     tick();
     CHECK(g_route.state == ROUTE_FOLLOW);
     tick();
     CHECK(g_route.state == ROUTE_ALIGN && s_beep_starts == beep + 1u);
-    post_platform_reach(10u, ROUTE_TURN);
-    CHECK(CLOSE(g_mode_fsm.target_yaw, yaw - 90.0f));
+    post_platform_reach(11u, ROUTE_APPROACH);
+    CHECK(g_mode_fsm.base_pwm == 500u);
+    for (i = 0u; i < 67u; ++i) post_platform_tick();
+    CHECK(g_route.state == ROUTE_APPROACH);
+    post_platform_tick();
+    CHECK(g_route.state == ROUTE_TURN && CLOSE(g_mode_fsm.target_yaw, yaw + 90.0f));
+    CHECK(motorLeft.speed < 0 && motorRight.speed > 0);
     turns = g_mode_fsm.turn_count;
     while (g_mode_fsm.turn_count == turns) post_platform_tick();
     CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.state_frames == 1u);
-    track_before = s_track_pid_calls; /* 首个循迹输出已在转弯完成帧执行，后续仅再允许 1999 帧。 */
     command = g_mode_fsm.command_id;
     resets = s_resets;
     set_sensors(0xFFu);
-    for (i = 1u; i < 2000u; ++i) {
+    /* 第 13 项无需窄线或新路口，首个循迹帧已执行；再执行 1999 帧应仍处于定时阶段。 */
+    if (TEST_ACTIVE_STEP_COUNT >= 13u) {
+        CHECK(g_route_plan[12].action == ROUTE_ACTION_TRACK_TIMED);
+        CHECK(g_route_plan[12].entry_ms == 20000u);
+        for (i = 1u; i < 2000u; ++i) {
+            post_platform_tick();
+            CHECK(g_route.step_index == 12u && g_route.project_id == 13u);
+            CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.mode == MODE_TRACK);
+            CHECK(g_mode_fsm.command_id == command && g_mode_fsm.status == CAR_RUNNING);
+        }
+        CHECK(g_route.state_frames == 1999u && g_mode_fsm.state_frames == 2000u);
+    }
+    /* 到时只改变路线阶段，继续循迹，持续宽线也不能重复触发转弯或提交新动作。 */
+    for (i = 0u; i < 2100u; ++i) {
         post_platform_tick();
-        CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.status == CAR_RUNNING);
+        CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
         CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.command_id == command);
         CHECK(g_mode_fsm.turn_count == turns + 1u && s_beep_starts == beep + 1u);
     }
-    CHECK(g_mode_fsm.state_frames == 2000u && g_route.state_frames == 1999u);
-    CHECK(s_track_pid_calls == track_before + 1999u && s_resets == resets);
-    post_platform_tick();
-    CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled && !s_beep_on);
-    CHECK(g_route.step_index == 10u && g_mode_fsm.command_id == command + 1u);
-    CHECK(s_track_pid_calls == track_before + 1999u);
+    CHECK(s_resets == resets && !s_beep_on);
+    Car_Stop();
+    tick();
     check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
-    CHECK(DebugLog_Display() == OLED_OK && log_has("ROUTE_DONE"));
-    ticks(5u);
-    CHECK(g_route.state == ROUTE_FINISHED && g_mode_fsm.command_id == command + 1u);
-    Route_Enable(1u);
-    ticks(2u);
-    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
-    CHECK(Route_Start());
-    CHECK(g_route.state == ROUTE_READY && g_route.step_index == ROUTE_START_STEP - 1u);
-    puts("PASS step11: first track frame included, exact 2000 PID outputs, no IMU pass, one stop and explicit restart");
+    puts("PASS step12 left turn, direct step13 handoff, exact 20s tracking with first frame, continued tracking and STOP");
 }
 
 /**
@@ -3027,12 +3037,13 @@ static void test_post_platform_interrupts(void)
     } stages[] = {
         {9u, ROUTE_FOLLOW}, {9u, ROUTE_ALIGN}, {9u, ROUTE_APPROACH},
         {9u, ROUTE_TURN}, {9u, ROUTE_RECOVER}, {10u, ROUTE_FOLLOW},
-        {10u, ROUTE_ALIGN}, {10u, ROUTE_APPROACH}, {10u, ROUTE_TURN}, {10u, ROUTE_ENTRY}
+        {10u, ROUTE_ALIGN}, {10u, ROUTE_APPROACH}, {10u, ROUTE_TURN}, {10u, ROUTE_RECOVER},
+        {11u, ROUTE_FOLLOW}, {11u, ROUTE_ALIGN}, {11u, ROUTE_APPROACH}, {11u, ROUTE_TURN}
     };
     unsigned i, action;
     for (i = 0u; i < sizeof(stages) / sizeof(stages[0]); ++i) {
         if (stages[i].index >= TEST_ACTIVE_STEP_COUNT ||
-            (TEST_ACTIVE_STEP_COUNT == 10u && stages[i].state == ROUTE_RECOVER)) continue;
+            (stages[i].index + 1u == TEST_ACTIVE_STEP_COUNT && stages[i].state == ROUTE_RECOVER)) continue;
         for (action = 0u; action < 5u; ++action) {
             uint32_t command;
             post_platform_start("post-platform STOP, takeover, disable, IMU fault and route timeout");
@@ -3082,7 +3093,7 @@ int main(void)
     test_route_start_validation();
     test_platform_table_handoff();
     test_post_platform_cross();
-    test_post_platform_timed_finish();
+    test_post_platform_left_turn();
     test_post_platform_interrupts();
     puts("All post-platform route scenarios passed.");
     return EXIT_SUCCESS;
