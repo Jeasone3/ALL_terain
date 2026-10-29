@@ -247,6 +247,17 @@ void Attitude_Reset(void)
 }
 
 /**
+ * @brief 模拟重建到指定 yaw 的姿态基准，供当前 Route 的校准请求链接与运行。
+ * @param deg 校准后立即发布的航向，单位为度。
+ * @return 无；后续采样仍由场景设置的 s_sample_yaw 提供。
+ */
+void Attitude_SetYawOffset(float deg)
+{
+    Attitude_Reset();
+    g_euler.yaw = deg;
+}
+
+/**
  * @brief 宿主测试不模拟 yaw 突变剔除，提供空实现满足链接。
  * @param enable 真实固件用于快转时关闭尖峰剔除；测试不使用该行为。
  * @return 无。
@@ -1500,10 +1511,10 @@ static void test_route_extension(void)
 static void test_route_later_steps(void)
 {
     static const RouteStep expected[] = {
-        {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},
-        {ROUTE_ACTION_RIGHT, 6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS},
-        {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS},
-        {ROUTE_ACTION_LEFT, 8u, 600u, 1000u, 6000u, 10000u, JUNCTION_CROSS}
+        {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT, 0u, 0u, 0u},
+        {ROUTE_ACTION_RIGHT, 6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS, 0u, 0u, 0u},
+        {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS, 0u, 0u, 0u},
+        {ROUTE_ACTION_LEFT, 8u, 600u, 1000u, 6000u, 10000u, JUNCTION_CROSS, 0u, 0u, 0u}
     };
     unsigned index;
     if (TEST_ACTIVE_STEP_COUNT < 5u) return;
@@ -2745,6 +2756,102 @@ static void test_route_reverse_interrupts(void)
     puts("PASS reverse-phase cancellation, fault stop, route timeout and parameter validation");
 }
 
+#ifdef TEST_ROUTE_FOLLOW_LEFT_ONLY
+/**
+ * @brief 验证第 12 项使用真实循迹 PID 左转，并检查恢复防抖、后续衔接和中止边界。
+ * @param 无。
+ * @return 无；任何模式、轮速、航向或完成条件错误立即结束测试。
+ * @note 从第 12 项启动，仅替换传感器与姿态反馈，不依赖旧路线调参断言。
+ */
+static void test_route_follow_left(void)
+{
+    unsigned scenario;
+    for (scenario = 0u; scenario < 4u; ++scenario) {
+        uint32_t command;
+        unsigned track_before;
+        begin_case("step12 follows left curve with grayscale PID", 0u);
+        Car_Stop();
+        tick();
+        CHECK(ROUTE_START_STEP == 12u);
+        CHECK(g_route_plan[11].action == ROUTE_ACTION_FOLLOW_LEFT);
+        CHECK(g_route_plan[13].action == ROUTE_ACTION_LEFT_TRACK);
+        CHECK(Route_Start());
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 11u);
+        command = g_mode_fsm.command_id;
+        track_before = s_track_pid_calls;
+
+        set_sensors(0x0Fu);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW);
+        tick();
+        CHECK(g_route.state == ROUTE_RECOVER && g_mode_fsm.mode == MODE_TRACK);
+        CHECK(CLOSE(g_route.ideal_yaw, 90.0f));
+        CHECK(motorLeft.speed < motorRight.speed);
+        ticks(5u);
+        CHECK(g_route.state == ROUTE_RECOVER && g_route.step_index == 11u);
+        CHECK(g_mode_fsm.command_id == command && g_mode_fsm.turn_count == 0u);
+        CHECK(g_mode_fsm.align_count == 0u && s_resets == 0u && s_beep_starts == 1u);
+        CHECK(s_track_pid_calls == track_before + 7u);
+        CHECK(CLOSE(g_route.ideal_yaw, 90.0f));
+
+        if (scenario == 1u) {
+            Car_Stop();
+            tick();
+            check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        } else if (scenario == 2u) {
+            g_route.state_frames = g_route_plan[11].timeout_ms / 10u - 1u;
+            tick();
+            check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
+        } else if (scenario == 3u) {
+            s_sample_ok = 0u;
+            tick();
+            check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        } else {
+            /* 丢线、左侧窄线、全黑和中断的居中线都不能被当作两帧有效出口。 */
+            set_sensors(0u);
+            ticks(2u);
+            set_sensors(0x04u);
+            ticks(2u);
+            set_sensors(0xFFu);
+            ticks(2u);
+            set_sensors(0x18u);
+            tick();
+            CHECK(g_route.state == ROUTE_RECOVER);
+            set_sensors(0u);
+            tick();
+            set_sensors(0x18u);
+            tick();
+            CHECK(g_route.state == ROUTE_RECOVER);
+            tick();
+            CHECK(CLOSE(g_route.ideal_yaw, 90.0f));
+            CHECK(g_mode_fsm.command_id == command && g_mode_fsm.mode == MODE_TRACK);
+            CHECK(g_mode_fsm.turn_count == 0u && g_mode_fsm.align_count == 0u);
+            if (TEST_ACTIVE_STEP_COUNT == 12u) {
+                CHECK(g_route.state == ROUTE_CRUISE && g_route.step_index == 11u);
+                set_sensors(0x0Fu);
+                ticks(4u);
+                CHECK(g_route.state == ROUTE_CRUISE && s_beep_starts == 1u);
+            } else {
+                CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 12u);
+                set_sensors(0x0Fu);
+                ticks(2u);
+                CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.mode == MODE_IMU);
+                CHECK(CLOSE(g_mode_fsm.target_yaw, 90.0f));
+            }
+            continue;
+        }
+        set_sensors(0x18u);
+        ticks(3u);
+        /* 路线超时保留原阶段用于故障现场；外部停车与 IMU 故障进入 ABORTED。 */
+        CHECK(g_route.state == (scenario == 2u ? ROUTE_RECOVER : ROUTE_ABORTED));
+        CHECK(!g_route.enabled);
+        CHECK(g_route.step_index == 11u && motorLeft.speed == 0 && motorRight.speed == 0);
+    }
+    puts("PASS step12 grayscale left turn, narrow-line confirmation, heading, continuation/cutoff, STOP and faults");
+}
+#endif
+
 /**
  * @brief 运行运动与路线的行为场景，任何断言失败都会返回非零退出码。
  * @param 无。
@@ -2754,6 +2861,10 @@ static void test_route_reverse_interrupts(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_ROUTE_FOLLOW_LEFT_ONLY
+    test_route_follow_left();
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_START_ONLY
     test_route_start_validation();
     test_route_from_selected_start();

@@ -26,7 +26,7 @@ typedef enum {
     ROUTE_UNCALIBRATED,            /* 参数未标定，保持停车 */
     ROUTE_ABORTED,                 /* 被接管、关闭或故障打断，不能自动续跑 */
     ROUTE_CRUISE,                  /* 短段调试截止后持续循迹 */
-    ROUTE_FINAL_TURN,              /* 完整路线最后一个项目结束后，原地 IMU 左转 90° */
+    ROUTE_FINAL_TURN,              /* 窄桥通行后进入高台流程，原地 IMU 左转 90° */
     ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
     ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
@@ -43,7 +43,8 @@ typedef enum {
     ROUTE_ACTION_RIGHT,            /* 接受指定路口后前移、右转，再入口对正 */
     ROUTE_ACTION_STRAIGHT,         /* 接受指定路口后继续循迹，直接入口对正 */
     ROUTE_ACTION_RIGHT_TRACK,      /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
-    ROUTE_ACTION_LEFT_TRACK        /* 前移、左转后恢复循迹，不进入入口与 IMU 通行 */
+    ROUTE_ACTION_LEFT_TRACK,       /* 前移、IMU 左转后恢复循迹，不进入入口与 IMU 通行 */
+    ROUTE_ACTION_FOLLOW_LEFT       /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
 } RouteAction;
 
 /**
@@ -51,16 +52,19 @@ typedef enum {
  * @note project_id 表示本次路线的段号，不推断图片中的项目编号。
  *       trigger_junction 必须与两帧确认的路口一致；左右单侧要求新事件，十字允许从单侧升级。
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
- *       RIGHT_TRACK 只前移、右转后循迹，base_pwm、entry_ms、pass_ms 均为 0。
- *       第 8 项左转后由状态机单独判断，先以 300 PWM 倒退 2 秒，再按 entry_ms 循迹。
+ *       LEFT_TRACK / RIGHT_TRACK 均先对齐、前移、转 90°，再恢复循迹；项目参数均为 0。
+ *       FOLLOW_LEFT 全程由循迹 PID 沿左弯行驶，项目参数也为 0，不执行 IMU 对齐与转弯。
+ *       LEFT / RIGHT 转后按 entry_ms 循迹；STRAIGHT 接受路口后直接按 entry_ms 循迹。
+ *       隧道的 pass_ms 为 0，entry_ms 到时直接恢复循迹；base_pwm 保留非零供参数检查。
+ *       第 8 项转后倒退暂时停用，直接入口循迹；具体时间以路线表为准。
  *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。
- *       完整路线末尾追加原地左转 90°、IMU 直行 3 秒，再停车。
+ *       final_seq = 1 在通行后接高台及 S1 专用流程；final_seq = 2 接 S13 终点停车。
  *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
 typedef struct {
     RouteAction action;            /* 路口继续循迹，或先前移转弯 */
     uint8_t project_id;             /* 本次路线段号，从 1 开始 */
-    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM；RIGHT_TRACK/LEFT_TRACK 不使用 */
+    uint16_t base_pwm;              /* 本段 IMU 通行 PWM，不控制转弯前移；隧道仅用于参数检查 */
     uint32_t entry_ms;              /* 入口灰度循迹持续时间；RIGHT_TRACK/LEFT_TRACK 不使用 */
     uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK/LEFT_TRACK 不使用，纯循迹项目为 0 */
     uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
@@ -72,16 +76,16 @@ typedef struct {
 
 #define ROUTE_STEP_COUNT 20u       /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
-/* 本次从路线表第几项开始，使用 1 至 9 的表项序号，不按 project_id 查找。
- * 例如设为 6u：从第 6 项对应路口前循迹出发，顺序执行第 6、7、8、9 项及原有收尾。
- * 默认 1u 保持从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
+/* 本次从路线表第几项开始，使用 1 至 ROUTE_STEP_COUNT 的表项序号，不按 project_id 查找。
+ * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
+ * 设为 1u 从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 9u
+#define ROUTE_START_STEP 10u
 #endif
 
-/* 集中设置本次调试截止段数：20 或 0 均执行到路线末尾（高台+S1+S13 收尾）。
- * 1 至 19 只运行起始项至截止项，截止后持续循迹，不执行完整路线的收尾动作。
- * 设为 9 可只跑大台阶+窄桥+高台+S1 段（S1 末尾因 step10 超出 active 转 CRUISE）。
+/* 调试截止表项：20 或 0 均包含石块及 S13 终点，1 至 19 不运行截止项之后的表项。
+ * 第 9 项的高台及 S1 属于该项自身的后续流程，截止为 9 时仍会执行，随后持续循迹。
+ * 当前设为 19：执行到 S10b 右转后持续循迹，不运行第 20 项石块及 S13。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
 #define ROUTE_DEBUG_STEP_LIMIT 19u
@@ -100,7 +104,7 @@ typedef struct {
 #endif
 
 /* 只在停车且 Route 未运行时修改；实际部署编辑 Route.c 后重新编译。
- * 入口 1000/2000 ms、通行 4000/5000/6000 ms 来自用户要求；PWM、前移与图案需实车标定。 */
+ * entry_ms、pass_ms 和 base_pwm 均在表内维护；路口转弯前移时间与 PWM 由 Route.c 统一设置。 */
 extern RouteStep g_route_plan[ROUTE_STEP_COUNT];
 
 typedef struct {

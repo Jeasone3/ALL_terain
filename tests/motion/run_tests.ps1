@@ -3,7 +3,8 @@ param(
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
-    [switch]$RouteStartOnly
+    [switch]$RouteStartOnly,
+    [switch]$RouteFollowLeftOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,6 +65,15 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($RouteFollowLeftOnly) {
+    # 从第 12 项验证循迹左弯，覆盖正常衔接第 13 项和以第 12 项为调试截止两种配置。
+    Invoke-MotionTest -Name 'test_route_follow_left' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_FOLLOW_LEFT_ONLY', '-DROUTE_START_STEP=12u'))
+    Invoke-MotionTest -Name 'test_route_follow_left_limit12' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_FOLLOW_LEFT_ONLY', '-DROUTE_START_STEP=12u', '-DROUTE_DEBUG_STEP_LIMIT=12u'))
+    return
+}
 
 if ($RouteStartOnly) {
     # 逐项验证从第 1 至 9 项启动、接入后续项目与最终收尾，另外覆盖旧截止配置。
