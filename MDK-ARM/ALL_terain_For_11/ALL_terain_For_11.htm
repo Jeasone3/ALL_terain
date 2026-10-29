@@ -3,7 +3,7 @@
 <title>Static Call Graph - [ALL_terain_For_11\ALL_terain_For_11.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image ALL_terain_For_11\ALL_terain_For_11.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 30 01:31:25 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 30 03:50:57 2026
 <BR><P>
 <H3>Maximum Stack Usage =        496 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -739,7 +739,7 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[73]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;submit_request
 </UL>
 <BR>[Called By]<UL><LI><a href="#[114]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[117]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
@@ -1708,7 +1708,7 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[100]"></a>Route_Tick</STRONG> (Thumb, 1502 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
+<P><STRONG><a name="[100]"></a>Route_Tick</STRONG> (Thumb, 1520 bytes, Stack size 24 bytes, route.o(i.Route_Tick))
 <BR><BR>[Stack]<UL><LI>Max Depth = 88<LI>Call Chain = Route_Tick &rArr; update_conditions &rArr; DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[ea]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_Beep_On
@@ -1717,13 +1717,13 @@ Global Symbols
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_SetYawOffset
 <LI><a href="#[10f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_project_beep
 <LI><a href="#[113]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_conditions
-<LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;route_action_yaw_delta
+<LI><a href="#[117]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;route_action_yaw_delta
 <LI><a href="#[110]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;reset_junction
 <LI><a href="#[119]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;finish_step
 <LI><a href="#[115]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;enter_state
 <LI><a href="#[11a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;confirm_exit
 <LI><a href="#[114]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[117]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[118]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[7b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnRight90
 <LI><a href="#[7a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Car_TurnLeft90
@@ -1973,7 +1973,7 @@ Global Symbols
 </UL>
 <BR>[Address Reference Count : 1]<UL><LI> printfa.o(i.__0printf)
 </UL>
-<P><STRONG><a name="[134]"></a>line_following_init</STRONG> (Thumb, 100 bytes, Stack size 24 bytes, track_task.o(i.line_following_init))
+<P><STRONG><a name="[134]"></a>line_following_init</STRONG> (Thumb, 98 bytes, Stack size 24 bytes, track_task.o(i.line_following_init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 44<LI>Call Chain = line_following_init &rArr; PID_init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[e2]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_set_integral_separation
@@ -2280,7 +2280,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
-<P><STRONG><a name="[117]"></a>begin_recovery</STRONG> (Thumb, 24 bytes, Stack size 8 bytes, route.o(i.begin_recovery))
+<P><STRONG><a name="[116]"></a>begin_recovery</STRONG> (Thumb, 24 bytes, Stack size 8 bytes, route.o(i.begin_recovery))
 <BR><BR>[Stack]<UL><LI>Max Depth = 32<LI>Call Chain = begin_recovery &rArr; Car_Track &rArr; submit_request
 </UL>
 <BR>[Calls]<UL><LI><a href="#[110]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;reset_junction
@@ -2318,7 +2318,7 @@ Local Symbols
 
 <P><STRONG><a name="[115]"></a>enter_state</STRONG> (Thumb, 16 bytes, Stack size 0 bytes, route.o(i.enter_state))
 <BR><BR>[Called By]<UL><LI><a href="#[114]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[117]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[118]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_project
 <LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
@@ -2331,7 +2331,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 
-<P><STRONG><a name="[112]"></a>invalid_step</STRONG> (Thumb, 192 bytes, Stack size 0 bytes, route.o(i.invalid_step))
+<P><STRONG><a name="[112]"></a>invalid_step</STRONG> (Thumb, 204 bytes, Stack size 0 bytes, route.o(i.invalid_step))
 <BR><BR>[Called By]<UL><LI><a href="#[111]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Start
 </UL>
 
@@ -2344,12 +2344,12 @@ Local Symbols
 <P><STRONG><a name="[110]"></a>reset_junction</STRONG> (Thumb, 22 bytes, Stack size 0 bytes, route.o(i.reset_junction))
 <BR><BR>[Called By]<UL><LI><a href="#[113]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_conditions
 <LI><a href="#[114]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_step
-<LI><a href="#[117]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
+<LI><a href="#[116]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;begin_recovery
 <LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 <LI><a href="#[fc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Init
 </UL>
 
-<P><STRONG><a name="[116]"></a>route_action_yaw_delta</STRONG> (Thumb, 40 bytes, Stack size 0 bytes, route.o(i.route_action_yaw_delta))
+<P><STRONG><a name="[117]"></a>route_action_yaw_delta</STRONG> (Thumb, 40 bytes, Stack size 0 bytes, route.o(i.route_action_yaw_delta))
 <BR><BR>[Called By]<UL><LI><a href="#[100]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 </UL>
 

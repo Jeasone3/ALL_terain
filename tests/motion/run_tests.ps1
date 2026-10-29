@@ -67,14 +67,21 @@ $motionSources = @(
 )
 
 if ($RouteAfterPlatformOnly) {
-    # 按当前调试起点做一次关键专项，验证第 11 项衔接第 12 项左转及持续循迹。
+    # 按当前调试起点验证第 10 项项目通行及第 11～16 项路口衔接。
     Invoke-MotionTest -Name 'test_route_after_platform' -Arguments ($motionSources + '-DTEST_ROUTE_AFTER_PLATFORM_ONLY')
+    # 从第 9 项验证高台与新表的衔接，并覆盖后半段各表项的调试截止边界。
+    Invoke-MotionTest -Name 'test_route_after_platform_start9' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u'))
+    foreach ($limit in 9..15) {
+        Invoke-MotionTest -Name "test_route_after_platform_limit$limit" -Arguments ($motionSources + @(
+            '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u', "-DROUTE_DEBUG_STEP_LIMIT=$($limit)u"))
+    }
     return
 }
 
 if ($RouteStartOnly) {
-    # 按需逐项验证起始配置、完整高台离台时序及末项左转后持续循迹，另外覆盖旧截止配置。
-    foreach ($startStep in 1..12) {
+    # 按需逐项验证起始配置、完整高台离台时序及末项右转后持续循迹，另外覆盖旧截止配置。
+    foreach ($startStep in 1..16) {
         Invoke-MotionTest -Name "test_route_start_$startStep" -Arguments ($motionSources + @(
             '-DTEST_ROUTE_START_ONLY', "-DROUTE_START_STEP=$($startStep)u"))
     }

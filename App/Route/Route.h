@@ -41,7 +41,8 @@ typedef enum {
     ROUTE_ACTION_STRAIGHT,         /* 接受指定路口后继续循迹，直接入口对正 */
     ROUTE_ACTION_RIGHT_TRACK,      /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
     ROUTE_ACTION_LEFT_TRACK,       /* 前移、IMU 左转后恢复循迹，不进入入口与 IMU 通行 */
-    ROUTE_ACTION_FOLLOW_LEFT       /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
+    ROUTE_ACTION_FOLLOW_LEFT,      /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
+    ROUTE_ACTION_STRAIGHT_TRACK    /* 十字处继续循迹直行，确认居中窄线后接下一项，不对齐或转弯 */
 } RouteAction;
 
 /**
@@ -51,6 +52,7 @@ typedef enum {
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
  *       LEFT_TRACK / RIGHT_TRACK 均先对齐、前移、转 90°，再恢复循迹；项目参数均为 0。
  *       FOLLOW_LEFT 全程由循迹 PID 沿左弯行驶，项目参数也为 0，不执行 IMU 对齐与转弯。
+ *       STRAIGHT_TRACK 保持循迹直行，确认离开路口后接下一项，项目参数均为 0。
  *       LEFT / RIGHT 转后按 entry_ms 循迹；STRAIGHT 接受路口后直接按 entry_ms 循迹。
  *       pass_ms 为 0 时只定时循迹；base_pwm 保留非零供参数检查，不控制循迹速度。
  *       第 8 项转后倒退暂时停用，直接入口循迹；具体时间以路线表为准。
@@ -71,7 +73,7 @@ typedef struct {
     uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时接高台；2=ENTRY 定时循迹到时停车 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 13u       /* 当前路线表共 13 项；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 16u       /* 当前路线表共 16 项；后续追加表项时同步增加 */
 
 /* 本次从路线表第几项开始，使用 1 至 ROUTE_STEP_COUNT 的表项序号，不按 project_id 查找。
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
@@ -80,12 +82,13 @@ typedef struct {
 #define ROUTE_START_STEP 10u
 #endif
 
-/* 调试截止表项：13 或 0 均执行到第 13 项左转后持续循迹；第 13 项阶段超时为 15 秒。
+/* 调试截止表项：16 或 0 均执行到第 16 项十字右转后持续循迹。
  * 第 9 项的高台及 S1 属于该项自身的后续流程，截止为 9 时仍会执行，随后持续循迹。
- * 当前设为 13：执行全部已编写路线；截止为 12 时左转后持续循迹，不运行第 13 项。
+ * 当前设为 16：执行全部已编写路线；截止为 10 或 15 时项目通行结束后持续循迹。
+ * 截止为 11 或 13 时左转后持续循迹；截止为 12 或 14 时直行通过路口并确认窄线后持续循迹。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 13u
+#define ROUTE_DEBUG_STEP_LIMIT 16u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT

@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按路线表依次通过路口和项目，第 13 项循迹等左口并左转，完成后持续循迹。
+ * @brief 按路线表依次通过路口和项目，第 15 项左转通行项目，第 16 项十字校准右转后持续循迹。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -33,6 +33,7 @@
  * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 680 ms，再转 90°。
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
+ *           STRAIGHT_TRACK 全程循迹直行，通过路口并确认居中窄线后接下一项。
  * 项目时间：entry_ms 为转后或直行路口后的循迹时间；pass_ms 为随后保持 IMU 航向的通行时间。
  *           pass_ms 为 0 时只执行 entry_ms 循迹；base_pwm 保留非零供参数检查，不执行 IMU 通行。
  * 校准选项：cal_before = 1 表示转前对齐并保持、重建 yaw 基准；cal_after = 1 表示转后再做一次。
@@ -80,22 +81,35 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .final_seq = 1u
     },
 
-    /* 高台及 S1 之后回到普通路线表：十字右转、右侧路口右转、左侧路口左转后持续循迹。 */
-    {   /* 10 十字右转后循迹：与第 4 项相同，确认离开原路口后再等下一项。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
+    /* 高台及 S1 之后回到普通路线表：十字直行通行项目，恢复循迹后等左口左转。 */
+    {   /* 10 十字直行：循迹 2 秒，对齐保持并校准 yaw 基准后，以 500 PWM 通行 4.5 秒。 */
+        .action = ROUTE_ACTION_STRAIGHT, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
+        .base_pwm = 500u, .entry_ms = 2000u, .pass_ms = 5000u, .timeout_ms = 10000u
+    },
+    {   /* 11 左侧路口：沿用原第 12 项的对齐、前移与左转流程，转完恢复循迹。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 10000u
     },
-    {   /* 11 右侧路口：与第 5 项相同，右转后恢复循迹，确认窄线后再等左侧路口。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
-        .timeout_ms = 10000u
-    },
-    {   /* 12 左侧路口：复用第 5 项的对齐、前移与转弯流程，左转后恢复窄线再接第 13 项。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
-    },
-    {   /* 13 左侧路口：循迹等左口，按第 12 项相同流程左转 90°；阶段超时为 15 秒。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 13u, .trigger_junction = JUNCTION_LEFT,
+    {   /* 12 十字直行：保持灰度循迹，不进入项目；确认离开路口后再检测下一路口。 */
+        .action = ROUTE_ACTION_STRAIGHT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_CROSS,
         .timeout_ms = 15000u
+    },
+    {   /* 13 左侧路口：复用第 11 项的对齐、前移与闭环左转，转完恢复循迹。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 13u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 10000u
+    },
+    {   /* 14 十字直行：与第 12 项一致，确认居中窄线后再等待下一个十字。 */
+        .action = ROUTE_ACTION_STRAIGHT_TRACK, .project_id = 14u, .trigger_junction = JUNCTION_CROSS,
+        .timeout_ms = 10000u
+    },
+    {   /* 15 十字左转：转前校准、前移并左转；循迹 400 ms 后再对齐校准，以 500 PWM 通行 6 秒。 */
+        .action = ROUTE_ACTION_LEFT, .project_id = 15u, .trigger_junction = JUNCTION_CROSS,
+        .base_pwm = 500u, .entry_ms = 400u, .pass_ms = 6000u,
+        .timeout_ms = 10000u, .cal_before = 1u
+    },
+    {   /* 16 十字右转：停车对齐保持并校准 yaw 基准，再前移、闭环右转 90°，转完持续循迹。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_CROSS,
+        .timeout_ms = 10000u, .cal_before = 1u
     }
 };
 
@@ -322,7 +336,8 @@ static uint16_t invalid_step(void)
         const RouteStep *step = &g_route_plan[i];
         if ((step->action != ROUTE_ACTION_LEFT && step->action != ROUTE_ACTION_RIGHT &&
              step->action != ROUTE_ACTION_STRAIGHT && step->action != ROUTE_ACTION_RIGHT_TRACK &&
-             step->action != ROUTE_ACTION_LEFT_TRACK && step->action != ROUTE_ACTION_FOLLOW_LEFT) ||
+             step->action != ROUTE_ACTION_LEFT_TRACK && step->action != ROUTE_ACTION_FOLLOW_LEFT &&
+             step->action != ROUTE_ACTION_STRAIGHT_TRACK) ||
             (step->trigger_junction != JUNCTION_LEFT && step->trigger_junction != JUNCTION_RIGHT &&
              step->trigger_junction != JUNCTION_CROSS) ||
             step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
@@ -333,7 +348,7 @@ static uint16_t invalid_step(void)
             return i;
         }
         if (step->action == ROUTE_ACTION_RIGHT_TRACK || step->action == ROUTE_ACTION_LEFT_TRACK ||
-            step->action == ROUTE_ACTION_FOLLOW_LEFT) {
+            step->action == ROUTE_ACTION_FOLLOW_LEFT || step->action == ROUTE_ACTION_STRAIGHT_TRACK) {
             if (step->base_pwm != 0u ||
                 step->entry_ms != 0u || step->pass_ms != 0u) return i;
         } else if (step->entry_ms == 0u || step->base_pwm == 0u || step->base_pwm > 1000u ||
@@ -526,7 +541,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
- *       第 12 项左转恢复窄线后接第 13 项，循迹等左口；第 13 项左转完成后持续循迹。
+ *       第 15 项左转后循迹并校准进入项目，通行结束恢复窄线；第 16 项十字校准右转后持续循迹。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -589,6 +604,10 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             Int_Beep_On();
             if (step->action == ROUTE_ACTION_STRAIGHT) {
                 enter_state(ROUTE_ENTRY); /* 当前已经循迹，保留 PID 历史与电机控制。 */
+            } else if (step->action == ROUTE_ACTION_STRAIGHT_TRACK) {
+                /* 保持当前循迹控制直行，不提交 IMU 动作，也不改变理想朝向。
+                 * 先屏蔽当前十字，连续两帧居中窄线后再启用下一项，避免相邻十字项重复消费。 */
+                begin_recovery();
             } else if (step->action == ROUTE_ACTION_FOLLOW_LEFT) {
                 /* 左弯由当前灰度偏差驱动循迹 PID 完成，不提交对齐、前移或 IMU 转弯请求。
                  * RECOVER 屏蔽本路口，连续两帧居中窄线后才允许下一项接收路口。
