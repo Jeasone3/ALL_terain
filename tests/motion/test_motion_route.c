@@ -2986,7 +2986,7 @@ static void test_post_platform_left_turn(void)
     CHECK(g_route.state == ROUTE_ALIGN && s_beep_starts == beep + 1u);
     post_platform_reach(11u, ROUTE_APPROACH);
     CHECK(g_mode_fsm.base_pwm == 500u);
-    for (i = 0u; i < 67u; ++i) post_platform_tick();
+    for (i = 0u; i < 29u; ++i) post_platform_tick();
     CHECK(g_route.state == ROUTE_APPROACH);
     post_platform_tick();
     CHECK(g_route.state == ROUTE_TURN && CLOSE(g_mode_fsm.target_yaw, yaw + 90.0f));
@@ -3109,6 +3109,53 @@ static void test_post_platform_interrupts(void)
     }
     puts("PASS post-platform stage interruption matrix: STOP, external takeover, disable, IMU fault and route timeout");
 }
+
+/**
+ * @brief 验证第 11 项循迹 PWM 特例及第 12 项前移 300 ms 特例，不影响其他项目。
+ * @param 无。
+ * @return 无；使用居中窄线消除差速，直接检查左右轮输出和全局基础 PWM。
+ */
+static void test_route_local_overrides(void)
+{
+    unsigned i;
+    if (ROUTE_START_STEP > 10u || TEST_ACTIVE_STEP_COUNT < 12u) return;
+    post_platform_start("step11 tracking uses PWM300 while global tracking remains PWM400");
+    post_platform_reach(9u, ROUTE_FOLLOW);
+    CHECK(g_line_controller.base_speed == 400);
+    set_sensors(0x18u);
+    post_platform_tick();
+    CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+    post_platform_reach(10u, ROUTE_FOLLOW);
+    post_platform_tick();
+    CHECK(motorLeft.speed == 300 && motorRight.speed == 300);
+    CHECK(g_line_controller.base_speed == 400);
+    Car_Track();
+    post_platform_tick();
+    CHECK(!g_route.enabled && g_route.project_id == 11u);
+    CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+
+    post_platform_start("step12 tracking restores the global PWM400");
+    post_platform_reach(11u, ROUTE_FOLLOW);
+    set_sensors(0x18u);
+    post_platform_tick();
+    CHECK(motorLeft.speed == 400 && motorRight.speed == 400);
+    CHECK(g_line_controller.base_speed == 400);
+    post_platform_reach(11u, ROUTE_APPROACH);
+    CHECK(g_route.project_id == 12u && g_mode_fsm.base_pwm == 500u);
+    for (i = 0u; i < 29u; ++i) post_platform_tick();
+    CHECK(g_route.state == ROUTE_APPROACH && g_route.state_frames == 29u);
+    post_platform_tick();
+    CHECK(g_route.state == ROUTE_TURN); /* 第 30 帧切入转弯，前移恰好 300 ms。 */
+    if (TEST_ACTIVE_STEP_COUNT >= 13u) {
+        post_platform_reach(12u, ROUTE_APPROACH);
+        CHECK(g_route.project_id == 13u && g_mode_fsm.base_pwm == 500u);
+        for (i = 0u; i < 67u; ++i) post_platform_tick();
+        CHECK(g_route.state == ROUTE_APPROACH && g_route.state_frames == 67u);
+        post_platform_tick();
+        CHECK(g_route.state == ROUTE_TURN); /* 第 13 项仍使用全局 680 ms。 */
+    }
+    puts("PASS step11 tracking PWM300, other tracking PWM400, step12 approach300ms, step13 approach680ms and PWM500");
+}
 #endif
 
 /**
@@ -3120,7 +3167,12 @@ static void test_post_platform_interrupts(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_ROUTE_TRACK_PWM_ONLY
+    test_route_local_overrides();
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_AFTER_PLATFORM_ONLY
+    test_route_local_overrides();
     test_route_start_validation();
     test_platform_table_handoff();
     test_post_platform_cross();

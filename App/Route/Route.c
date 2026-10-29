@@ -10,7 +10,7 @@
 #include "Track_Task.h"
 #include "Int_Beep.h"
 
-#define ROUTE_CONFIRM_FRAMES 2u
+#define ROUTE_CONFIRM_FRAMES 1u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
 #define ROUTE_TURN_APPROACH_MS   680u /* 表内路口转弯前保持航向前移 68 帧，按车身对齐位置标定 */
@@ -533,6 +533,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 {
     const RouteStep *step;
     uint32_t elapsed_ms;
+    uint32_t turn_approach_ms; /* 本次路口前移时间，按项目选择，不修改全局前移配置。 */
 
     /* 先服务提示音；路线未启动、被关闭或本帧外部接管时也能及时关蜂鸣器。 */
     update_project_beep((uint8_t)(external_command || !g_route.enabled ||
@@ -669,7 +670,12 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         break;
     case ROUTE_APPROACH: //转向前移
-        if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) { //到达前移时间
+        turn_approach_ms = ROUTE_TURN_APPROACH_MS;
+        if (g_route.project_id == 12u) {
+            /* 仅第 12 项缩短为 300 ms；其他项目继续使用全局前移时间，PWM 保持原值。 */
+            turn_approach_ms = 150u;
+        }
+        if (elapsed_ms >= turn_approach_ms) { //到达当前项目的前移时间
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
             /* 提交转弯前更新理想朝向，FSM 取此绝对值作为转弯目标，转完即对齐。 */

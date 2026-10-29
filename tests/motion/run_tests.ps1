@@ -4,7 +4,8 @@ param(
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
     [switch]$RouteStartOnly,
-    [switch]$RouteAfterPlatformOnly
+    [switch]$RouteAfterPlatformOnly,
+    [switch]$RouteTrackPwmOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +66,13 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($RouteTrackPwmOnly) {
+    # 仅验证项目 PWM 与前移时间特例，使用当前路口帧数，不运行仍含旧两帧断言的其他场景。
+    Invoke-MotionTest -Name 'test_route_track_pwm' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DTEST_ROUTE_TRACK_PWM_ONLY'))
+    return
+}
 
 if ($RouteAfterPlatformOnly) {
     # 按当前调试起点做一次关键专项，验证第 11 项衔接第 12 项左转及持续循迹。

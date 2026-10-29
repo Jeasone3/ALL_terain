@@ -230,28 +230,28 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
      * 临界区只复制数据，恢复中断后再格式化和发送，避免阻塞 10 ms 控制。 */
     if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
     {
-      Euler_struct euler_snapshot;
-      uint8_t imu_valid;
-      uint32_t saved_primask = __get_PRIMASK();
-      last_print_ms = HAL_GetTick();
+      // Euler_struct euler_snapshot;
+      // uint8_t imu_valid;
+      // uint32_t saved_primask = __get_PRIMASK();
+      // last_print_ms = HAL_GetTick();
 
-      __disable_irq();
-      euler_snapshot = g_euler;
-      imu_valid = g_mode_fsm.imu_valid;
-      __set_PRIMASK(saved_primask);
+      // __disable_irq();
+      // euler_snapshot = g_euler;
+      // imu_valid = g_mode_fsm.imu_valid;
+      // __set_PRIMASK(saved_primask);
 
-      if (imu_valid != 0u)
-      {
-        printf("Yaw:%.2f,%.2f,%.2f\r\n",
-               (double)euler_snapshot.yaw,
-               (double)euler_snapshot.pitch,
-               (double)euler_snapshot.roll);
-      }
-      else
-      {
-        /* 停车、循迹或 IMU 故障时没有新姿态，不能把保留值当成实时测量。 */
-        printf("Yaw:-- Pitch:-- Roll:--\r\n");
-      }
+      // if (imu_valid != 0u)
+      // {
+      //   printf("Yaw:%.2f,%.2f,%.2f\r\n",
+      //          (double)euler_snapshot.yaw,
+      //          (double)euler_snapshot.pitch,
+      //          (double)euler_snapshot.roll);
+      // }
+      // else
+      // {
+      //   /* 停车、循迹或 IMU 故障时没有新姿态，不能把保留值当成实时测量。 */
+      //   printf("Yaw:-- Pitch:-- Roll:--\r\n");
+      // }
     }
 
     /* USER CODE END WHILE */
