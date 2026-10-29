@@ -1063,8 +1063,7 @@ static void test_route_from_selected_start(void)
     CHECK(g_route.project_id == s_original_plan[start].project_id);
     for (i = start; i < TEST_ACTIVE_STEP_COUNT; ++i) {
         expected |= 1u << i;
-        if (g_route_plan[i].action != ROUTE_ACTION_STRAIGHT &&
-            g_route_plan[i].action != ROUTE_ACTION_TRACK_TIMED) ++expected_turns;
+        if (g_route_plan[i].action != ROUTE_ACTION_STRAIGHT) ++expected_turns;
     }
     while (g_route.state != ROUTE_FINISHED && g_route.state != ROUTE_CRUISE && budget != 0u) {
         const RouteStep *step = &g_route_plan[g_route.step_index];
@@ -2949,7 +2948,7 @@ static void test_post_platform_cross(void)
 }
 
 /**
- * @brief 验证第 12 项左转完成后直接进入第 13 项，循迹 20 秒到时继续循迹。
+ * @brief 验证第 12 项恢复窄线后进入第 13 项，左口立即触发左转，等待超时为 15 秒。
  * @param 无。
  * @return 无；检查左口防抖、前移时间、转向、窄线恢复及取消原 20 秒停车。
  */
@@ -2998,19 +2997,40 @@ static void test_post_platform_left_turn(void)
     command = g_mode_fsm.command_id;
     resets = s_resets;
     set_sensors(0xFFu);
-    /* 第 13 项无需窄线或新路口，首个循迹帧已执行；再执行 1999 帧应仍处于定时阶段。 */
+    /* 第 12 项必须先离开原路口，第 13 项再接受新的左口，不能重复消费同一路口。 */
     if (TEST_ACTIVE_STEP_COUNT >= 13u) {
-        CHECK(g_route_plan[12].action == ROUTE_ACTION_TRACK_TIMED);
-        CHECK(g_route_plan[12].entry_ms == 20000u);
-        for (i = 1u; i < 2000u; ++i) {
-            post_platform_tick();
-            CHECK(g_route.step_index == 12u && g_route.project_id == 13u);
-            CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.mode == MODE_TRACK);
-            CHECK(g_mode_fsm.command_id == command && g_mode_fsm.status == CAR_RUNNING);
-        }
-        CHECK(g_route.state_frames == 1999u && g_mode_fsm.state_frames == 2000u);
+        CHECK(g_route_plan[12].action == ROUTE_ACTION_LEFT_TRACK);
+        CHECK(g_route_plan[12].timeout_ms == 15000u && g_route_plan[12].entry_ms == 0u);
+        post_platform_tick();
+        ticks(3u);
+        CHECK(g_route.state == ROUTE_RECOVER && g_route.step_index == 11u);
+        set_sensors(0x18u);
+        tick();
+        CHECK(g_route.state == ROUTE_RECOVER);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW && g_route.step_index == 12u && g_route.project_id == 13u);
+        CHECK(g_mode_fsm.command_id == command && s_resets == resets);
+        yaw = g_route.ideal_yaw;
+        set_sensors(0x0Fu);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW);
+        tick();
+        CHECK(g_route.state == ROUTE_ALIGN); /* 无需等满 15 秒，左口确认后立即处理。 */
+        post_platform_reach(12u, ROUTE_APPROACH);
+        CHECK(g_mode_fsm.base_pwm == 500u);
+        for (i = 0u; i < 67u; ++i) post_platform_tick();
+        CHECK(g_route.state == ROUTE_APPROACH);
+        post_platform_tick();
+        CHECK(g_route.state == ROUTE_TURN && CLOSE(g_mode_fsm.target_yaw, yaw + 90.0f));
+        CHECK(motorLeft.speed < 0 && motorRight.speed > 0);
+        turns = g_mode_fsm.turn_count;
+        while (g_mode_fsm.turn_count == turns) post_platform_tick();
+        command = g_mode_fsm.command_id;
+        resets = s_resets;
+        ++beep;
     }
-    /* 到时只改变路线阶段，继续循迹，持续宽线也不能重复触发转弯或提交新动作。 */
+    /* 末项左转后持续循迹，宽线不能重复触发动作；仍保留外部停车。 */
+    set_sensors(0xFFu);
     for (i = 0u; i < 2100u; ++i) {
         post_platform_tick();
         CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
@@ -3021,7 +3041,18 @@ static void test_post_platform_left_turn(void)
     Car_Stop();
     tick();
     check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
-    puts("PASS step12 left turn, direct step13 handoff, exact 20s tracking with first frame, continued tracking and STOP");
+    if (TEST_ACTIVE_STEP_COUNT >= 13u) {
+        post_platform_start("step13 left-junction wait times out at exactly 15 seconds");
+        post_platform_reach(12u, ROUTE_FOLLOW);
+        set_sensors(0x18u);
+        ticks(1499u);
+        CHECK(g_route.state == ROUTE_FOLLOW && g_route.state_frames == 1499u);
+        CHECK(g_mode_fsm.status == CAR_RUNNING);
+        tick();
+        CHECK(!g_route.enabled && g_route.step_index == 12u);
+        check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
+    }
+    puts("PASS step12 recovery, step13 immediate left-junction turn/680ms approach, exact 15s timeout, cruise and STOP");
 }
 
 /**

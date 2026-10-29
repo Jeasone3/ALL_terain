@@ -8,7 +8,11 @@
 
 宿主脚本使用 GCC C99，开启 -Wall -Wextra -Werror -pedantic。产物位于 TEMP/all-terrain-motion-tests。Keil 脚本使用当前源码完整重编译，AXF/HEX/日志写入独立临时目录，不覆盖仓库旧构建产物，不烧录硬件。
 
-2026-10-30 独立第 13 项循迹（当前行为）：第 12 项左转后直接交给第 13 项 `TRACK_TIMED`，不等窄线或新路口；包含转完首帧在内计时 2000 帧，到时继续循迹。一次默认配置专项通过，覆盖独立段号、精确时间边界、保持 PID/动作序号及 STOP。Keil 生成 HEX，0 Error(s)、2 Warning(s)，仍为 Attitude.c 的既有警告，零警告脚本返回失败；产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-9c6fcc1153704b01a9173aad91cefe74`，未烧录或实车验证。
+2026-10-30 第 13 项改为普通左转（当前行为）：使用 `LEFT_TRACK`、`JUNCTION_LEFT`、`timeout_ms=15000`，不配置入口或通行时间。移除此前新增的独立定时循迹动作和处理分支，复用原有状态及结构体。一次默认专项通过：第 12 项恢复两帧窄线后衔接第 13 项、左口两帧确认后立即动作、前移 680 ms、左转 90°及恢复循迹；等待到第 1499 帧仍运行，第 1500 帧超时停车。Keil 生成 HEX，0 Error(s)、2 Warning(s)，仍为 Attitude.c 的既有警告，零警告脚本返回失败。产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-2c8c5fa0c1224222843d5f12f5a784d3`，未烧录或实车验证。
+
+以下为历史版本记录，独立定时循迹已由上述左口触发方式替代。
+
+2026-10-30 独立第 13 项循迹：第 12 项左转后直接交给第 13 项 `TRACK_TIMED`，不等窄线或新路口；包含转完首帧在内计时 2000 帧，到时继续循迹。一次默认配置专项通过，覆盖独立段号、精确时间边界、保持 PID/动作序号及 STOP。Keil 生成 HEX，0 Error(s)、2 Warning(s)，仍为 Attitude.c 的既有警告，零警告脚本返回失败；产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-9c6fcc1153704b01a9173aad91cefe74`，未烧录或实车验证。
 
 2026-10-30 追加第 12 项左转：取消第 11 项转后 20 秒停车，改为右转恢复后等待左侧路口，第 12 项左转后持续循迹。按减少测试的要求，`-RouteAfterPlatformOnly` 仅运行当前默认配置的一次关键专项，已通过：验证两帧窄线衔接、左口两帧确认、右口不误触发、500 PWM 前移 680 ms、左转目标增加 90°、左转后超过 20 秒仍循迹，以及 STOP 和既有中止检查。此次未重跑多起点配置矩阵。
 

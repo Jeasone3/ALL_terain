@@ -35,7 +35,7 @@ void line_following_init(line_following_t *controller)
     PID_set_deriv_filter(&controller->pid, 0.7f);          /* 微分低通, 抗噪 */
 
     /* 单位: PWM 量纲 0-1000(无编码器, 直接驱动占空比) */
-    controller->base_speed = 500;
+    controller->base_speed = 400;
     controller->max_speed  = 1000;
 
     for (uint8_t i = 0; i < GRAYSCALE_SENSOR_CHANNELS; i++) {

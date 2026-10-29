@@ -2490,65 +2490,65 @@ Image Symbol Table
     s_align_hold                             0x2000001e   Data           1  mode_fsm.o(.data)
     s_align_hold_frames                      0x2000001f   Data           1  mode_fsm.o(.data)
     s_forward_limit_frames                   0x20000020   Data           4  mode_fsm.o(.data)
-    .data                                    0x20000024   Section      259  route.o(.data)
-    s_junction_candidate                     0x20000114   Data           1  route.o(.data)
-    s_junction_frames                        0x20000115   Data           1  route.o(.data)
-    s_junction_latched                       0x20000116   Data           1  route.o(.data)
-    s_line_candidate                         0x20000117   Data           1  route.o(.data)
-    s_line_frames                            0x20000118   Data           1  route.o(.data)
-    s_narrow_frames                          0x20000119   Data           1  route.o(.data)
-    s_active                                 0x2000011a   Data           1  route.o(.data)
-    s_turn_count_before                      0x2000011c   Data           4  route.o(.data)
-    s_align_count_before                     0x20000120   Data           4  route.o(.data)
-    s_align_next_state                       0x20000124   Data           1  route.o(.data)
-    s_align_cal_flag                         0x20000125   Data           1  route.o(.data)
-    s_project_beep_frames                    0x20000126   Data           1  route.o(.data)
-    .data                                    0x20000127   Section        2  debug_log.o(.data)
-    s_count                                  0x20000127   Data           1  debug_log.o(.data)
-    s_frozen                                 0x20000128   Data           1  debug_log.o(.data)
-    .data                                    0x2000012c   Section       38  attitude.o(.data)
-    q0                                       0x2000012c   Data           4  attitude.o(.data)
-    q1                                       0x20000130   Data           4  attitude.o(.data)
-    q2                                       0x20000134   Data           4  attitude.o(.data)
-    q3                                       0x20000138   Data           4  attitude.o(.data)
-    exInt                                    0x2000013c   Data           4  attitude.o(.data)
-    eyInt                                    0x20000140   Data           4  attitude.o(.data)
-    ezInt                                    0x20000144   Data           4  attitude.o(.data)
-    s_yaw_offset                             0x20000148   Data           4  attitude.o(.data)
-    s_last_yaw                               0x2000014c   Data           4  attitude.o(.data)
-    s_yaw_initialized                        0x20000150   Data           1  attitude.o(.data)
-    s_spike_check                            0x20000151   Data           1  attitude.o(.data)
-    .data                                    0x20000154   Section       64  motor.o(.data)
-    .data                                    0x20000194   Section       17  int_oled.o(.data)
-    s_dirty_min                              0x20000194   Data           8  int_oled.o(.data)
-    s_dirty_max                              0x2000019c   Data           8  int_oled.o(.data)
-    s_initialized                            0x200001a4   Data           1  int_oled.o(.data)
-    .data                                    0x200001a8   Section       16  int_mpu6050.o(.data)
-    s_bias_gx                                0x200001ac   Data           4  int_mpu6050.o(.data)
-    s_bias_gy                                0x200001b0   Data           4  int_mpu6050.o(.data)
-    s_bias_gz                                0x200001b4   Data           4  int_mpu6050.o(.data)
-    .data                                    0x200001b8   Section        4  stdout.o(.data)
-    .data                                    0x200001bc   Section        4  errno.o(.data)
-    _errno                                   0x200001bc   Data           4  errno.o(.data)
-    .bss                                     0x200001c0   Section       84  i2c.o(.bss)
-    .bss                                     0x20000214   Section      216  tim.o(.bss)
-    .bss                                     0x200002ec   Section       72  usart.o(.bss)
-    .bss                                     0x20000334   Section      124  track_task.o(.bss)
-    .bss                                     0x200003b0   Section      168  imu_task.o(.bss)
-    s_turn_pid                               0x200003b0   Data          84  imu_task.o(.bss)
-    s_fwd_pid                                0x20000404   Data          84  imu_task.o(.bss)
-    .bss                                     0x20000458   Section       44  mode_fsm.o(.bss)
-    s_request                                0x20000478   Data          12  mode_fsm.o(.bss)
-    .bss                                     0x20000484   Section       20  route.o(.bss)
-    .bss                                     0x20000498   Section      132  debug_log.o(.bss)
-    s_records                                0x20000498   Data          60  debug_log.o(.bss)
-    s_fault                                  0x200004d4   Data          72  debug_log.o(.bss)
-    .bss                                     0x2000051c   Section       12  attitude.o(.bss)
-    .bss                                     0x20000528   Section       16  int_track.o(.bss)
-    .bss                                     0x20000538   Section     1024  int_oled.o(.bss)
-    s_framebuffer                            0x20000538   Data        1024  int_oled.o(.bss)
-    .bss                                     0x20000938   Section       20  int_mpu6050.o(.bss)
-    STACK                                    0x20000950   Section     1024  startup_stm32f103xe.o(STACK)
+    .data                                    0x20000024   Section      279  route.o(.data)
+    s_junction_candidate                     0x20000128   Data           1  route.o(.data)
+    s_junction_frames                        0x20000129   Data           1  route.o(.data)
+    s_junction_latched                       0x2000012a   Data           1  route.o(.data)
+    s_line_candidate                         0x2000012b   Data           1  route.o(.data)
+    s_line_frames                            0x2000012c   Data           1  route.o(.data)
+    s_narrow_frames                          0x2000012d   Data           1  route.o(.data)
+    s_active                                 0x2000012e   Data           1  route.o(.data)
+    s_turn_count_before                      0x20000130   Data           4  route.o(.data)
+    s_align_count_before                     0x20000134   Data           4  route.o(.data)
+    s_align_next_state                       0x20000138   Data           1  route.o(.data)
+    s_align_cal_flag                         0x20000139   Data           1  route.o(.data)
+    s_project_beep_frames                    0x2000013a   Data           1  route.o(.data)
+    .data                                    0x2000013b   Section        2  debug_log.o(.data)
+    s_count                                  0x2000013b   Data           1  debug_log.o(.data)
+    s_frozen                                 0x2000013c   Data           1  debug_log.o(.data)
+    .data                                    0x20000140   Section       38  attitude.o(.data)
+    q0                                       0x20000140   Data           4  attitude.o(.data)
+    q1                                       0x20000144   Data           4  attitude.o(.data)
+    q2                                       0x20000148   Data           4  attitude.o(.data)
+    q3                                       0x2000014c   Data           4  attitude.o(.data)
+    exInt                                    0x20000150   Data           4  attitude.o(.data)
+    eyInt                                    0x20000154   Data           4  attitude.o(.data)
+    ezInt                                    0x20000158   Data           4  attitude.o(.data)
+    s_yaw_offset                             0x2000015c   Data           4  attitude.o(.data)
+    s_last_yaw                               0x20000160   Data           4  attitude.o(.data)
+    s_yaw_initialized                        0x20000164   Data           1  attitude.o(.data)
+    s_spike_check                            0x20000165   Data           1  attitude.o(.data)
+    .data                                    0x20000168   Section       64  motor.o(.data)
+    .data                                    0x200001a8   Section       17  int_oled.o(.data)
+    s_dirty_min                              0x200001a8   Data           8  int_oled.o(.data)
+    s_dirty_max                              0x200001b0   Data           8  int_oled.o(.data)
+    s_initialized                            0x200001b8   Data           1  int_oled.o(.data)
+    .data                                    0x200001bc   Section       16  int_mpu6050.o(.data)
+    s_bias_gx                                0x200001c0   Data           4  int_mpu6050.o(.data)
+    s_bias_gy                                0x200001c4   Data           4  int_mpu6050.o(.data)
+    s_bias_gz                                0x200001c8   Data           4  int_mpu6050.o(.data)
+    .data                                    0x200001cc   Section        4  stdout.o(.data)
+    .data                                    0x200001d0   Section        4  errno.o(.data)
+    _errno                                   0x200001d0   Data           4  errno.o(.data)
+    .bss                                     0x200001d4   Section       84  i2c.o(.bss)
+    .bss                                     0x20000228   Section      216  tim.o(.bss)
+    .bss                                     0x20000300   Section       72  usart.o(.bss)
+    .bss                                     0x20000348   Section      124  track_task.o(.bss)
+    .bss                                     0x200003c4   Section      168  imu_task.o(.bss)
+    s_turn_pid                               0x200003c4   Data          84  imu_task.o(.bss)
+    s_fwd_pid                                0x20000418   Data          84  imu_task.o(.bss)
+    .bss                                     0x2000046c   Section       44  mode_fsm.o(.bss)
+    s_request                                0x2000048c   Data          12  mode_fsm.o(.bss)
+    .bss                                     0x20000498   Section       20  route.o(.bss)
+    .bss                                     0x200004ac   Section      132  debug_log.o(.bss)
+    s_records                                0x200004ac   Data          60  debug_log.o(.bss)
+    s_fault                                  0x200004e8   Data          72  debug_log.o(.bss)
+    .bss                                     0x20000530   Section       12  attitude.o(.bss)
+    .bss                                     0x2000053c   Section       16  int_track.o(.bss)
+    .bss                                     0x2000054c   Section     1024  int_oled.o(.bss)
+    s_framebuffer                            0x2000054c   Data        1024  int_oled.o(.bss)
+    .bss                                     0x2000094c   Section       20  int_mpu6050.o(.bss)
+    STACK                                    0x20000960   Section     1024  startup_stm32f103xe.o(STACK)
 
     Global Symbols
 
@@ -2884,7 +2884,7 @@ Image Symbol Table
     fmodf                                    0x08006b69   Thumb Code   108  fmodf.o(i.fmodf)
     follow_line                              0x08006bd5   Thumb Code   236  track_task.o(i.follow_line)
     fputc                                    0x08006d11   Thumb Code    22  usart.o(i.fputc)
-    line_following_init                      0x080071e9   Thumb Code    98  track_task.o(i.line_following_init)
+    line_following_init                      0x080071e9   Thumb Code   100  track_task.o(i.line_following_init)
     main                                     0x08007665   Thumb Code   480  main.o(i.main)
     sqrtf                                    0x08007b01   Thumb Code    44  sqrtf.o(i.sqrtf)
     AHBPrescTable                            0x08007f8a   Data          16  system_stm32f1xx.o(.constdata)
@@ -2898,23 +2898,23 @@ Image Symbol Table
     uwTickPrio                               0x2000000c   Data           4  stm32f1xx_hal.o(.data)
     uwTickFreq                               0x20000010   Data           1  stm32f1xx_hal.o(.data)
     SystemCoreClock                          0x20000014   Data           4  system_stm32f1xx.o(.data)
-    g_route_plan                             0x20000024   Data         240  route.o(.data)
-    motorRight                               0x20000154   Data          32  motor.o(.data)
-    motorLeft                                0x20000174   Data          32  motor.o(.data)
-    g_imu_ready                              0x200001a8   Data           1  int_mpu6050.o(.data)
-    __stdout                                 0x200001b8   Data           4  stdout.o(.data)
-    hi2c1                                    0x200001c0   Data          84  i2c.o(.bss)
-    htim2                                    0x20000214   Data          72  tim.o(.bss)
-    htim4                                    0x2000025c   Data          72  tim.o(.bss)
-    htim8                                    0x200002a4   Data          72  tim.o(.bss)
-    huart2                                   0x200002ec   Data          72  usart.o(.bss)
-    g_line_controller                        0x20000334   Data         124  track_task.o(.bss)
-    g_mode_fsm                               0x20000458   Data          32  mode_fsm.o(.bss)
-    g_route                                  0x20000484   Data          20  route.o(.bss)
-    g_euler                                  0x2000051c   Data          12  attitude.o(.bss)
-    g_sensor_data                            0x20000528   Data          16  int_track.o(.bss)
-    g_imu_data                               0x20000938   Data          20  int_mpu6050.o(.bss)
-    __initial_sp                             0x20000d50   Data           0  startup_stm32f103xe.o(STACK)
+    g_route_plan                             0x20000024   Data         260  route.o(.data)
+    motorRight                               0x20000168   Data          32  motor.o(.data)
+    motorLeft                                0x20000188   Data          32  motor.o(.data)
+    g_imu_ready                              0x200001bc   Data           1  int_mpu6050.o(.data)
+    __stdout                                 0x200001cc   Data           4  stdout.o(.data)
+    hi2c1                                    0x200001d4   Data          84  i2c.o(.bss)
+    htim2                                    0x20000228   Data          72  tim.o(.bss)
+    htim4                                    0x20000270   Data          72  tim.o(.bss)
+    htim8                                    0x200002b8   Data          72  tim.o(.bss)
+    huart2                                   0x20000300   Data          72  usart.o(.bss)
+    g_line_controller                        0x20000348   Data         124  track_task.o(.bss)
+    g_mode_fsm                               0x2000046c   Data          32  mode_fsm.o(.bss)
+    g_route                                  0x20000498   Data          20  route.o(.bss)
+    g_euler                                  0x20000530   Data          12  attitude.o(.bss)
+    g_sensor_data                            0x2000053c   Data          16  int_track.o(.bss)
+    g_imu_data                               0x2000094c   Data          20  int_mpu6050.o(.bss)
+    __initial_sp                             0x20000d60   Data           0  startup_stm32f103xe.o(STACK)
 
 
 
@@ -2924,7 +2924,7 @@ Memory Map of the image
 
   Image Entry point : 0x08000131
 
-  Load Region LR_IROM1 (Base: 0x08000000, Size: 0x00008ed8, Max: 0x00040000, ABSOLUTE, COMPRESSED[0x00008db0])
+  Load Region LR_IROM1 (Base: 0x08000000, Size: 0x00008eec, Max: 0x00040000, ABSOLUTE, COMPRESSED[0x00008db8])
 
     Execution Region ER_IROM1 (Exec base: 0x08000000, Load base: 0x08000000, Size: 0x00008d18, Max: 0x00040000, ABSOLUTE)
 
@@ -3220,7 +3220,7 @@ Memory Map of the image
     0x08008cf8   0x08008cf8   0x00000020   Data   RO         5100    Region$$Table       anon$$obj.o
 
 
-    Execution Region RW_IRAM1 (Exec base: 0x20000000, Load base: 0x08008d18, Size: 0x00000d50, Max: 0x0000c000, ABSOLUTE, COMPRESSED[0x00000098])
+    Execution Region RW_IRAM1 (Exec base: 0x20000000, Load base: 0x08008d18, Size: 0x00000d60, Max: 0x0000c000, ABSOLUTE, COMPRESSED[0x000000a0])
 
     Exec Addr    Load Addr    Size         Type   Attr      Idx    E Section Name        Object
 
@@ -3230,31 +3230,30 @@ Memory Map of the image
     0x20000014   COMPRESSED   0x00000004   Data   RW         3482    .data               system_stm32f1xx.o
     0x20000018   COMPRESSED   0x00000004   Data   RW         3589    .data               imu_task.o
     0x2000001c   COMPRESSED   0x00000008   Data   RW         3690    .data               mode_fsm.o
-    0x20000024   COMPRESSED   0x00000103   Data   RW         3842    .data               route.o
-    0x20000127   COMPRESSED   0x00000002   Data   RW         3970    .data               debug_log.o
-    0x20000129   COMPRESSED   0x00000003   PAD
-    0x2000012c   COMPRESSED   0x00000026   Data   RW         4196    .data               attitude.o
-    0x20000152   COMPRESSED   0x00000002   PAD
-    0x20000154   COMPRESSED   0x00000040   Data   RW         4314    .data               motor.o
-    0x20000194   COMPRESSED   0x00000011   Data   RW         4416    .data               int_oled.o
-    0x200001a5   COMPRESSED   0x00000003   PAD
-    0x200001a8   COMPRESSED   0x00000010   Data   RW         4621    .data               int_mpu6050.o
-    0x200001b8   COMPRESSED   0x00000004   Data   RW         5061    .data               mc_w.l(stdout.o)
-    0x200001bc   COMPRESSED   0x00000004   Data   RW         5069    .data               mc_w.l(errno.o)
-    0x200001c0        -       0x00000054   Zero   RW          336    .bss                i2c.o
-    0x20000214        -       0x000000d8   Zero   RW          381    .bss                tim.o
-    0x200002ec        -       0x00000048   Zero   RW          439    .bss                usart.o
-    0x20000334        -       0x0000007c   Zero   RW         3520    .bss                track_task.o
-    0x200003b0        -       0x000000a8   Zero   RW         3587    .bss                imu_task.o
-    0x20000458        -       0x0000002c   Zero   RW         3688    .bss                mode_fsm.o
-    0x20000484        -       0x00000014   Zero   RW         3841    .bss                route.o
-    0x20000498        -       0x00000084   Zero   RW         3968    .bss                debug_log.o
-    0x2000051c        -       0x0000000c   Zero   RW         4195    .bss                attitude.o
-    0x20000528        -       0x00000010   Zero   RW         4361    .bss                int_track.o
-    0x20000538        -       0x00000400   Zero   RW         4414    .bss                int_oled.o
-    0x20000938        -       0x00000014   Zero   RW         4620    .bss                int_mpu6050.o
-    0x2000094c   COMPRESSED   0x00000004   PAD
-    0x20000950        -       0x00000400   Zero   RW            1    STACK               startup_stm32f103xe.o
+    0x20000024   COMPRESSED   0x00000117   Data   RW         3842    .data               route.o
+    0x2000013b   COMPRESSED   0x00000002   Data   RW         3970    .data               debug_log.o
+    0x2000013d   COMPRESSED   0x00000003   PAD
+    0x20000140   COMPRESSED   0x00000026   Data   RW         4196    .data               attitude.o
+    0x20000166   COMPRESSED   0x00000002   PAD
+    0x20000168   COMPRESSED   0x00000040   Data   RW         4314    .data               motor.o
+    0x200001a8   COMPRESSED   0x00000011   Data   RW         4416    .data               int_oled.o
+    0x200001b9   COMPRESSED   0x00000003   PAD
+    0x200001bc   COMPRESSED   0x00000010   Data   RW         4621    .data               int_mpu6050.o
+    0x200001cc   COMPRESSED   0x00000004   Data   RW         5061    .data               mc_w.l(stdout.o)
+    0x200001d0   COMPRESSED   0x00000004   Data   RW         5069    .data               mc_w.l(errno.o)
+    0x200001d4        -       0x00000054   Zero   RW          336    .bss                i2c.o
+    0x20000228        -       0x000000d8   Zero   RW          381    .bss                tim.o
+    0x20000300        -       0x00000048   Zero   RW          439    .bss                usart.o
+    0x20000348        -       0x0000007c   Zero   RW         3520    .bss                track_task.o
+    0x200003c4        -       0x000000a8   Zero   RW         3587    .bss                imu_task.o
+    0x2000046c        -       0x0000002c   Zero   RW         3688    .bss                mode_fsm.o
+    0x20000498        -       0x00000014   Zero   RW         3841    .bss                route.o
+    0x200004ac        -       0x00000084   Zero   RW         3968    .bss                debug_log.o
+    0x20000530        -       0x0000000c   Zero   RW         4195    .bss                attitude.o
+    0x2000053c        -       0x00000010   Zero   RW         4361    .bss                int_track.o
+    0x2000054c        -       0x00000400   Zero   RW         4414    .bss                int_oled.o
+    0x2000094c        -       0x00000014   Zero   RW         4620    .bss                int_mpu6050.o
+    0x20000960        -       0x00000400   Zero   RW            1    STACK               startup_stm32f103xe.o
 
 
 ==============================================================================
@@ -3281,7 +3280,7 @@ Image component sizes
        256          8          8         64          0       2998   motor.o
         96          4          0          0          0       1658   oled_port.o
          0          0       3114          0          0        677   oledfont.o
-      3204        506          0        259         20      14111   route.o
+      3204        506          0        279         20      14111   route.o
         36          8        304          0       1024        804   startup_stm32f103xe.o
        192         36          0          9          0       6513   stm32f1xx_hal.o
        304         22          0          0          0      29447   stm32f1xx_hal_cortex.o
@@ -3295,13 +3294,13 @@ Image component sizes
         70          6          0          0          0       5328   stm32f1xx_it.o
          2          0         24          4          0       1119   system_stm32f1xx.o
        808         58          0          0        216       3946   tim.o
-       458         34         44          0        124       3943   track_task.o
+       458         32         44          0        124       3943   track_task.o
        216         28          0          0         72       2178   usart.o
 
     ----------------------------------------------------------------------
-     26364       2454       3792        440       2960    1157712   Object Totals
+     26364       2452       3792        460       2956    1157712   Object Totals
          0          0         32          0          0          0   (incl. Generated)
-        30          0          5         11          4          0   (incl. Padding)
+        30          0          5         11          0          0   (incl. Padding)
 
     ----------------------------------------------------------------------
 
@@ -3378,15 +3377,15 @@ Image component sizes
 
       Code (inc. data)   RO Data    RW Data    ZI Data      Debug   
 
-     32328       2692       3792        448       2960    1149712   Grand Totals
-     32328       2692       3792        152       2960    1149712   ELF Image Totals (compressed)
-     32328       2692       3792        152          0          0   ROM Totals
+     32328       2690       3792        468       2956    1149712   Grand Totals
+     32328       2690       3792        160       2956    1149712   ELF Image Totals (compressed)
+     32328       2690       3792        160          0          0   ROM Totals
 
 ==============================================================================
 
     Total RO  Size (Code + RO Data)                36120 (  35.27kB)
-    Total RW  Size (RW Data + ZI Data)              3408 (   3.33kB)
-    Total ROM Size (Code + RO Data + RW Data)      36272 (  35.42kB)
+    Total RW  Size (RW Data + ZI Data)              3424 (   3.34kB)
+    Total ROM Size (Code + RO Data + RW Data)      36280 (  35.43kB)
 
 ==============================================================================
 
