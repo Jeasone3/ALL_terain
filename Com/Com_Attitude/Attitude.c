@@ -14,18 +14,32 @@
 // ------------------------------Mahony 参数 ------------------------------//
 /* Mahony 参数起点(需上电机实测整定) */
 #define ATT_KP        1.0f          /* 比例反馈，小载体 0.5~2 起步 */
-#define ATT_KI        0.002f        /* 积分反馈，抑制陀螺零偏残差 */
+#define ATT_KI        0.0f          /* 首轮关闭积分学习，避免把坡口运动加速度记成零偏 */
 #define ATT_DT        0.01f         /* TIM4 10ms 固定周期 */
 #define ATT_DEG2RAD   0.01745329f       //不要改 度转弧度
 #define ATT_RAD2DEG   57.2957795f       ///弧度转度
 
+/* 冲击抑制的初始参数，须用实车数据整定；模长误差以 g 为单位。
+ * 方向判断使用 1-cos(夹角)，在 3° 到 15°之间降低校正，避免每帧调用 acosf。 */
+#define ATT_ACC_MAG_FULL       0.05f
+#define ATT_ACC_MAG_REJECT     0.20f
+#define ATT_ACC_DIR_FULL       (1.0f - 0.998629535f)
+#define ATT_ACC_DIR_REJECT     (1.0f - 0.965925826f)
+#define ATT_ACC_ALIGN_FRAMES   20u     /* 连续 200 ms 接近预测方向后启用方向拒绝 */
+#define ATT_ACC_RECOVER_STEP   (ATT_DT / 0.20f) /* 权重最快用 200 ms 从 0 恢复到 1 */
+
 /* 输出欧拉角全局 */
 Euler_struct g_euler = {0};
+AttitudeDiagnostic g_attitude_diagnostic = {0};
 
 /* 内部四元数与 PI 积分 */
 static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f;
 static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;
 static float s_yaw_offset = 0.0f;   /* 输出 yaw = raw_yaw - s_yaw_offset */
+static float s_acc_weight = 0.0f;   /* 加速度比例校正权重；冲击立即降低，平稳后缓慢恢复 */
+static uint8_t s_acc_align_frames = 0u; /* 饱和计数；对准完成后保持，直到显式复位 */
+static float s_previous_raw_yaw = 0.0f; /* 上一帧原始航向，单位为弧度 */
+static float s_gyro_predicted_yaw = 0.0f; /* 当前帧仅按陀螺传播的原始航向 */
 
 /**
  * @brief 初始化姿态解算器，使内部状态和对外欧拉角从同一零基准开始。
@@ -49,11 +63,47 @@ void Attitude_Init(void)
  */
 void Attitude_Reset(void)
 {
+    uint32_t reset_count = g_attitude_diagnostic.reset_count + 1u;
     q0 = 1.0f; q1 = q2 = q3 = 0.0f;
     exInt = eyInt = ezInt = 0.0f;
     s_yaw_offset = 0.0f;
+    s_acc_weight = 0.0f;
+    s_acc_align_frames = 0u;
+    s_previous_raw_yaw = s_gyro_predicted_yaw = 0.0f;
+    g_attitude_diagnostic = (AttitudeDiagnostic){0};
+    g_attitude_diagnostic.reset_count = reset_count;
     /* 立即清除外部旧角度，不能等下一次解算才更新，否则新动作可能使用上一动作反馈。 */
     g_euler.yaw = g_euler.pitch = g_euler.roll = 0.0f;
+}
+
+uint8_t Attitude_AlignFromAccel(const Accel_struct *gravity_mean)
+{
+    float ax, ay, az, norm, pitch, roll;
+    float sp, cp, sr, cr;
+    if (gravity_mean == 0) return 0u;
+    ax = (float)gravity_mean->accel_y;
+    ay = -(float)gravity_mean->accel_x;
+    az = (float)gravity_mean->accel_z;
+    norm = sqrtf(ax*ax + ay*ay + az*az);
+    if (norm < IMU_CAL_ACCEL_MIN_G*IMU_ACCEL_LSB_PER_G ||
+        norm > IMU_CAL_ACCEL_MAX_G*IMU_ACCEL_LSB_PER_G)
+        return 0u;
+
+    pitch = atan2f(-ax, sqrtf(ay*ay + az*az));
+    roll = atan2f(ay, az);
+    sp = sinf(0.5f*pitch); cp = cosf(0.5f*pitch);
+    sr = sinf(0.5f*roll);  cr = cosf(0.5f*roll);
+    /* 当前朝向作为 yaw=0，实际倾角写入四元数，不能把倾斜车身当成水平。
+     * 全复位先清除历史与诊断，随后直接标记已对准；起步时不得再调用 Reset。 */
+    Attitude_Reset();
+    q0 = cr*cp; q1 = sr*cp; q2 = cr*sp; q3 = -sr*sp;
+    g_euler.pitch = pitch*ATT_RAD2DEG;
+    g_euler.roll = roll*ATT_RAD2DEG;
+    s_acc_weight = 1.0f;
+    s_acc_align_frames = ATT_ACC_ALIGN_FRAMES;
+    g_attitude_diagnostic.accel_weight = 1.0f;
+    g_attitude_diagnostic.direction_ready = 1u;
+    return 1u;
 }
 
 /**
@@ -72,28 +122,59 @@ void Attitude_SetYawOffset(float deg)
 }
 
 /**
+ * @brief 将非负误差转换为校正权重，两个阈值之间线性下降。
+ * @param error 当前模长误差或方向误差。
+ * @param full 低于此值时完全采用加速度比例校正。
+ * @param reject 高于此值时不采用该帧加速度比例校正。
+ * @return 范围为 0 到 1 的权重。
+ */
+static float attitude_acc_weight(float error, float full, float reject)
+{
+    if (error <= full) return 1.0f;
+    if (error >= reject) return 0.0f;
+    return (reject - error) / (reject - full);
+}
+
+/**
  * @brief 使用六轴 Mahony 算法更新内部四元数，融合角速度与重力方向。
  * @param gx 车体系前向轴角速度，单位 rad/s。
  * @param gy 车体系左向轴角速度，单位 rad/s。
  * @param gz 车体系向上轴角速度，单位 rad/s；沿用现有 yaw 方向约定。
- * @param ax 车体系前向加速度，任意同量纲单位，内部归一化。
+ * @param ax 车体系前向加速度，单位为原始计数，灵敏度由 IMU_ACCEL_LSB_PER_G 指定。
  * @param ay 车体系左向加速度，与 ax 使用同一量纲。
  * @param az 车体系向上加速度，与 ax 使用同一量纲。
  * @return 无。
  * @note 固定以 10 ms 积分，更新四元数和重力误差积分，不直接改 g_euler。
- *       加速度三轴全零时跳过重力校正；六轴无磁力计，yaw 对重力不可观，
- *       故 ez 不反馈到 gz，yaw 纯靠陀螺 z 积分；ex/ey 仍校正 roll/pitch。
+ *       冲击期间只减弱重力校正，不停止三轴陀螺积分；六轴仍没有绝对航向参考。
+ *       复位后先用模长筛选完成倾角收敛，再启用方向拒绝，故启动时仍须保持静止。
  */
 static void mahony_update(float gx, float gy, float gz,
                           float ax, float ay, float az)
 {
     float recipNorm;
     float halfvx, halfvy, halfvz;
-    float ex, ey, ez;
+    float ex = 0.0f, ey = 0.0f, ez = 0.0f;
+    float acc_norm = sqrtf(ax*ax + ay*ay + az*az);
+    float target_weight = 0.0f;
 
-    /* 加速度有效才做重力校正(自由落体/失重时跳过，仅靠陀螺积分) */
-    if (!(ax == 0.0f && ay == 0.0f && az == 0.0f)) {
-        recipNorm = 1.0f / sqrtf(ax*ax + ay*ay + az*az);
+    /* 从同一帧起点额外计算一次纯陀螺传播，只用于诊断，不替换真实状态。
+     * 航向公式采用齐次分母，无需归一化临时四元数，避免多一次开方。
+     * 用它和真实更新结果作差，能区分原始角速度与加速度反馈的影响。 */
+    {
+        float p0 = q0 + 0.5f*(-q1*gx - q2*gy - q3*gz)*ATT_DT;
+        float p1 = q1 + 0.5f*( q0*gx + q2*gz - q3*gy)*ATT_DT;
+        float p2 = q2 + 0.5f*( q0*gy - q1*gz + q3*gx)*ATT_DT;
+        float p3 = q3 + 0.5f*( q0*gz + q1*gy - q2*gx)*ATT_DT;
+        s_gyro_predicted_yaw = atan2f(2.0f*(p0*p3 + p1*p2),
+                                      p0*p0 + p1*p1 - p2*p2 - p3*p3);
+    }
+
+    /* 接近失重时方向不可靠，不归一化；模长必须在归一化之前保留。 */
+    if (acc_norm >= 0.1f * IMU_ACCEL_LSB_PER_G) {
+        float mag_error = fabsf(acc_norm / IMU_ACCEL_LSB_PER_G - 1.0f);
+        float dir_error;
+        float dir_weight;
+        recipNorm = 1.0f / acc_norm;
         ax *= recipNorm; ay *= recipNorm; az *= recipNorm;
 
         /* 估计机体系中的半重力向量；三轴必须使用相同的 1/2 比例。
@@ -102,23 +183,50 @@ static void mahony_update(float gx, float gy, float gz,
         halfvy = q0*q1 + q2*q3;
         halfvz = 0.5f * (q0*q0 - q1*q1 - q2*q2 + q3*q3);
 
+        /* 半重力向量乘 2 才是单位方向；正常俯仰应随四元数改变预测方向。
+         * 此处使用上一帧估计，方向阈值需容纳 10 ms 的正常运动差和传感器延迟。 */
+        dir_error = 1.0f - 2.0f * (ax*halfvx + ay*halfvy + az*halfvz);
+        target_weight = attitude_acc_weight(mag_error, ATT_ACC_MAG_FULL, ATT_ACC_MAG_REJECT);
+        if (s_acc_align_frames < ATT_ACC_ALIGN_FRAMES) {
+            /* 对准前不按绝对方向拒绝，否则坡上复位后可能一直不能收敛。
+             * 连续满足模长和方向条件才锁定；单帧碰巧重合不算完成对准。 */
+            if (mag_error <= ATT_ACC_MAG_FULL && dir_error <= ATT_ACC_DIR_FULL)
+                s_acc_align_frames++;
+            else
+                s_acc_align_frames = 0u;
+        } else {
+            dir_weight = attitude_acc_weight(dir_error, ATT_ACC_DIR_FULL, ATT_ACC_DIR_REJECT);
+            if (dir_weight < target_weight) target_weight = dir_weight;
+        }
+
         /* 误差 = 测量(加速度) × 估计(重力) */
         ex = (ay*halfvz - az*halfvy);
         ey = (az*halfvx - ax*halfvz);
         ez = (ax*halfvy - ay*halfvx);
 
-        /* PI 反馈。六轴无磁力计，yaw 对重力不可观：ez 项没有绝对参考，
-         * 动态(上坡/下坡、颠簸)时把加速度噪声/线加速度耦合进 gz 积分，
-         * 且 ezInt 持续累积造成 yaw 单向偏航。故禁用 ez 反馈，yaw 纯靠
-         * 陀螺 z 积分(已做静态零偏校准，平地慢漂移可控)；ex/ey 仍校正
-         * roll/pitch。ez 计算保留，便于日后九轴扩展接磁力计。 */
+    } else if (s_acc_align_frames < ATT_ACC_ALIGN_FRAMES) {
+        s_acc_align_frames = 0u;
+    }
+
+    /* 干扰立即生效，恢复则限制每帧增量，避免冲击结束时骤然拉动姿态。 */
+    if (target_weight < s_acc_weight) {
+        s_acc_weight = target_weight;
+    } else {
+        s_acc_weight += ATT_ACC_RECOVER_STEP;
+        if (s_acc_weight > target_weight) s_acc_weight = target_weight;
+    }
+
+    /* 首轮 Ki=0，保留原有 PI 结构；若后续重新整定，受干扰和对准期间禁止
+     * 累积新误差，已有补偿仍保留。完全可信也不等于已确认静止。 */
+    if (s_acc_align_frames >= ATT_ACC_ALIGN_FRAMES && s_acc_weight >= 1.0f) {
         exInt += ex * ATT_KI * ATT_DT;
         eyInt += ey * ATT_KI * ATT_DT;
-        /* ezInt += ez * ATT_KI * ATT_DT; */   /* 六轴禁用 yaw 重力反馈 */
-        gx += ATT_KP*ex + exInt;
-        gy += ATT_KP*ey + eyInt;
-        /* gz += ATT_KP*ez + ezInt; */          /* 同上 */
+        ezInt += ez * ATT_KI * ATT_DT;
     }
+    /* 三轴使用同一个权重，保留完整校正方向；原始陀螺角速度始终参与积分。 */
+    gx += ATT_KP*s_acc_weight*ex + exInt;
+    gy += ATT_KP*s_acc_weight*ey + eyInt;
+    gz += ATT_KP*s_acc_weight*ez + ezInt;
 
     /* 四元数积分：q' = 0.5 * q ⊗ omega */
     gx *= 0.5f; gy *= 0.5f; gz *= 0.5f;
@@ -168,4 +276,21 @@ void Attitude_Tick(void)
     g_euler.pitch = pitch * ATT_RAD2DEG;
     g_euler.roll  = roll  * ATT_RAD2DEG;
     g_euler.yaw   = yaw   * ATT_RAD2DEG - s_yaw_offset;
+
+    /* 逐帧累计而非只保存瞬时峰值，100 ms 打印也不会丢掉已采到的冲击增量。
+     * 每一项都取最短角差，避免跨越 ±180°时把正常过界误算为 360°跳变。
+     * 分解依赖当前估计的倾角；G 非零仍须区分真实转向、陀螺误差和倾角估计误差。 */
+    {
+        float gyro_delta = (s_gyro_predicted_yaw - s_previous_raw_yaw)*ATT_RAD2DEG;
+        float accel_delta = (yaw - s_gyro_predicted_yaw)*ATT_RAD2DEG;
+        if (gyro_delta > 180.0f) gyro_delta -= 360.0f;
+        if (gyro_delta < -180.0f) gyro_delta += 360.0f;
+        if (accel_delta > 180.0f) accel_delta -= 360.0f;
+        if (accel_delta < -180.0f) accel_delta += 360.0f;
+        g_attitude_diagnostic.gyro_yaw_sum += gyro_delta;
+        g_attitude_diagnostic.accel_yaw_sum += accel_delta;
+        g_attitude_diagnostic.accel_weight = s_acc_weight;
+        g_attitude_diagnostic.direction_ready = (uint8_t)(s_acc_align_frames >= ATT_ACC_ALIGN_FRAMES);
+        s_previous_raw_yaw = yaw;
+    }
 }

@@ -1,4 +1,5 @@
 #include "Int_MPU6050.h"
+#include <math.h>
 
 #define MPU6050_WHO_AM_I_VALUE 0x68U
 #define MPU6050_FRAME_LENGTH   14U  //imu数据帧长度 即 ADC精度
@@ -18,6 +19,26 @@ uint8_t g_imu_ready = 0;
    均值和扣偏结果都保留小数；当前量程一个计数约为 0.061°/s，不能截成整数。
    初值为零表示尚未校准，不额外改变传感器输出。 */
 static float s_bias_gx = 0.0f, s_bias_gy = 0.0f, s_bias_gz = 0.0f;
+
+/* 项目停车校准由 TIM4 独占推进；帧计数不受主循环打印、显示速度影响。
+ * 三轴累加最多 100 帧，int32_t 可完整容纳 int16_t 原始计数之和。 */
+#define IMU_CAL_STILL_FRAMES  100u
+#define IMU_CAL_MEAN_FRAMES   100u
+#define IMU_CAL_MAX_FRAMES    500u
+/* 仅放宽项目入口校准的稳定性阈值；上电阻塞校准仍沿用原来的判据。 */
+#define IMU_CAL_ACCEL_DELTA_LSB  400
+#define IMU_CAL_GYRO_STILL_DPS   5.0f
+static struct {
+    IMU_CalibrationStatus status;
+    uint16_t elapsed_frames;
+    uint16_t still_frames;
+    uint16_t mean_frames;
+    uint8_t previous_valid;
+    int16_t previous_accel[3];
+    int32_t accel_sum[3];
+    int32_t gyro_sum[3];
+    Accel_struct gravity_mean;
+} s_calibration = { IMU_CAL_CANCELLED, 0u, 0u, 0u, 0u, {0}, {0}, {0}, {0} };
 
 
 
@@ -184,6 +205,126 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     s_bias_gz = (float)sz / (float)n;
     __enable_irq();
     return 1;       //校准成功
+}
+
+/** @brief 丢弃当前静止窗口及均值，不延长整次校准的截止时间。 */
+static void MPU6050_CalibrationRestartWindow(void)
+{
+    uint8_t axis;
+    s_calibration.still_frames = 0u;
+    s_calibration.mean_frames = 0u;
+    for (axis = 0u; axis < 3u; axis++) {
+        s_calibration.accel_sum[axis] = 0;
+        s_calibration.gyro_sum[axis] = 0;
+    }
+}
+
+void Int_MPU6050_CalibrationStart(void)
+{
+    MPU6050_CalibrationRestartWindow();
+    s_calibration.elapsed_frames = 0u;
+    s_calibration.previous_valid = 0u;
+    s_calibration.status = IMU_CAL_BUSY;
+}
+
+void Int_MPU6050_CalibrationCancel(void)
+{
+    s_calibration.status = IMU_CAL_CANCELLED;
+    MPU6050_CalibrationRestartWindow();
+}
+
+IMU_CalibrationStatus Int_MPU6050_CalibrationStep(Accel_struct *gravity_mean)
+{
+    uint8_t frame[MPU6050_FRAME_LENGTH];
+    int16_t accel[3], gyro[3];
+    float norm_squared = 0.0f;
+    float gyro_limit = IMU_CAL_GYRO_STILL_DPS * IMU_GYRO_LSB_PER_DPS;
+    uint8_t axis, stable;
+
+    if (s_calibration.status != IMU_CAL_BUSY) {
+        if (s_calibration.status == IMU_CAL_DONE && gravity_mean != 0)
+            *gravity_mean = s_calibration.gravity_mean;
+        return s_calibration.status;
+    }
+
+    s_calibration.elapsed_frames++;
+    if (!g_imu_ready || !MPU6050_Read_Regs(MPU_ACCEL_XOUTH_REG, frame, MPU6050_FRAME_LENGTH)) {
+        g_imu_ready = 0u;
+        s_calibration.status = IMU_CAL_READ_ERROR;
+        return s_calibration.status;
+    }
+
+    stable = s_calibration.previous_valid;
+    for (axis = 0u; axis < 3u; axis++) {
+        int32_t delta;
+        accel[axis] = MPU6050_Sample(frame[2u*axis], frame[2u*axis + 1u]);
+        gyro[axis] = MPU6050_Sample(frame[8u + 2u*axis], frame[9u + 2u*axis]);
+        norm_squared += (float)accel[axis] * (float)accel[axis];
+        /* 用 int32_t 相减，避免正负满量程相减溢出；首帧仅建立相邻帧参考。 */
+        delta = (int32_t)accel[axis] - s_calibration.previous_accel[axis];
+        if (delta < -IMU_CAL_ACCEL_DELTA_LSB || delta > IMU_CAL_ACCEL_DELTA_LSB) stable = 0u;
+        s_calibration.previous_accel[axis] = accel[axis];
+    }
+    s_calibration.previous_valid = 1u;
+    if (norm_squared < (IMU_CAL_ACCEL_MIN_G*IMU_ACCEL_LSB_PER_G)*(IMU_CAL_ACCEL_MIN_G*IMU_ACCEL_LSB_PER_G) ||
+        norm_squared > (IMU_CAL_ACCEL_MAX_G*IMU_ACCEL_LSB_PER_G)*(IMU_CAL_ACCEL_MAX_G*IMU_ACCEL_LSB_PER_G) ||
+        fabsf((float)gyro[0] - s_bias_gx) > gyro_limit ||
+        fabsf((float)gyro[1] - s_bias_gy) > gyro_limit ||
+        fabsf((float)gyro[2] - s_bias_gz) > gyro_limit) stable = 0u;
+
+    /* 发布本帧测量供诊断，但校准阶段不使用它运行姿态积分和角度 PID。 */
+    g_imu_data.accel.accel_x = accel[0];
+    g_imu_data.accel.accel_y = accel[1];
+    g_imu_data.accel.accel_z = accel[2];
+    g_imu_data.gyro.gyro_x = (float)gyro[0] - s_bias_gx;
+    g_imu_data.gyro.gyro_y = (float)gyro[1] - s_bias_gy;
+    g_imu_data.gyro.gyro_z = (float)gyro[2] - s_bias_gz;
+
+    if (!stable) {
+        MPU6050_CalibrationRestartWindow();
+    } else if (s_calibration.still_frames < IMU_CAL_STILL_FRAMES) {
+        s_calibration.still_frames++;
+    } else {
+        for (axis = 0u; axis < 3u; axis++) {
+            s_calibration.accel_sum[axis] += accel[axis];
+            s_calibration.gyro_sum[axis] += gyro[axis];
+        }
+        s_calibration.mean_frames++;
+        if (s_calibration.mean_frames == IMU_CAL_MEAN_FRAMES) {
+            Accel_struct mean;
+            float mx, my, mz;
+            mx = (float)lroundf((float)s_calibration.accel_sum[0] / IMU_CAL_MEAN_FRAMES);
+            my = (float)lroundf((float)s_calibration.accel_sum[1] / IMU_CAL_MEAN_FRAMES);
+            mz = (float)lroundf((float)s_calibration.accel_sum[2] / IMU_CAL_MEAN_FRAMES);
+            norm_squared = mx*mx + my*my + mz*mz;
+            /* 均值仍须能作为重力参考；不合格时丢弃整窗，旧零偏不受影响。 */
+            if (norm_squared >= (IMU_CAL_ACCEL_MIN_G*IMU_ACCEL_LSB_PER_G)*(IMU_CAL_ACCEL_MIN_G*IMU_ACCEL_LSB_PER_G) &&
+                norm_squared <= (IMU_CAL_ACCEL_MAX_G*IMU_ACCEL_LSB_PER_G)*(IMU_CAL_ACCEL_MAX_G*IMU_ACCEL_LSB_PER_G)) {
+                uint32_t saved_primask = __get_PRIMASK();
+                mean.accel_x = (int16_t)mx;
+                mean.accel_y = (int16_t)my;
+                mean.accel_z = (int16_t)mz;
+                __disable_irq();
+                s_bias_gx = (float)s_calibration.gyro_sum[0] / IMU_CAL_MEAN_FRAMES;
+                s_bias_gy = (float)s_calibration.gyro_sum[1] / IMU_CAL_MEAN_FRAMES;
+                s_bias_gz = (float)s_calibration.gyro_sum[2] / IMU_CAL_MEAN_FRAMES;
+                __set_PRIMASK(saved_primask);
+                s_calibration.gravity_mean = mean;
+                g_imu_data.gyro.gyro_x = (float)gyro[0] - s_bias_gx;
+                g_imu_data.gyro.gyro_y = (float)gyro[1] - s_bias_gy;
+                g_imu_data.gyro.gyro_z = (float)gyro[2] - s_bias_gz;
+                s_calibration.status = IMU_CAL_DONE;
+                if (gravity_mean != 0) *gravity_mean = mean;
+                return IMU_CAL_DONE;
+            }
+            MPU6050_CalibrationRestartWindow();
+        }
+    }
+
+    /* 第 500 帧若恰好完成，成功优先；任何不稳定都不能刷新总超时。 */
+    if (s_calibration.elapsed_frames >= IMU_CAL_MAX_FRAMES)
+        s_calibration.status = IMU_CAL_TIMEOUT;
+    return s_calibration.status;
 }
 
 

@@ -28,7 +28,8 @@ typedef enum {
     ROUTE_FINAL_TURN,              /* 完整路线最后一个项目结束后，原地 IMU 左转 90° */
     ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
-    ROUTE_REVERSE                  /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
+    ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
+    ROUTE_CALIBRATE                /* 项目入口停车校准，不计入 pass_ms */
 } RouteState;
 
 typedef enum {
@@ -42,7 +43,8 @@ typedef enum {
  * @brief 一段指定路口后的动作参数，时间单位均为毫秒。
  * @note project_id 表示本次路线的段号，不推断图片中的项目编号。
  *       trigger_junction 必须与两帧确认的路口一致；左右单侧要求新事件，十字允许从单侧升级。
- *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
+ *       entry_ms 全程使用灰度循迹；然后停车校准，成功起步后才计算 pass_ms。
+ *       pass_ms 到时恢复循迹，不等待出口线。
  *       RIGHT_TRACK 只前移、右转后循迹，base_pwm、entry_ms、pass_ms 均为 0。
  *       第 8 项左转后由状态机单独判断，先以 300 PWM 倒退 2 秒，再按 entry_ms 循迹。
  *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。

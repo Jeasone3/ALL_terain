@@ -2,7 +2,8 @@ param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
     [switch]$RouteFinishOnly,
-    [switch]$RouteReverseOnly
+    [switch]$RouteReverseOnly,
+    [switch]$ProjectCalibrationOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,6 +64,14 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($ProjectCalibrationOnly) {
+    # 覆盖单项目、含纯循迹段的前缀以及完整路线；不改生产参数来迁就测试。
+    foreach ($limit in @(1, 8, 9, 0)) {
+        Invoke-MotionTest -Name "test_project_calibration_$limit" -Arguments ($motionSources + @('-DTEST_PROJECT_CALIBRATION_ONLY', "-DROUTE_DEBUG_STEP_LIMIT=${limit}u"))
+    }
+    return
+}
 
 if ($RouteReverseOnly) {
     # 验证第 8 项的倒退、入口、通行计时及取消边界，覆盖完整路线与截止 8。

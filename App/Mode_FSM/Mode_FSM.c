@@ -31,7 +31,8 @@ typedef enum
     COMMAND_LEFT,                   //左转
     COMMAND_RIGHT,              //右转
     COMMAND_STOP,                   //停车  
-    COMMAND_ROUTE_TIMEOUT        //路线超时停车
+    COMMAND_ROUTE_TIMEOUT,       //路线超时停车
+    COMMAND_IMU_CALIBRATED       /* 项目入口先停车校准，再开始 IMU 直行 */
 } CarCommand;
 
 
@@ -128,6 +129,7 @@ static void set_fault(CarFault fault)
 {
     /* 必须在修改状态、清 PID 和停车前捕获，避免故障现场被零 PWM 覆盖。 */
     DebugLog_CaptureFault(fault);
+    Int_MPU6050_CalibrationCancel();
     g_mode_fsm.status = CAR_FAULT;
     g_mode_fsm.fault = fault;
     reset_controllers(g_mode_fsm.target_yaw); // 出现错误，清PID
@@ -158,7 +160,8 @@ static void apply_request(const CarRequest *request)
 
     /* 先校验，非法请求保留故障现场，不解除日志冻结。 */
     if ((is_turn && request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU) ||
-        ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED) &&
+        ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED ||
+          request->command == COMMAND_IMU_CALIBRATED) &&
          (request->base_pwm == 0u || request->base_pwm > 1000u)) ||
         (request->command == COMMAND_IMU_TIMED && request->duration_ms == 0u))
     {
@@ -172,6 +175,8 @@ static void apply_request(const CarRequest *request)
     }
 
 
+    /* 已接受的新请求取消上一轮校准，避免接管后迟到的成功触发起步。 */
+    Int_MPU6050_CalibrationCancel();
     //写入动作
     g_mode_fsm.status = CAR_RUNNING;
     g_mode_fsm.fault = CAR_FAULT_NONE;
@@ -185,12 +190,19 @@ static void apply_request(const CarRequest *request)
     if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK) //IMU 动作
     {
         g_mode_fsm.mode = MODE_IMU;
-        Attitude_Reset();
+        /* 停车校准等成功时用平均重力建立姿态，其余动作保留原有复位语义。 */
+        if (request->command != COMMAND_IMU_CALIBRATED) Attitude_Reset();
     }
 
     /* 每个动作的状态设置与日志放在同一分支，避免分开维护两套动作判断。 */
     switch (request->command) //根据请求的动作类型设置状态
     {
+    case COMMAND_IMU_CALIBRATED:
+        g_mode_fsm.base_pwm = request->base_pwm;
+        g_mode_fsm.imu_state = IMU_CALIBRATE;
+        Int_MPU6050_CalibrationStart();
+        command_text = "IMU_CAL";
+        break;
     case COMMAND_TRACK:
         g_mode_fsm.mode = MODE_TRACK;
         command_text = "TRACK";
@@ -352,6 +364,7 @@ void ModeFSM_Init(void)
     ModeFSM_t initial = {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
                          MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u};
     g_mode_fsm = initial;    //不直接修改动作，避免中断时出错
+    Int_MPU6050_CalibrationCancel();
     s_request.pending = 0u;
     s_turn_done_frames = 0u;
     s_forward_limit_frames = 0u;
@@ -394,6 +407,33 @@ void ModeFSM_Tick(void)
     if (stop_this_frame == 0u && take_request(&request) != 0u)
     {   //不是停车，有执行请求
         apply_request(&request);
+    }
+
+    /* 校准阶段独占六轴采样，先输出零 PWM；不调用普通 update_imu 或任一 PID。
+     * 即使本帧成功，也到下一帧才起步，使 Route 有机会先进入通行计时阶段。 */
+    if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU &&
+        g_mode_fsm.imu_state == IMU_CALIBRATE)
+    {
+        Accel_struct gravity_mean;
+        IMU_CalibrationStatus calibration;
+        IMUTask_Stop();
+        calibration = Int_MPU6050_CalibrationStep(&gravity_mean);
+        if (calibration == IMU_CAL_DONE) {
+            if (Attitude_AlignFromAccel(&gravity_mean)) {
+                g_mode_fsm.imu_state = IMU_FORWARD;
+                g_mode_fsm.state_frames = 0u;
+                g_mode_fsm.target_yaw = 0.0f;
+                reset_controllers(0.0f);
+                DebugLog_Write(LOG_INFO, "CAL_DONE");
+            } else {
+                set_fault(CAR_FAULT_IMU_CALIBRATION);
+            }
+        } else if (calibration == IMU_CAL_READ_ERROR) {
+            set_fault(CAR_FAULT_IMU);
+        } else if (calibration != IMU_CAL_BUSY) {
+            set_fault(CAR_FAULT_IMU_CALIBRATION);
+        }
+        return;
     }
 
     /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
@@ -459,6 +499,11 @@ void Car_Track(void)
 void Car_ImuForward(uint16_t base_pwm)
 {
     submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u);
+}
+
+void Car_ImuForwardCalibrated(uint16_t base_pwm)
+{
+    submit_request(COMMAND_IMU_CALIBRATED, MODE_IMU, base_pwm, 0u);
 }
 
 /**

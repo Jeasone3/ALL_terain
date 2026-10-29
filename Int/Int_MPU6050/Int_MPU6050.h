@@ -38,6 +38,33 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
    samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
 uint8_t Int_MPU6050_Calibrate(uint16_t samples);
 
+/* 项目入口非阻塞校准结果。Step 只在唯一的 10 ms 控制入口调用。 */
+typedef enum {
+    IMU_CAL_BUSY = 0,
+    IMU_CAL_DONE,
+    IMU_CAL_READ_ERROR,
+    IMU_CAL_TIMEOUT,
+    IMU_CAL_CANCELLED
+} IMU_CalibrationStatus;
+
+/**
+ * @brief 开始停车校准，只清空采样窗口，不读总线、不改变旧零偏。
+ * @note 先让运动层输出零 PWM，再每 10 ms 调用一次 Step；不能同时调用普通 Tick。
+ */
+void Int_MPU6050_CalibrationStart(void);
+
+/**
+ * @brief 推进一帧校准，最多读取一次六轴数据，不包含延时和等待循环。
+ * @param gravity_mean 成功时接收传感器坐标系的平均加速度，单位为原始计数。
+ * @return 当前校准状态；成功才一次性更新三轴浮点零偏。
+ * @note 连续静止约 1 秒后采集约 1 秒，采集中运动则重新等待；总期限为 500 帧。
+ *       超时、通信失败或取消均保留旧零偏，完成后的后续 Step 不再读取总线。
+ */
+IMU_CalibrationStatus Int_MPU6050_CalibrationStep(Accel_struct *gravity_mean);
+
+/** @brief 取消尚未提交的校准，防止停止或接管后继续采样并自动完成。 */
+void Int_MPU6050_CalibrationCancel(void);
+
 /* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；放定时中断里 */
 void Int_MPU6050_Tick(void);
 

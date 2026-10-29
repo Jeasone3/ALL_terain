@@ -29,6 +29,7 @@ Motor_Struct motorRight;
 uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 uint8_t g_imu_ready;
 Euler_struct g_euler;
+Gyro_Accel_Struct g_imu_data;
 
 static const char *s_case_name;
 static uint32_t s_milliseconds;
@@ -147,6 +148,8 @@ static void begin_case(const char *name)
     memset(&motorLeft, 0, sizeof(motorLeft));
     memset(&motorRight, 0, sizeof(motorRight));
     memset(&g_euler, 0, sizeof(g_euler));
+    memset(&g_imu_data, 0, sizeof(g_imu_data));
+    g_imu_data.accel.accel_z = 16384;
     memset(s_oled_rows, 0, sizeof(s_oled_rows));
     for (i = 0u; i < GRAYSCALE_SENSOR_CHANNELS; ++i) {
         g_sensor_data[i] = (uint16_t)((i == 0u || i == 7u) ? LINE_RAW_VALUE : !LINE_RAW_VALUE);
@@ -256,7 +259,7 @@ static void test_status_and_numeric_limits(void)
     display();
     CHECK(strstr(s_oled_rows[1], "Y:--") != NULL && strstr(s_oled_rows[1], "T:--") != NULL);
     CHECK(strstr(s_oled_rows[2], "E:--") != NULL);
-    CHECK(strstr(s_oled_rows[3], "10000001") != NULL);
+    CHECK(strstr(s_oled_rows[3], "z:+0.0 a:+0.00") != NULL); /* 当前第 3 行保留六轴诊断 */
     g_mode_fsm.mode = MODE_IMU;
     g_mode_fsm.target_yaw = 170.0f;
     g_euler.yaw = -170.0f;
@@ -433,6 +436,25 @@ static void test_route_telemetry(void)
     puts("PASS route progress, 21-column limit and frozen project timing");
 }
 
+/** @brief 验证新增校准阶段及失败原因能够显示，且失败现场不被后续状态覆盖。 */
+static void test_calibration_telemetry(void)
+{
+    begin_case("calibration status and fault telemetry");
+    g_mode_fsm.mode = MODE_IMU;
+    g_mode_fsm.imu_state = IMU_CALIBRATE;
+    g_mode_fsm.imu_valid = 0u;
+    g_route.state = ROUTE_CALIBRATE;
+    g_route.enabled = 1u;
+    display();
+    CHECK(strstr(s_oled_rows[0], "IMU CAL R:CAL") != NULL);
+    CHECK(strstr(s_oled_rows[1], "Y:--") != NULL);
+    DebugLog_CaptureFault(CAR_FAULT_IMU_CALIBRATION);
+    g_route.state = ROUTE_ABORTED;
+    display();
+    CHECK(strstr(s_oled_rows[0], "FAULT CAL R:CAL") != NULL && has_message("CAL_FAIL"));
+    puts("PASS calibration phase and frozen failure telemetry");
+}
+
 int main(void)
 {
     test_records_and_text();
@@ -440,6 +462,7 @@ int main(void)
     test_fault_snapshot();
     test_snapshot_irq_and_reconnect();
     test_route_telemetry();
+    test_calibration_telemetry();
     puts("All debug-log scenarios passed.");
     return EXIT_SUCCESS;
 }

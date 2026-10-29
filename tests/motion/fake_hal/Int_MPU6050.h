@@ -4,17 +4,7 @@
  */
 #ifndef MOTION_TEST_MPU6050_H
 #define MOTION_TEST_MPU6050_H
-#include "IMU_Config.h"
-
-extern Gyro_Accel_Struct g_imu_data;
-extern uint8_t g_imu_ready;
-
-/**
- * @brief 在当前测试帧发布预设的采样结果。
- * @param 无。
- * @return 无。
- * @note 实现记录采样序号，供姿态与电机 mock 检查本帧调用顺序。
- */
-void Int_MPU6050_Tick(void);
+/* 复用生产声明，防止替身与真实接口漂移；函数体仍由测试提供。 */
+#include "../../../Int/Int_MPU6050/Int_MPU6050.h"
 
 #endif

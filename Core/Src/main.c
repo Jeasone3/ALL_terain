@@ -50,7 +50,7 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
 #define IMU_STRAIGHT_TEST_PWM     300u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
 #define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
 
@@ -231,12 +231,14 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
     if ((uint32_t)(HAL_GetTick() - last_print_ms) >= 100U)
     {
       Euler_struct euler_snapshot;
+      AttitudeDiagnostic attitude_diagnostic;
       uint8_t imu_valid;
       uint32_t saved_primask = __get_PRIMASK();
       last_print_ms = HAL_GetTick();
 
       __disable_irq();
       euler_snapshot = g_euler;
+      attitude_diagnostic = g_attitude_diagnostic;
       imu_valid = g_mode_fsm.imu_valid;
       __set_PRIMASK(saved_primask);
 
@@ -246,6 +248,15 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
                (double)euler_snapshot.yaw,
                (double)euler_snapshot.pitch,
                (double)euler_snapshot.roll);
+        /* 临时诊断独立成行，保留原欧拉角行；G/C 为最近姿态复位后的累计度数。
+         * 冲击后比较增量：G 跳变说明来自陀螺传播路径，C 跳变说明校正仍在影响 yaw。
+         * W 是当前校正权重，A=1 表示方向拒绝已启用；不在控制中断内打印。 */
+        printf("IMU:G:%.3f C:%.3f W:%.2f A:%u R:%lu\r\n",
+               (double)attitude_diagnostic.gyro_yaw_sum,
+               (double)attitude_diagnostic.accel_yaw_sum,
+               (double)attitude_diagnostic.accel_weight,
+               (unsigned int)attitude_diagnostic.direction_ready,
+               (unsigned long)attitude_diagnostic.reset_count);
       }
       else
       {

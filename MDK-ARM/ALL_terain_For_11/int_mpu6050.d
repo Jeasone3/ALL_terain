@@ -34,3 +34,4 @@ all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_h
 all_terain_for_11\int_mpu6050.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
 all_terain_for_11\int_mpu6050.o: ../Com/Com_Delay_us/Delay_us.h
 all_terain_for_11\int_mpu6050.o: ../Com/Com_IMU_Config/IMU_Config.h
+all_terain_for_11\int_mpu6050.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h

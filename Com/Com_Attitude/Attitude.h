@@ -19,6 +19,20 @@
    设置 yaw 基准后输出可超出 ±180°，运动控制器需使用最短角差。 */
 extern Euler_struct g_euler;
 
+/* 台阶偏航临时诊断：两项增量均以度计，从最近一次姿态复位开始累计。
+ * gyro_yaw_sum 是三轴陀螺经四元数传播产生的航向变化，不是单独积分 gz；
+ * accel_yaw_sum 是该帧加速度反馈相对纯陀螺传播额外造成的航向变化。
+ * 主循环须在短临界区复制整个结构，再恢复中断后输出。 */
+typedef struct {
+    float gyro_yaw_sum;
+    float accel_yaw_sum;
+    float accel_weight;          /* 最近一帧实际使用的加速度校正权重 */
+    uint8_t direction_ready;      /* 1=方向拒绝已启用；0=仍处于倾角对准阶段 */
+    uint32_t reset_count;         /* 上电后的复位次数，区分动作切换与同一动作内的冲击 */
+} AttitudeDiagnostic;
+
+extern AttitudeDiagnostic g_attitude_diagnostic;
+
 /* 当前安装方向：传感器 Z 上、Y 前、X 右；解算采用车体 X 前、Y 左、Z 上的右手坐标系。
    Attitude_Tick 对加速度和角速度统一映射为 (Y, -X, Z)，保留左转 yaw 增大的约定。
    若模块朝向不同，需核对三轴方向并使用一致的右手映射，不能只交换两个轴。 */
@@ -30,6 +44,14 @@ extern Euler_struct g_euler;
  * @note 在 IMU 初始化、静止校准后调用一次；不读取传感器或驱动电机。
  */
 void Attitude_Init(void);
+
+/**
+ * @brief 用停车校准得到的平均重力建立真实倾角和零航向基准。
+ * @param gravity_mean 传感器坐标系平均加速度，单位为原始计数，安装映射仍为 (Y,-X,Z)。
+ * @return 1 表示对准完成；空指针或模长不在 0.90～1.10g 时返回 0，保留旧状态。
+ * @note 仅在已确认静止、零偏校准成功后调用；一次构造四元数，直接启用方向拒绝。
+ */
+uint8_t Attitude_AlignFromAccel(const Accel_struct *gravity_mean);
 
 /**
  * @brief 解算一帧六轴数据，并更新全局欧拉角。

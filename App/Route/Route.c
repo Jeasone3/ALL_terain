@@ -29,14 +29,14 @@
  * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 2000u, 5000u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 6000u, 10000u, JUNCTION_RIGHT}, //栅格
+    {ROUTE_ACTION_RIGHT,    2u, 530u, 3000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
+    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 3000u, 8000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
     {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
-    {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
+    {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 20000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
     {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
     {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 草坪 */
-    {ROUTE_ACTION_LEFT,     8u, 400u, 600u, 9000u, 10000u, JUNCTION_CROSS}, /* 大台阶：状态机判断第 8 项，左转后倒退 2 秒、循迹 3 秒 */
+    {ROUTE_ACTION_LEFT,     8u, 400u, 600u, 9000u, 10000u, JUNCTION_CROSS}, /* 大台阶：左转后倒退 2 秒，再按 entry_ms 循迹对正 */
     {ROUTE_ACTION_LEFT,     9u, 600u, 800u, 3000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
 };
 
@@ -224,7 +224,7 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_APPROACH || g_route.state == ROUTE_TURN ||
         g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
-        g_route.state == ROUTE_REVERSE) {
+        g_route.state == ROUTE_REVERSE || g_route.state == ROUTE_CALIBRATE) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -336,17 +336,17 @@ static void begin_recovery(void)
 }
 
 /**
- * @brief 结束入口对正，只提交一次本段 IMU 直行并开始通行计时。
+ * @brief 结束入口对正，只提交一次停车校准请求；成功起步后再开始通行计时。
  * @param step 当前有效路线段，提供随请求一起提交的基础 PWM。
  * @return 无。
- * @note OBSTACLE 从零统计已完成控制帧；请求由 ModeFSM 本帧第二次取邮箱接受，
- *       随后才建立 IMU 航向并输出电机。持续运行期间不得重复调用本函数。
+ * @note 请求由 ModeFSM 本帧第二次取邮箱接受；CALIBRATE 期间保持停车。
+ *       成功后由路线切换到 OBSTACLE，不再提交会清空刚对准姿态的普通直行请求。
  */
 static void begin_project(const RouteStep *step)
 {
-    enter_state(ROUTE_OBSTACLE);
-    Car_ImuForward(step->base_pwm);
-    DebugLog_Write(LOG_INFO, "PROJECT_IN");
+    enter_state(ROUTE_CALIBRATE);
+    Car_ImuForwardCalibrated(step->base_pwm);
+    DebugLog_Write(LOG_INFO, "CAL_START");
 }
 
 /**
@@ -447,6 +447,9 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     if (external_command || !g_route.enabled ||
         (g_mode_fsm.status != CAR_RUNNING && g_route.state != ROUTE_READY)) {
+        /* 关闭路线不能让正在停车校准的动作稍后自行起步；外部接管则尊重新动作。 */
+        if (!external_command && g_route.state == ROUTE_CALIBRATE &&
+            g_mode_fsm.status == CAR_RUNNING) Car_Stop();
         s_active = g_route.enabled = 0u;
         g_route.state = ROUTE_ABORTED;
         return;
@@ -543,7 +546,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     case ROUTE_REVERSE: //大台阶入口先后退，再由灰度循迹向前对正
         if (elapsed_ms >= ROUTE_REVERSE_MS) {
             enter_state(ROUTE_ENTRY);
-            Car_Track(); /* 本帧开始前进循迹，入口的 3 秒单独从零计时。 */
+            Car_Track(); /* 本帧开始前进循迹，入口按 entry_ms 单独从零计时。 */
             return;
         }
         break;
@@ -554,6 +557,15 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             return;
         }
         break;
+
+    case ROUTE_CALIBRATE:
+        if (g_mode_fsm.mode == MODE_IMU && g_mode_fsm.imu_state == IMU_FORWARD) {
+            /* 成功当帧 FSM 仍停车，下一帧先来到这里，再开始第一帧直行。 */
+            enter_state(ROUTE_OBSTACLE);
+            DebugLog_Write(LOG_INFO, "PROJECT_IN");
+            return;
+        }
+        return; /* 校准使用驱动的独立 5 秒期限，不占用路线等待/通行时限。 */
 
     case ROUTE_OBSTACLE: //障碍物使用imu通行
         if (elapsed_ms >= step->pass_ms) {

@@ -102,6 +102,153 @@ static void test_tilt(float pitch_deg, float roll_deg)
 }
 
 /**
+ * @brief 在已有侧倾和俯仰时叠加短时冲击，检查真实运动仍被跟踪。
+ * @param impact_kind 0=混合冲击，1=仅方向大偏差，2=仅模长异常，3=方向中等偏差。
+ * @note 航向始终为零，冲击期间真实俯仰由 30°快速变化到 40°再返回；
+ *       加速度干扰和真实陀螺角速度分开生成，避免测试把冲击误当作真实转向。
+ */
+static void test_pitch_impact(int impact_kind)
+{
+    unsigned int frame;
+    float peak_yaw = 0.0f;
+    float peak_pitch_error = 0.0f;
+    g_imu_data = (Gyro_Accel_Struct){0};
+    Attitude_Init();
+    move_tilt(0.0f, 0.0f, 0.0f, 20.0f);
+    move_tilt(0.0f, 20.0f, 30.0f, 20.0f);
+    for (frame = 0u; frame < 520u; frame++) {
+        float pitch = 30.0f;
+        float rate = 0.0f;
+        if (frame < 10u) {
+            pitch += (float)(frame + 1u);
+            rate = 100.0f;
+        } else if (frame < 20u) {
+            pitch += 19.0f - (float)frame;
+            rate = -100.0f;
+        }
+        set_tilt_sample(pitch, 20.0f, rate, 0.0f);
+        if (frame < 20u) {
+            if (impact_kind == 1 || impact_kind == 3) {
+                /* 分别覆盖 25°完全拒绝和 8°部分减权，模长始终为 1g。 */
+                float angle = (impact_kind == 1 ? 25.0f : 8.0f) * 0.01745329252f;
+                float ax = (float)g_imu_data.accel.accel_y;
+                float az = (float)g_imu_data.accel.accel_z;
+                g_imu_data.accel.accel_y = (int16_t)lroundf(cosf(angle)*ax + sinf(angle)*az);
+                g_imu_data.accel.accel_z = (int16_t)lroundf(-sinf(angle)*ax + cosf(angle)*az);
+            } else {
+                /* 放大重力投影模拟垂向冲击，同时叠加前向运动加速度。 */
+                g_imu_data.accel.accel_x = (int16_t)lroundf(1.4f*g_imu_data.accel.accel_x);
+                g_imu_data.accel.accel_y = (int16_t)lroundf(1.4f*g_imu_data.accel.accel_y + (impact_kind == 2 ? 0.0f : 0.5f*IMU_ACCEL_LSB_PER_G));
+                g_imu_data.accel.accel_z = (int16_t)lroundf(1.4f*g_imu_data.accel.accel_z);
+            }
+        }
+        Attitude_Tick();
+        CHECK(isfinite(g_euler.yaw) && isfinite(g_euler.pitch));
+        CHECK(g_attitude_diagnostic.direction_ready != 0u);
+        CHECK(fabsf(g_attitude_diagnostic.gyro_yaw_sum +
+                    g_attitude_diagnostic.accel_yaw_sum - g_euler.yaw) < 0.01f);
+        if (fabsf(g_euler.yaw) > peak_yaw) peak_yaw = fabsf(g_euler.yaw);
+        if (fabsf(g_euler.pitch - pitch) > peak_pitch_error) peak_pitch_error = fabsf(g_euler.pitch - pitch);
+    }
+    printf("impact kind=%d: peak yaw %.4f, pitch error %.4f, final yaw %.4f deg\n",
+           impact_kind, (double)peak_yaw, (double)peak_pitch_error, (double)g_euler.yaw);
+    CHECK(peak_yaw < 0.3f);
+    CHECK(peak_pitch_error < 0.5f);
+}
+
+/**
+ * @brief 检查冲击期间真实转向未冻结，以及失重后仍能恢复加速度校正。
+ * @note 先以水平重力完成对准，再连续 200 ms 转向；随后用无陀螺的
+ *       小倾角误差检查校正恢复。另覆盖倾斜初始姿态不会被方向判据永久拒绝。
+ */
+static void test_impact_recovery(void)
+{
+    unsigned int frame;
+    g_imu_data = (Gyro_Accel_Struct){0};
+    Attitude_Init();
+    set_tilt_sample(0.0f, 0.0f, 0.0f, 0.0f);
+    for (frame = 0u; frame < 100u; frame++) Attitude_Tick();
+    for (frame = 0u; frame < 20u; frame++) {
+        set_tilt_sample(0.0f, 0.0f, 0.0f, 0.0f);
+        g_imu_data.accel.accel_y = (int16_t)(0.6f*IMU_ACCEL_LSB_PER_G);
+        g_imu_data.gyro.gyro_z = 30.0f*IMU_GYRO_LSB_PER_DPS;
+        Attitude_Tick();
+    }
+    CHECK(fabsf(g_euler.yaw - 6.0f) < 0.1f);
+    /* 零加速度既不能产生 NaN，也不能阻止真实角速度积分。 */
+    g_imu_data.accel.accel_x = g_imu_data.accel.accel_y = g_imu_data.accel.accel_z = 0;
+    Attitude_Tick();
+    CHECK(fabsf(g_euler.yaw - 6.3f) < 0.1f);
+    set_tilt_sample(3.0f, 0.0f, 0.0f, 0.0f);
+    for (frame = 0u; frame < 1000u; frame++) Attitude_Tick();
+    CHECK(fabsf(g_euler.pitch - 3.0f) < 0.1f);
+    /* 复位保持原有零基准语义；静止倾斜输入应逐渐对准，而非永远被拒绝。 */
+    Attitude_Reset();
+    set_tilt_sample(30.0f, 0.0f, 0.0f, 0.0f);
+    for (frame = 0u; frame < 1600u; frame++) Attitude_Tick();
+    CHECK(fabsf(g_euler.pitch - 30.0f) < 0.1f);
+    puts("PASS impact yaw tracking, zero acceleration, correction recovery and tilted startup");
+}
+
+/**
+ * @brief 验证诊断累计跨角度边界、复位和纯加速度反馈时的来源分解。
+ * @note 诊断只记录原算法的变化，不应改变姿态；纯陀螺测试跨过 -180°。
+ */
+static void test_yaw_diagnostic(void)
+{
+    unsigned int frame;
+    uint32_t previous_resets = g_attitude_diagnostic.reset_count;
+    Attitude_Reset();
+    CHECK(g_attitude_diagnostic.reset_count == previous_resets + 1u);
+    g_imu_data = (Gyro_Accel_Struct){0};
+    g_imu_data.gyro.gyro_z = -100.0f*IMU_GYRO_LSB_PER_DPS;
+    for (frame = 0u; frame < 450u; frame++) Attitude_Tick();
+    CHECK(fabsf(g_attitude_diagnostic.gyro_yaw_sum + 450.0f) < 0.05f);
+    CHECK(fabsf(g_attitude_diagnostic.accel_yaw_sum) < 0.01f);
+    CHECK(fabsf(g_euler.yaw + 90.0f) < 0.05f);
+    Attitude_Reset();
+    CHECK(g_attitude_diagnostic.gyro_yaw_sum == 0.0f);
+    CHECK(g_attitude_diagnostic.accel_yaw_sum == 0.0f);
+    CHECK(g_attitude_diagnostic.direction_ready == 0u);
+    set_tilt_sample(25.0f, 20.0f, 0.0f, 0.0f);
+    for (frame = 0u; frame < 1500u; frame++) Attitude_Tick();
+    CHECK(fabsf(g_attitude_diagnostic.gyro_yaw_sum) < 0.01f);
+    CHECK(fabsf(g_attitude_diagnostic.accel_yaw_sum - g_euler.yaw) < 0.01f);
+    puts("PASS yaw diagnostic wrap, reset and gyro/acceleration decomposition");
+}
+
+/** @brief 检查静止平均重力能立即建立真实倾角，并在第一帧冲击前启用方向拒绝。 */
+static void test_gravity_alignment(void)
+{
+    Accel_struct invalid = {0};
+    unsigned int frame;
+    uint32_t resets = g_attitude_diagnostic.reset_count;
+    set_tilt_sample(30.0f, 20.0f, 0.0f, 0.0f);
+    CHECK(Attitude_AlignFromAccel(&g_imu_data.accel));
+    CHECK(g_attitude_diagnostic.reset_count == resets + 1u);
+    CHECK(g_attitude_diagnostic.direction_ready == 1u);
+    CHECK(g_attitude_diagnostic.accel_weight == 1.0f);
+    CHECK(fabsf(g_euler.pitch - 30.0f) < 0.01f);
+    CHECK(fabsf(g_euler.roll - 20.0f) < 0.01f);
+    CHECK(g_euler.yaw == 0.0f);
+    for (frame = 0u; frame < 100u; frame++) {
+        Attitude_Tick();
+        check_tilt(30.0f, 20.0f);
+    }
+    CHECK(!Attitude_AlignFromAccel(&invalid));
+    CHECK(!Attitude_AlignFromAccel(NULL));
+    CHECK(g_attitude_diagnostic.reset_count == resets + 1u);
+    check_tilt(30.0f, 20.0f);
+    set_tilt_sample(31.0f, 20.0f, 100.0f, 0.0f);
+    g_imu_data.accel.accel_y += (int16_t)(0.8f*IMU_ACCEL_LSB_PER_G);
+    Attitude_Tick();
+    CHECK(g_attitude_diagnostic.direction_ready == 1u);
+    CHECK(g_attitude_diagnostic.accel_weight == 0.0f);
+    check_tilt(31.0f, 20.0f);
+    puts("PASS gravity alignment, invalid mean preservation and first-frame impact rejection");
+}
+
+/**
  * @brief 检查真实姿态复位与输出偏置的即时和下一帧行为。
  * @param 无。
  * @return EXIT_SUCCESS 表示场景全部通过；失败由 CHECK 返回非零退出码。
@@ -155,5 +302,12 @@ int main(void)
     test_tilt(30.0f, 20.0f);
     test_tilt(-30.0f, -20.0f);
     puts("PASS pitch, combined tilt, stationary hold and level return");
+    test_pitch_impact(0);
+    test_pitch_impact(1);
+    test_pitch_impact(2);
+    test_pitch_impact(3);
+    test_impact_recovery();
+    test_yaw_diagnostic();
+    test_gravity_alignment();
     return EXIT_SUCCESS;
 }

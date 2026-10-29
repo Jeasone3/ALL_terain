@@ -175,7 +175,7 @@ void DebugLog_Write(LogLevel level, const char *text)
 /**
  * @brief 取得故障的短英文消息，供中断直接记录而无需格式化。
  * @param fault 本次运动故障类型。
- * @return 静态字符串：IMU_ERR、TURN_TO 或 BAD_CMD。
+ * @return 故障短文本；停车校准失败使用 CAL_FAIL，通信失败仍使用 IMU_ERR。
  * @note 未知故障类型也显示 BAD_CMD；只返回常量，不修改任何状态。
  */
 static const char *fault_text(CarFault fault)
@@ -185,6 +185,7 @@ static const char *fault_text(CarFault fault)
         case CAR_FAULT_TURN_TIMEOUT: return "TURN_TO";
         case CAR_FAULT_COMMAND:      return "BAD_CMD";
         case CAR_FAULT_ROUTE_TIMEOUT:return "ROUTE_TO";
+        case CAR_FAULT_IMU_CALIBRATION:return "CAL_FAIL";
         default:                    return "BAD_CMD";
     }
 }
@@ -291,6 +292,7 @@ static const char *route_name(RouteState state)
         case ROUTE_FINAL_FORWARD: return "END_F";
         case ROUTE_FINISHED: return "DONE";
         case ROUTE_REVERSE:  return "REV";
+        case ROUTE_CALIBRATE:return "CAL";
         default:            return "?";
     }
 }
@@ -315,7 +317,7 @@ static const char *status_name(const ModeFSM_t *motion)
 /**
  * @brief 将快照中的运动模式及 IMU 子状态转成动作缩写。
  * @param motion 完整运动快照，内部保证指针有效。
- * @return TRK、FWD、REV、L90、R90；非法 IMU 子状态返回 ?。
+ * @return TRK、FWD、REV、CAL、L90、R90；非法 IMU 子状态返回 ?。
  * @note 冻结的故障快照保留故障发生时动作；普通停车显示运动层保留的当前模式与子状态。
  */
 static const char *action_name(const ModeFSM_t *motion)
@@ -326,6 +328,7 @@ static const char *action_name(const ModeFSM_t *motion)
     switch (motion->imu_state) {
         case IMU_FORWARD:    return "FWD";
         case IMU_REVERSE:    return "REV";
+        case IMU_CALIBRATE:  return "CAL";
         case IMU_TURN_LEFT:  return "L90";
         case IMU_TURN_RIGHT: return "R90";
         default:            return "?";

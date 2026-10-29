@@ -20,12 +20,13 @@ typedef enum {
     IMU_FORWARD = 0,               /* 保持目标航向直行 */
     IMU_TURN_LEFT,                 /* 相对动作起点左转 90° */
     IMU_TURN_RIGHT,                /* 相对动作起点右转 90° */
-    IMU_REVERSE                    /* 保持目标航向倒退，两轮 PWM 均不大于零 */
+    IMU_REVERSE,                   /* 保持目标航向倒退，两轮 PWM 均不大于零 */
+    IMU_CALIBRATE                  /* 项目入口停车校准，运行中但两轮始终输出零 */
 } ImuState;
 
 /* 运行状态同时适用于循迹和 IMU 模式。 */
 typedef enum {
-    CAR_RUNNING = 0,
+    CAR_RUNNING = 0,              /* 正在执行任务；入口校准期间也运行，但电机保持零输出 */
     CAR_STOPPED,
     CAR_FAULT
 } CarStatus;
@@ -35,7 +36,8 @@ typedef enum {
     CAR_FAULT_IMU,                 /* IMU 不可用、读取失败或角度无效 */
     CAR_FAULT_TURN_TIMEOUT,        /* 转弯 5 秒内未进容差，或截止确认期间离开容差 */
     CAR_FAULT_COMMAND,             /* 转后模式或直行 PWM 参数不合法 */
-    CAR_FAULT_ROUTE_TIMEOUT        /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_ROUTE_TIMEOUT,       /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_IMU_CALIBRATION      /* 停车校准超时或平均重力不能完成对准 */
 } CarFault;
 
 //状态机对象，用于保存当前状态
@@ -52,7 +54,7 @@ typedef struct {
     uint32_t state_frames;          /* 当前动作已执行帧数，每帧 10 ms */
     uint32_t turn_count;            /* 已完成转弯总数，上层比较前后值获取完成事件 */
     uint32_t command_id;            /* 已接受指令序号，用于调试动作切换 */
-    uint8_t imu_valid;              /* 1：本帧角度有效；0：循迹、停车或读取失败 */
+    uint8_t imu_valid;              /* 1：本帧角度有效；0：循迹、停车、校准或读取失败 */
     uint16_t base_pwm;              /* 当前 IMU 前进或倒退的基础 PWM 幅度，与动作一起接受，不代表实测车速 */
 } ModeFSM_t;
 
@@ -90,8 +92,16 @@ void Car_Track(void);
  * @param base_pwm 基础 PWM，范围 1 至 1000；普通项目先用 500，台阶和斜坡先用 600。
  * @return 无。
  * @note 动作与 PWM 原子提交；持续运行到下一请求或故障，灰度不参与直行纠偏。
+ *       本接口不停车校准；地图项目入口使用 Car_ImuForwardCalibrated。
  */
 void Car_ImuForward(uint16_t base_pwm);
+
+/**
+ * @brief 项目入口专用：先停车完成非阻塞零偏及倾角校准，再按零航向直行。
+ * @param base_pwm 校准成功后的直行 PWM，范围 1 至 1000。
+ * @note 只提交请求；成功当帧仍停车，下一帧起步。STOP、接管及故障会取消校准。
+ */
+void Car_ImuForwardCalibrated(uint16_t base_pwm);
 
 /**
  * @brief 单项目标定用定时直行，从接受动作开始计算，时间到后在控制中断内停车。
