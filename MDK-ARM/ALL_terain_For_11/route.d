@@ -31,6 +31,8 @@ all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
+all_terain_for_11\route.o: ../Com/Com_Attitude/Attitude.h
+all_terain_for_11\route.o: ../Com/Com_IMU_Config/IMU_Config.h
 all_terain_for_11\route.o: ../App/Debug_Log/Debug_Log.h
 all_terain_for_11\route.o: ../Int/Int_OLED/Int_OLED.h
 all_terain_for_11\route.o: ../App/Track_Task/Track_Task.h

@@ -5,6 +5,7 @@
  */
 #include "Route.h"
 #include "Mode_FSM.h"
+#include "Attitude.h"
 #include "Debug_Log.h"
 #include "Track_Task.h"
 #include "Int_Beep.h"
@@ -29,9 +30,9 @@
  * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 3500u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 4500u, 10000u, JUNCTION_RIGHT}, //栅格
+    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 4300u, 10000u, JUNCTION_CROSS}, //防滑带
+    {ROUTE_ACTION_STRAIGHT, 3u, 500u, 2000u, 6500u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
     {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
     {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
     {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
@@ -538,6 +539,11 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         {
             if (s_align_next_state == ROUTE_OBSTACLE)
             {
+                /* 进项目切 IMU 直行前重建 yaw 基准到 ideal_yaw：ALIGN_HOLD 800ms 静止期间
+                 * 陀螺零偏残值让 yaw 单向虚漂(车没转 yaw 变)，切直行时 error=ideal_yaw-yaw≠0，
+                 * PID 把 yaw 拉回 ideal_yaw 的同时把车体真实朝向反向拉偏，车斜着冲台阶。
+                 * 重置基准让 yaw=ideal_yaw、error=0，复刻纯 IMU 测试(main.c:178)的零误差起步。 */
+                Attitude_SetYawOffset(g_route.ideal_yaw);
                 enter_state(ROUTE_OBSTACLE);
                 Car_ImuForward(step->base_pwm);
                 DebugLog_Write(LOG_INFO, "PROJECT_IN");

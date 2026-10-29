@@ -12,9 +12,9 @@
  */
 
 /* 转弯控制和状态机共用同一到位容差，避免控制器停转后状态机仍认为未到位。 */
-#define IMU_TURN_DONE_TOLERANCE 1.0f
+#define IMU_TURN_DONE_TOLERANCE 2.0f
 /* 对齐到位容差：项目入口对齐到 90° 倍数的 ±2°，比转弯 1° 宽松；实车可调 1-3°。 */
-#define IMU_ALIGN_DONE_TOLERANCE 2.0f
+#define IMU_ALIGN_DONE_TOLERANCE 1.5f
 
 /**
  * @brief 初始化转弯和直行 PID，保留当前参数并清除历史。
