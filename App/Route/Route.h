@@ -29,7 +29,9 @@ typedef enum {
     ROUTE_FINAL_TURN,              /* 完整路线最后一个项目结束后，原地 IMU 左转 90° */
     ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
-    ROUTE_REVERSE                  /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
+    ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
+    ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3 秒 */
+    ROUTE_FINAL_RIGHT_TURN         /* 倒车后停车校准、右转 90°，完成即结束 */
 } RouteState;
 
 typedef enum {
@@ -66,7 +68,7 @@ typedef struct {
  * 例如设为 6u：从第 6 项对应路口前循迹出发，顺序执行第 6、7、8、9 项及原有收尾。
  * 默认 1u 保持从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 1u
+#define ROUTE_START_STEP 8u
 #endif
 
 /* 集中设置本次调试截止段数：9 或 0 均执行到路线末尾，再左转、直行 3 秒停车。

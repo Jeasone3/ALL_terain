@@ -35,7 +35,8 @@ typedef enum
     COMMAND_STOP,                   //停车  
     COMMAND_ROUTE_TIMEOUT,       //路线超时停车
     COMMAND_ALIGN,              //功能切换时原地对齐到 ideal_yaw
-    COMMAND_ALIGN_HOLD          //进项目对齐：到位后原地保持 800ms 再切 IMU 直行
+    COMMAND_ALIGN_HOLD,         //进项目对齐：到位后原地保持 800ms 再切 IMU 直行
+    COMMAND_REVERSE             //IMU 倒退：保持目标航向 ideal_yaw，两轮 PWM 不大于零
 } CarCommand;
 
 
@@ -167,7 +168,8 @@ static void apply_request(const CarRequest *request)
 
     /* 先校验，非法请求保留故障现场，不解除日志冻结。 */
     if ((is_turn && request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU) ||
-        ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED) &&
+        ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED ||
+          request->command == COMMAND_REVERSE) &&
          (request->base_pwm == 0u || request->base_pwm > 1000u)) ||
         (request->command == COMMAND_IMU_TIMED && request->duration_ms == 0u))
     {
@@ -215,6 +217,12 @@ static void apply_request(const CarRequest *request)
                 ++s_forward_limit_frames;
         }
         command_text = "IMU_FWD";
+        break;
+    case COMMAND_REVERSE:
+        g_mode_fsm.base_pwm = request->base_pwm; // 倒退基础 PWM，调度层内部取负
+        g_mode_fsm.imu_state = IMU_REVERSE; // 覆盖默认 IMU_FORWARD
+        g_mode_fsm.target_yaw = g_route.ideal_yaw; // 保持当前航向倒退，偏差不累积
+        command_text = "IMU_REV";
         break;
     case COMMAND_LEFT:
     case COMMAND_RIGHT:
@@ -546,6 +554,17 @@ void Car_Track(void)
 void Car_ImuForward(uint16_t base_pwm)
 {
     submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u);
+}
+
+/**
+ * @brief 请求以当前航向为基准持续倒退，目标取 g_route.ideal_yaw，持续到下一请求。
+ * @param base_pwm 倒退基础 PWM；调度层内部取负，yaw 纠偏方向不反转。
+ * @return 无。
+ * @note 下一帧接受动作；不设定时长，结束条件由上层(Route 数帧)决定。
+ */
+void Car_Reverse(uint16_t base_pwm)
+{
+    submit_request(COMMAND_REVERSE, MODE_IMU, base_pwm, 0u);
 }
 
 /**

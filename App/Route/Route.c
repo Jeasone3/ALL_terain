@@ -17,6 +17,7 @@
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
+#define ROUTE_REVERSE_DRIVE_MS 3000u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -228,7 +229,8 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_TURN ||
         g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
-        g_route.state == ROUTE_REVERSE) {
+        g_route.state == ROUTE_REVERSE ||
+        g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -548,6 +550,25 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 Car_ImuForward(step->base_pwm);
                 DebugLog_Write(LOG_INFO, "PROJECT_IN");
             }
+            else if (s_align_next_state == ROUTE_REVERSE_DRIVE)
+            {
+                /* 平台停车校准后倒车：重建 yaw 基准到 ideal_yaw，倒车起步 error=0 真正直着倒。 */
+                Attitude_SetYawOffset(g_route.ideal_yaw);
+                enter_state(ROUTE_REVERSE_DRIVE);
+                Car_Reverse(500u);
+                DebugLog_Write(LOG_INFO, "PLATFORM_REV");
+            }
+            else if (s_align_next_state == ROUTE_FINAL_RIGHT_TURN)
+            {
+                /* 倒车后停车校准、右转 90°：重建基准清除倒车段虚漂，转后目标 ideal_yaw-90 准确。
+                 * Attitude_SetYawOffset 须在 ideal_yaw += -90 之前，用更新前的 ideal_yaw 重建基准。 */
+                Attitude_SetYawOffset(g_route.ideal_yaw);
+                s_turn_count_before = g_mode_fsm.turn_count;
+                enter_state(ROUTE_FINAL_RIGHT_TURN);
+                g_route.ideal_yaw += route_action_yaw_delta(ROUTE_ACTION_RIGHT); /* -90° */
+                Car_TurnRight90(MODE_IMU);
+                DebugLog_Write(LOG_INFO, "FINAL_R90");
+            }
             else /* ROUTE_APPROACH */
             {
                 enter_state(ROUTE_APPROACH);
@@ -652,13 +673,36 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_FINAL_FORWARD: //最终直行
         if (elapsed_ms >= ROUTE_FINAL_FORWARD_MS) {
-            /* 先结束本轮调度，再提交一次 STOP；下一帧不会把正常完成误判为中止。 */
+            /* 高台直行到时：进入平台停车对齐保持(对齐 ideal_yaw+800ms+校准)，再倒车。
+             * 不在此 Car_Stop 进 FINISHED——CAR_STOPPED 会被 Route 中止检查当作被接管，
+             * 对齐保持是唯一能在停车保持期间维持 CAR_RUNNING 的机制。 */
+            s_align_count_before = g_mode_fsm.align_count;
+            s_align_next_state = ROUTE_REVERSE_DRIVE;
+            enter_state(ROUTE_ALIGN);
+            Car_AlignToHold();
+            DebugLog_Write(LOG_INFO, "PLATFORM_STOP");
+        }
+        return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
+
+    case ROUTE_REVERSE_DRIVE: //高台倒车：保持 ideal_yaw 倒退 3 秒，再停车对齐校准
+        if (elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
+            s_align_count_before = g_mode_fsm.align_count;
+            s_align_next_state = ROUTE_FINAL_RIGHT_TURN;
+            enter_state(ROUTE_ALIGN);
+            Car_AlignToHold(); /* 倒车后停车保持 800ms+对齐 ideal_yaw+校准，仿进项目 */
+            DebugLog_Write(LOG_INFO, "REV_STOP");
+        }
+        return; /* 跳过 step->timeout_ms 检查，仿 ROUTE_FINAL_FORWARD */
+
+    case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成即停车结束
+        if (g_mode_fsm.turn_count != s_turn_count_before) {
             s_active = g_route.enabled = 0u;
             enter_state(ROUTE_FINISHED);
             Car_Stop();
             DebugLog_Write(LOG_INFO, "ROUTE_DONE");
         }
-        return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
+        return;
+
     case ROUTE_RECOVER:
         if (confirm_exit(sensor_data)) {
             finish_step();

@@ -96,6 +96,14 @@ void Car_Track(void);
 void Car_ImuForward(uint16_t base_pwm);
 
 /**
+ * @brief 提交保持当前航向倒退请求，目标取 g_route.ideal_yaw，持续到下一请求。
+ * @param base_pwm 倒退基础 PWM，范围 1 至 1000；调度层内部取负，yaw 纠偏方向不变。
+ * @return 无。
+ * @note 下一帧生效；持续运行到下一请求或故障，结束条件由上层(Route 数帧)决定。
+ */
+void Car_Reverse(uint16_t base_pwm);
+
+/**
  * @brief 单项目标定用定时直行，从接受动作开始计算，时间到后在控制中断内停车。
  * @param base_pwm 基础 PWM，范围 1 至 1000。
  * @param duration_ms 非零测试时长，向上取整到 10 ms。
