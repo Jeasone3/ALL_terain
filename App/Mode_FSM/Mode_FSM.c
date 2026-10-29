@@ -513,16 +513,18 @@ void ModeFSM_Tick(void)
 
     if (g_mode_fsm.mode == MODE_TRACK)  //循迹态
     {
-        /* 保存全局循迹基础 PWM；仅本帧属于自动路线第 11 项时临时降为 300。
-         * 按表中的 project_id 判断，不按数组下标；手动接管后路线已禁用，不沿用低速。
-         * 输出后恢复全局值，下一项目自然使用原基础 PWM，不重置循迹 PID 历史。 */
-        int16_t track_base_pwm = g_line_controller.base_speed;
+        /* 目标项目循迹时保持基础 PWM 为 250，其他项目或手动接管后恢复为 400。
+         * 每帧按 project_id 更新基础值，不再在输出后恢复变量；循迹 PID 历史保持不变。
+         * 状态机循迹基础 PWM 在此统一选择，后续调整普通循迹速度时同步修改 else 分支。 */
         if (g_route.enabled && g_route.project_id == 11u)
         {
-            g_line_controller.base_speed = 250;
+            g_line_controller.base_speed = 200;
+        }
+        else
+        {
+            g_line_controller.base_speed = 400;
         }
         follow_line(&g_line_controller, g_sensor_data, LINE_RAW_VALUE);
-        g_line_controller.base_speed = track_base_pwm;
     }
     else if (g_mode_fsm.imu_state == IMU_FORWARD) //直行态
     {

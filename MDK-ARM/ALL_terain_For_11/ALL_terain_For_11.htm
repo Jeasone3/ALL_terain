@@ -3,7 +3,7 @@
 <title>Static Call Graph - [ALL_terain_For_11\ALL_terain_For_11.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image ALL_terain_For_11\ALL_terain_For_11.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 30 02:07:05 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Oct 30 03:06:05 2026
 <BR><P>
 <H3>Maximum Stack Usage =        448 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -312,9 +312,9 @@ Global Symbols
 
 <P><STRONG><a name="[7d]"></a>__aeabi_memcpy4</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, memcpya.o(.text))
 <BR><BR>[Called By]<UL><LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Init
+<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
 <LI><a href="#[8f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Init
 <LI><a href="#[7b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_CaptureFault
-<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
 </UL>
 
 <P><STRONG><a name="[13f]"></a>__aeabi_memcpy8</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, memcpya.o(.text), UNUSED)
@@ -339,9 +339,9 @@ Global Symbols
 <LI><a href="#[f2]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MX_TIM2_Init
 <LI><a href="#[91]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
 <LI><a href="#[119]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;SystemClock_Config
+<LI><a href="#[8c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_PrintLine
 <LI><a href="#[f9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Init
 <LI><a href="#[8f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Init
-<LI><a href="#[8c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_PrintLine
 </UL>
 
 <P><STRONG><a name="[142]"></a>__aeabi_memclr8</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, memseta.o(.text), UNUSED)
@@ -356,7 +356,11 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[51]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_float_round
 <LI><a href="#[50]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_float_epilogue
 </UL>
-<BR>[Called By]<UL><LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
+<BR>[Called By]<UL><LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
+<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
+<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
+<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
+<LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
 <LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[fd]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
@@ -366,10 +370,6 @@ Global Symbols
 <LI><a href="#[d7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_calc
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;follow_line
 <LI><a href="#[12a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calculate_error
-<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
-<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
-<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
-<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
 <LI><a href="#[11f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_infnan2
 </UL>
 
@@ -378,7 +378,10 @@ Global Symbols
 </UL>
 <BR>[Calls]<UL><LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 </UL>
-<BR>[Called By]<UL><LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
+<BR>[Called By]<UL><LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
+<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
+<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
+<LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
 <LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 <LI><a href="#[e5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_TurnTick
@@ -387,9 +390,6 @@ Global Symbols
 <LI><a href="#[dc]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;imu_angle_error
 <LI><a href="#[d7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_calc
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;follow_line
-<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
-<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
-<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
 </UL>
 
 <P><STRONG><a name="[53]"></a>__aeabi_frsub</STRONG> (Thumb, 6 bytes, Stack size 0 bytes, fadd.o(.text))
@@ -397,23 +397,23 @@ Global Symbols
 </UL>
 <BR>[Calls]<UL><LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 </UL>
-<BR>[Called By]<UL><LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
-<LI><a href="#[d7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_calc
-<LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
+<BR>[Called By]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
 <LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
 <LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
+<LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
+<LI><a href="#[d7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_calc
 </UL>
 
 <P><STRONG><a name="[6a]"></a>__aeabi_fmul</STRONG> (Thumb, 100 bytes, Stack size 8 bytes, fmul.o(.text))
 <BR><BR>[Stack]<UL><LI>Max Depth = 8<LI>Call Chain = __aeabi_fmul
 </UL>
-<BR>[Called By]<UL><LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
+<BR>[Called By]<UL><LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
+<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
+<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
+<LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 <LI><a href="#[d7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_calc
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;follow_line
-<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
-<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
-<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
 </UL>
 
 <P><STRONG><a name="[54]"></a>__aeabi_fdiv</STRONG> (Thumb, 124 bytes, Stack size 8 bytes, fdiv.o(.text))
@@ -422,11 +422,11 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[51]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_float_round
 </UL>
 <BR>[Called By]<UL><LI><a href="#[e8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Calibrate
+<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
+<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
 <LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 <LI><a href="#[12a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calculate_error
-<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
-<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
 <LI><a href="#[120]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_invalid
 </UL>
 
@@ -436,12 +436,12 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[50]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_float_epilogue
 </UL>
 <BR>[Called By]<UL><LI><a href="#[e8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Calibrate
+<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
 <LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 <LI><a href="#[db]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;imu_straight_tick
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;follow_line
 <LI><a href="#[12a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calculate_error
-<LI><a href="#[eb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Get_Data
 </UL>
 
 <P><STRONG><a name="[56]"></a>__aeabi_ui2f</STRONG> (Thumb, 10 bytes, Stack size 0 bytes, ffltui.o(.text))
@@ -483,7 +483,8 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[6f]"></a>__aeabi_cfrcmple</STRONG> (Thumb, 20 bytes, Stack size 0 bytes, cfrcmple.o(.text))
-<BR><BR>[Called By]<UL><LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
+<BR><BR>[Called By]<UL><LI><a href="#[10b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;pid_limit
+<LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
 <LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 <LI><a href="#[e5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_TurnTick
 <LI><a href="#[d5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_AlignTick
@@ -492,7 +493,6 @@ Global Symbols
 <LI><a href="#[df]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_set_integral_separation
 <LI><a href="#[e0]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;PID_set_deriv_filter
 <LI><a href="#[102]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;follow_line
-<LI><a href="#[10b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;pid_limit
 </UL>
 
 <P><STRONG><a name="[143]"></a>__aeabi_uidiv</STRONG> (Thumb, 0 bytes, Stack size 12 bytes, uidiv.o(.text), UNUSED)
@@ -512,18 +512,18 @@ Global Symbols
 <P><STRONG><a name="[144]"></a>__I$use$fp</STRONG> (Thumb, 0 bytes, Stack size 0 bytes, iusefp.o(.text), UNUSED)
 
 <P><STRONG><a name="[51]"></a>_float_round</STRONG> (Thumb, 18 bytes, Stack size 0 bytes, fepilogue.o(.text))
-<BR><BR>[Called By]<UL><LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
+<BR><BR>[Called By]<UL><LI><a href="#[5a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_fsqrt
+<LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[5a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_fsqrt
 </UL>
 
 <P><STRONG><a name="[50]"></a>_float_epilogue</STRONG> (Thumb, 92 bytes, Stack size 4 bytes, fepilogue.o(.text))
 <BR><BR>[Stack]<UL><LI>Max Depth = 4<LI>Call Chain = _float_epilogue
 </UL>
-<BR>[Called By]<UL><LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
-<LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[5b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_frem
+<BR>[Called By]<UL><LI><a href="#[5b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_frem
 <LI><a href="#[56]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_ui2f
+<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
+<LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 </UL>
 
 <P><STRONG><a name="[11e]"></a>__ARM_scalbnf</STRONG> (Thumb, 24 bytes, Stack size 0 bytes, fscalb.o(.text))
@@ -662,18 +662,18 @@ Global Symbols
 <P><STRONG><a name="[69]"></a>Attitude_Tick</STRONG> (Thumb, 694 bytes, Stack size 64 bytes, attitude.o(i.Attitude_Tick))
 <BR><BR>[Stack]<UL><LI>Max Depth = 208<LI>Call Chain = Attitude_Tick &rArr; mahony_update &rArr; sqrtf &rArr; _fsqrt
 </UL>
-<BR>[Calls]<UL><LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
+<BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
+<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
+<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
+<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
+<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
+<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
 <LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
 <LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 <LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfrcmple
 <LI><a href="#[70]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmple
-<LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
-<LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;atan2f
-<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
-<LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
-<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
 </UL>
 <BR>[Called By]<UL><LI><a href="#[c7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Tick
 </UL>
@@ -761,12 +761,12 @@ Global Symbols
 <BR><BR>[Stack]<UL><LI>Max Depth = 192<LI>Call Chain = DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
 <BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
+<LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
 <LI><a href="#[7c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fault_text
 <LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 <LI><a href="#[81]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;append_record_locked
 <LI><a href="#[82]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_PRIMASK
 <LI><a href="#[7e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__get_PRIMASK
-<LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
 </UL>
 <BR>[Called By]<UL><LI><a href="#[ff]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;set_fault
 </UL>
@@ -783,16 +783,16 @@ Global Symbols
 <P><STRONG><a name="[84]"></a>DebugLog_Display</STRONG> (Thumb, 462 bytes, Stack size 232 bytes, debug_log.o(i.DebugLog_Display))
 <BR><BR>[Stack]<UL><LI>Max Depth = 448<LI>Call Chain = DebugLog_Display &rArr; OLED_PrintLine &rArr; vsnprintf
 </UL>
-<BR>[Calls]<UL><LI><a href="#[8b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;status_name
+<BR>[Calls]<UL><LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_f2d
+<LI><a href="#[8e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_Update
+<LI><a href="#[8c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_PrintLine
+<LI><a href="#[8b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;status_name
 <LI><a href="#[87]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;shortest_angle_error
 <LI><a href="#[89]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;route_name
 <LI><a href="#[85]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;get_display_snapshot
 <LI><a href="#[88]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;format_angle
 <LI><a href="#[86]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;angle_is_displayable
 <LI><a href="#[8a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;action_name
-<LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_f2d
-<LI><a href="#[8e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_Update
-<LI><a href="#[8c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_PrintLine
 </UL>
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
@@ -800,10 +800,10 @@ Global Symbols
 <P><STRONG><a name="[8f]"></a>DebugLog_Init</STRONG> (Thumb, 442 bytes, Stack size 104 bytes, debug_log.o(i.DebugLog_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 104<LI>Call Chain = DebugLog_Init
 </UL>
-<BR>[Calls]<UL><LI><a href="#[82]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_PRIMASK
-<LI><a href="#[7e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__get_PRIMASK
-<LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
+<BR>[Calls]<UL><LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 <LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
+<LI><a href="#[82]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_PRIMASK
+<LI><a href="#[7e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__get_PRIMASK
 </UL>
 <BR>[Called By]<UL><LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Init
 </UL>
@@ -812,10 +812,10 @@ Global Symbols
 <BR><BR>[Stack]<UL><LI>Max Depth = 48<LI>Call Chain = DebugLog_Write &rArr; append_record_locked
 </UL>
 <BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
+<LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 <LI><a href="#[81]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;append_record_locked
 <LI><a href="#[82]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_PRIMASK
 <LI><a href="#[7e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__get_PRIMASK
-<LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 </UL>
 <BR>[Called By]<UL><LI><a href="#[10e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Start
 <LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Init
@@ -904,9 +904,9 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[ce]"></a>HAL_GPIO_ReadPin</STRONG> (Thumb, 16 bytes, Stack size 0 bytes, stm32f1xx_hal_gpio.o(i.HAL_GPIO_ReadPin))
-<BR><BR>[Called By]<UL><LI><a href="#[fa]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Read_All_Track
-<LI><a href="#[d3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitAck
+<BR><BR>[Called By]<UL><LI><a href="#[d3]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitAck
 <LI><a href="#[cb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_ReadByte
+<LI><a href="#[fa]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Read_All_Track
 </UL>
 
 <P><STRONG><a name="[cc]"></a>HAL_GPIO_WritePin</STRONG> (Thumb, 12 bytes, Stack size 0 bytes, stm32f1xx_hal_gpio.o(i.HAL_GPIO_WritePin))
@@ -922,17 +922,17 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[80]"></a>HAL_GetTick</STRONG> (Thumb, 6 bytes, Stack size 0 bytes, stm32f1xx_hal.o(i.HAL_GetTick))
-<BR><BR>[Called By]<UL><LI><a href="#[e8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Calibrate
+<BR><BR>[Called By]<UL><LI><a href="#[9b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnTXEFlagUntilTimeout
+<LI><a href="#[cf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnMasterAddressFlagUntilTimeout
+<LI><a href="#[99]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnFlagUntilTimeout
+<LI><a href="#[9c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnBTFFlagUntilTimeout
+<LI><a href="#[e8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Calibrate
 <LI><a href="#[aa]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_RCC_OscConfig
 <LI><a href="#[a6]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_RCC_ClockConfig
 <LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
 <LI><a href="#[91]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
 <LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 <LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
-<LI><a href="#[9b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnTXEFlagUntilTimeout
-<LI><a href="#[cf]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnMasterAddressFlagUntilTimeout
-<LI><a href="#[99]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnFlagUntilTimeout
-<LI><a href="#[9c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnBTFFlagUntilTimeout
 <LI><a href="#[7b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_CaptureFault
 </UL>
 
@@ -948,11 +948,11 @@ Global Symbols
 <P><STRONG><a name="[98]"></a>HAL_I2C_Mem_Write</STRONG> (Thumb, 348 bytes, Stack size 48 bytes, stm32f1xx_hal_i2c.o(i.HAL_I2C_Mem_Write))
 <BR><BR>[Stack]<UL><LI>Max Depth = 104<LI>Call Chain = HAL_I2C_Mem_Write &rArr; I2C_RequestMemoryWrite &rArr; I2C_WaitOnMasterAddressFlagUntilTimeout
 </UL>
-<BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
-<LI><a href="#[9b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnTXEFlagUntilTimeout
+<BR>[Calls]<UL><LI><a href="#[9b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnTXEFlagUntilTimeout
 <LI><a href="#[99]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnFlagUntilTimeout
 <LI><a href="#[9c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_WaitOnBTFFlagUntilTimeout
 <LI><a href="#[9a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_RequestMemoryWrite
+<LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
 </UL>
 <BR>[Called By]<UL><LI><a href="#[107]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OLED_Port_Write
 </UL>
@@ -1134,7 +1134,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[b5]"></a>HAL_TIM_IRQHandler</STRONG> (Thumb, 364 bytes, Stack size 16 bytes, stm32f1xx_hal_tim.o(i.HAL_TIM_IRQHandler))
-<BR><BR>[Stack]<UL><LI>Max Depth = 272<LI>Call Chain = HAL_TIM_IRQHandler &rArr; HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
+<BR><BR>[Stack]<UL><LI>Max Depth = 264<LI>Call Chain = HAL_TIM_IRQHandler &rArr; HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
 <BR>[Calls]<UL><LI><a href="#[b9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_PeriodElapsedCallback
 <LI><a href="#[bb]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_TriggerCallback
@@ -1199,7 +1199,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[b9]"></a>HAL_TIM_PeriodElapsedCallback</STRONG> (Thumb, 20 bytes, Stack size 8 bytes, mode_fsm.o(i.HAL_TIM_PeriodElapsedCallback))
-<BR><BR>[Stack]<UL><LI>Max Depth = 256<LI>Call Chain = HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
+<BR><BR>[Stack]<UL><LI>Max Depth = 248<LI>Call Chain = HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
 <BR>[Calls]<UL><LI><a href="#[c7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Tick
 </UL>
@@ -1384,11 +1384,11 @@ Global Symbols
 </UL>
 <BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
 <LI><a href="#[93]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_Delay
-<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
-<LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[56]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_ui2f
 <LI><a href="#[ea]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MPU6050_Sample
 <LI><a href="#[e9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MPU6050_Read_Regs
+<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
+<LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 </UL>
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
@@ -1396,11 +1396,11 @@ Global Symbols
 <P><STRONG><a name="[eb]"></a>Int_MPU6050_Get_Data</STRONG> (Thumb, 194 bytes, Stack size 56 bytes, int_mpu6050.o(i.Int_MPU6050_Get_Data))
 <BR><BR>[Stack]<UL><LI>Max Depth = 104<LI>Call Chain = Int_MPU6050_Get_Data &rArr; MPU6050_Read_Regs &rArr; I2C_SendByte &rArr; Delay_us
 </UL>
-<BR>[Calls]<UL><LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
-<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
-<LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
+<BR>[Calls]<UL><LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
 <LI><a href="#[ea]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MPU6050_Sample
 <LI><a href="#[e9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;MPU6050_Read_Regs
+<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 </UL>
 <BR>[Called By]<UL><LI><a href="#[ee]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Int_MPU6050_Tick
 </UL>
@@ -1501,15 +1501,15 @@ Global Symbols
 <BR><BR>[Stack]<UL><LI>Max Depth = 144<LI>Call Chain = ModeFSM_Init &rArr; DebugLog_Init
 </UL>
 <BR>[Calls]<UL><LI><a href="#[91]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
+<LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
 <LI><a href="#[f9]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Init
 <LI><a href="#[8f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Init
-<LI><a href="#[7d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memcpy4
 </UL>
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[c7]"></a>ModeFSM_Tick</STRONG> (Thumb, 390 bytes, Stack size 32 bytes, mode_fsm.o(i.ModeFSM_Tick))
-<BR><BR>[Stack]<UL><LI>Max Depth = 248<LI>Call Chain = ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
+<P><STRONG><a name="[c7]"></a>ModeFSM_Tick</STRONG> (Thumb, 390 bytes, Stack size 24 bytes, mode_fsm.o(i.ModeFSM_Tick))
+<BR><BR>[Stack]<UL><LI>Max Depth = 240<LI>Call Chain = ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
 <BR>[Calls]<UL><LI><a href="#[91]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Write
 <LI><a href="#[fd]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Tick
@@ -1535,8 +1535,8 @@ Global Symbols
 <P><STRONG><a name="[103]"></a>Motor_Init</STRONG> (Thumb, 84 bytes, Stack size 8 bytes, motor.o(i.Motor_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 36<LI>Call Chain = Motor_Init &rArr; HAL_TIM_PWM_Start &rArr; TIM_CCxChannelCmd
 </UL>
-<BR>[Calls]<UL><LI><a href="#[c5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_PWM_Start
-<LI><a href="#[104]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Motor_SetDirection
+<BR>[Calls]<UL><LI><a href="#[104]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Motor_SetDirection
+<LI><a href="#[c5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_PWM_Start
 </UL>
 <BR>[Called By]<UL><LI><a href="#[46]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
@@ -1614,14 +1614,14 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[d7]"></a>PID_calc</STRONG> (Thumb, 466 bytes, Stack size 32 bytes, com_pid.o(i.PID_calc))
-<BR><BR>[Stack]<UL><LI>Max Depth = 52<LI>Call Chain = PID_calc &rArr; __aeabi_fsub &rArr; __aeabi_fadd &rArr; _float_epilogue
+<BR><BR>[Stack]<UL><LI>Max Depth = 52<LI>Call Chain = PID_calc &rArr; __aeabi_frsub &rArr; __aeabi_fadd &rArr; _float_epilogue
 </UL>
-<BR>[Calls]<UL><LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
+<BR>[Calls]<UL><LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
+<LI><a href="#[10b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;pid_limit
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 <LI><a href="#[70]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmple
-<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
-<LI><a href="#[10b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;pid_limit
 </UL>
 <BR>[Called By]<UL><LI><a href="#[e5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_TurnTick
 <LI><a href="#[d5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_AlignTick
@@ -1677,9 +1677,9 @@ Global Symbols
 <P><STRONG><a name="[f9]"></a>Route_Init</STRONG> (Thumb, 112 bytes, Stack size 24 bytes, route.o(i.Route_Init))
 <BR><BR>[Stack]<UL><LI>Max Depth = 40<LI>Call Chain = Route_Init &rArr; update_project_beep &rArr; Int_Beep_Off
 </UL>
-<BR>[Calls]<UL><LI><a href="#[10c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_project_beep
+<BR>[Calls]<UL><LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
+<LI><a href="#[10c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;update_project_beep
 <LI><a href="#[10d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;reset_junction
-<LI><a href="#[90]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
 </UL>
 <BR>[Called By]<UL><LI><a href="#[10e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Route_Start
 <LI><a href="#[f8]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;ModeFSM_Init
@@ -1750,7 +1750,7 @@ Global Symbols
 <BR>[Address Reference Count : 1]<UL><LI> startup_stm32f103xe.o(.text)
 </UL>
 <P><STRONG><a name="[28]"></a>TIM4_IRQHandler</STRONG> (Thumb, 10 bytes, Stack size 8 bytes, stm32f1xx_it.o(i.TIM4_IRQHandler))
-<BR><BR>[Stack]<UL><LI>Max Depth = 280<LI>Call Chain = TIM4_IRQHandler &rArr; HAL_TIM_IRQHandler &rArr; HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
+<BR><BR>[Stack]<UL><LI>Max Depth = 272<LI>Call Chain = TIM4_IRQHandler &rArr; HAL_TIM_IRQHandler &rArr; HAL_TIM_PeriodElapsedCallback &rArr; ModeFSM_Tick &rArr; update_imu &rArr; set_fault &rArr; DebugLog_CaptureFault &rArr; capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
 <BR>[Calls]<UL><LI><a href="#[b5]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_TIM_IRQHandler
 </UL>
@@ -1867,11 +1867,11 @@ Global Symbols
 <P><STRONG><a name="[6c]"></a>asinf</STRONG> (Thumb, 254 bytes, Stack size 24 bytes, asinf.o(i.asinf))
 <BR><BR>[Stack]<UL><LI>Max Depth = 56<LI>Call Chain = asinf &rArr; sqrtf &rArr; _fsqrt
 </UL>
-<BR>[Calls]<UL><LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
-<LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
+<BR>[Calls]<UL><LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
 <LI><a href="#[11e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__ARM_scalbnf
 <LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
+<LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
+<LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 <LI><a href="#[129]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_errno
 <LI><a href="#[121]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_underflow
 <LI><a href="#[120]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_invalid
@@ -1882,13 +1882,13 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[6d]"></a>atan2f</STRONG> (Thumb, 598 bytes, Stack size 32 bytes, atan2f.o(i.atan2f))
-<BR><BR>[Stack]<UL><LI>Max Depth = 52<LI>Call Chain = atan2f &rArr; __aeabi_fsub &rArr; __aeabi_fadd &rArr; _float_epilogue
+<BR><BR>[Stack]<UL><LI>Max Depth = 52<LI>Call Chain = atan2f &rArr; __aeabi_frsub &rArr; __aeabi_fadd &rArr; _float_epilogue
 </UL>
-<BR>[Calls]<UL><LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
+<BR>[Calls]<UL><LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
 <LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[53]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_frsub
 <LI><a href="#[129]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_errno
 <LI><a href="#[121]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_underflow
 <LI><a href="#[11f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__mathlib_flt_infnan2
@@ -1921,7 +1921,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[102]"></a>follow_line</STRONG> (Thumb, 236 bytes, Stack size 48 bytes, track_task.o(i.follow_line))
-<BR><BR>[Stack]<UL><LI>Max Depth = 100<LI>Call Chain = follow_line &rArr; PID_calc &rArr; __aeabi_fsub &rArr; __aeabi_fadd &rArr; _float_epilogue
+<BR><BR>[Stack]<UL><LI>Max Depth = 100<LI>Call Chain = follow_line &rArr; PID_calc &rArr; __aeabi_frsub &rArr; __aeabi_fadd &rArr; _float_epilogue
 </UL>
 <BR>[Calls]<UL><LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
 <LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
@@ -1985,9 +1985,9 @@ Global Symbols
 <BR>[Calls]<UL><LI><a href="#[5a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;_fsqrt
 <LI><a href="#[129]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__set_errno
 </UL>
-<BR>[Called By]<UL><LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
-<LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
+<BR>[Called By]<UL><LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;asinf
 <LI><a href="#[6b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;mahony_update
+<LI><a href="#[7f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;capture_state_locked
 </UL>
 <P>
 <H3>
@@ -2011,8 +2011,8 @@ Local Symbols
 <P><STRONG><a name="[9c]"></a>I2C_WaitOnBTFFlagUntilTimeout</STRONG> (Thumb, 102 bytes, Stack size 16 bytes, stm32f1xx_hal_i2c.o(i.I2C_WaitOnBTFFlagUntilTimeout))
 <BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = I2C_WaitOnBTFFlagUntilTimeout
 </UL>
-<BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
-<LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_IsAcknowledgeFailed
+<BR>[Calls]<UL><LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_IsAcknowledgeFailed
+<LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
 </UL>
 <BR>[Called By]<UL><LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
 </UL>
@@ -2022,8 +2022,8 @@ Local Symbols
 </UL>
 <BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
 </UL>
-<BR>[Called By]<UL><LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
-<LI><a href="#[9a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_RequestMemoryWrite
+<BR>[Called By]<UL><LI><a href="#[9a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_RequestMemoryWrite
+<LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
 </UL>
 
 <P><STRONG><a name="[cf]"></a>I2C_WaitOnMasterAddressFlagUntilTimeout</STRONG> (Thumb, 250 bytes, Stack size 24 bytes, stm32f1xx_hal_i2c.o(i.I2C_WaitOnMasterAddressFlagUntilTimeout))
@@ -2037,11 +2037,11 @@ Local Symbols
 <P><STRONG><a name="[9b]"></a>I2C_WaitOnTXEFlagUntilTimeout</STRONG> (Thumb, 102 bytes, Stack size 16 bytes, stm32f1xx_hal_i2c.o(i.I2C_WaitOnTXEFlagUntilTimeout))
 <BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = I2C_WaitOnTXEFlagUntilTimeout
 </UL>
-<BR>[Calls]<UL><LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
-<LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_IsAcknowledgeFailed
+<BR>[Calls]<UL><LI><a href="#[d4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_IsAcknowledgeFailed
+<LI><a href="#[80]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_GetTick
 </UL>
-<BR>[Called By]<UL><LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
-<LI><a href="#[9a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_RequestMemoryWrite
+<BR>[Called By]<UL><LI><a href="#[9a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;I2C_RequestMemoryWrite
+<LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_I2C_Mem_Write
 </UL>
 
 <P><STRONG><a name="[ab]"></a>RCC_Delay</STRONG> (Thumb, 36 bytes, Stack size 8 bytes, stm32f1xx_hal_rcc.o(i.RCC_Delay))
@@ -2107,11 +2107,11 @@ Local Symbols
 <P><STRONG><a name="[dc]"></a>imu_angle_error</STRONG> (Thumb, 74 bytes, Stack size 24 bytes, imu_task.o(i.imu_angle_error))
 <BR><BR>[Stack]<UL><LI>Max Depth = 60<LI>Call Chain = imu_angle_error &rArr; fmodf &rArr; _frem &rArr; _float_epilogue
 </UL>
-<BR>[Calls]<UL><LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
+<BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 <LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfrcmple
 <LI><a href="#[70]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmple
-<LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
 </UL>
 <BR>[Called By]<UL><LI><a href="#[d6]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;IMUTask_GetError
 <LI><a href="#[db]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;imu_straight_tick
@@ -2370,12 +2370,12 @@ Local Symbols
 <P><STRONG><a name="[7f]"></a>capture_state_locked</STRONG> (Thumb, 352 bytes, Stack size 48 bytes, debug_log.o(i.capture_state_locked))
 <BR><BR>[Stack]<UL><LI>Max Depth = 80<LI>Call Chain = capture_state_locked &rArr; sqrtf &rArr; _fsqrt
 </UL>
-<BR>[Calls]<UL><LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
+<BR>[Calls]<UL><LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
+<LI><a href="#[55]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_i2f
 <LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
 <LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
 </UL>
 <BR>[Called By]<UL><LI><a href="#[85]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;get_display_snapshot
 <LI><a href="#[7b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_CaptureFault
@@ -2388,8 +2388,8 @@ Local Symbols
 <P><STRONG><a name="[88]"></a>format_angle</STRONG> (Thumb, 60 bytes, Stack size 32 bytes, debug_log.o(i.format_angle))
 <BR><BR>[Stack]<UL><LI>Max Depth = 72<LI>Call Chain = format_angle &rArr; __2snprintf
 </UL>
-<BR>[Calls]<UL><LI><a href="#[86]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;angle_is_displayable
-<LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_f2d
+<BR>[Calls]<UL><LI><a href="#[8d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_f2d
+<LI><a href="#[86]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;angle_is_displayable
 <LI><a href="#[12e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__2snprintf
 </UL>
 <BR>[Called By]<UL><LI><a href="#[84]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Display
@@ -2412,11 +2412,11 @@ Local Symbols
 <P><STRONG><a name="[87]"></a>shortest_angle_error</STRONG> (Thumb, 74 bytes, Stack size 24 bytes, debug_log.o(i.shortest_angle_error))
 <BR><BR>[Stack]<UL><LI>Max Depth = 60<LI>Call Chain = shortest_angle_error &rArr; fmodf &rArr; _frem &rArr; _float_epilogue
 </UL>
-<BR>[Calls]<UL><LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
+<BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
 <LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfrcmple
 <LI><a href="#[70]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmple
-<LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fmodf
 </UL>
 <BR>[Called By]<UL><LI><a href="#[84]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;DebugLog_Display
 </UL>
@@ -2436,12 +2436,12 @@ Local Symbols
 <P><STRONG><a name="[6b]"></a>mahony_update</STRONG> (Thumb, 996 bytes, Stack size 112 bytes, attitude.o(i.mahony_update))
 <BR><BR>[Stack]<UL><LI>Max Depth = 144<LI>Call Chain = mahony_update &rArr; sqrtf &rArr; _fsqrt
 </UL>
-<BR>[Calls]<UL><LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
+<BR>[Calls]<UL><LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
+<LI><a href="#[130]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmpeq
+<LI><a href="#[52]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fsub
 <LI><a href="#[6a]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fmul
 <LI><a href="#[54]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fdiv
 <LI><a href="#[4f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_fadd
-<LI><a href="#[127]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;sqrtf
-<LI><a href="#[130]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_cfcmpeq
 </UL>
 <BR>[Called By]<UL><LI><a href="#[69]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Attitude_Tick
 </UL>
