@@ -35,7 +35,7 @@ static float s_target_yaw = 0.0f;
 #define TURN_MIN_OUT      210.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
 /* 对齐用更柔的限幅：功能切换时慢转到 ideal_yaw，避免快速过冲；首轮标定值，可调 */
 #define ALIGN_MAX_OUT     500.0f
-#define ALIGN_MIN_OUT     200.0f
+#define ALIGN_MIN_OUT     250.0f
 /* 直行参数 */
 #define FWD_BASE_SPEED    400.0f    /* 直行基础占空比 */
 #define FWD_MAX_OUT       1000.0f    /* 首轮越障纠偏上限，防止一侧大幅减速或反转 */

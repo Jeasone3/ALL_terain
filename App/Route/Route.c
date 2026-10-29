@@ -12,7 +12,7 @@
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
-#define ROUTE_TURN_APPROACH_MS   660u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
+#define ROUTE_TURN_APPROACH_MS   680u /* 转弯前保持航向前移 50 帧；试车起点，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
@@ -29,9 +29,9 @@
  * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 4500u, 10000u, JUNCTION_RIGHT}, //栅格
+    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 3500u, 10000u, JUNCTION_RIGHT}, //栅格
     {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 5000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
+    {ROUTE_ACTION_STRAIGHT, 3u, 400u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
     {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
     {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
     {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */

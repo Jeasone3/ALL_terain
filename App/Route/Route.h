@@ -66,7 +66,7 @@ typedef struct {
  * 例如设为 6u：从第 6 项对应路口前循迹出发，顺序执行第 6、7、8、9 项及原有收尾。
  * 默认 1u 保持从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 8u
+#define ROUTE_START_STEP 1u
 #endif
 
 /* 集中设置本次调试截止段数：9 或 0 均执行到路线末尾，再左转、直行 3 秒停车。
