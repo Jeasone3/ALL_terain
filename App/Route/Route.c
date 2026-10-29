@@ -17,7 +17,11 @@
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 3000u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
+#define ROUTE_REVERSE_DRIVE_MS 3300u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
+#define ROUTE_S1_IMU_MS        5000u /* 高台右转后 IMU 直行 3 秒 PWM300，再切循迹找十字 */
+#define ROUTE_S1_PWM           300u  /* S1 直行基础 PWM（慢速清出高台区域） */
+#define ROUTE_S13_IMU_MS       1000u /* 末段路口后 IMU 直行 1 秒停车 */
+#define ROUTE_S13_PWM          500u  /* S13 直行基础 PWM */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -31,15 +35,26 @@
  * RIGHT_TRACK 仅转弯后循迹，不使用入口和 IMU 通行参数；等待路口距离仍需实车确认。
  */
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
-    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 4500u, 10000u, JUNCTION_RIGHT}, //栅格
-    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 4300u, 10000u, JUNCTION_CROSS}, //防滑带
-    {ROUTE_ACTION_STRAIGHT, 3u, 500u, 2000u, 6500u, 10000u, JUNCTION_CROSS}, /* 小台阶 */
-    {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS},      /* 十字右转后循迹 */
-    {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT},      /* 右弯闭环转 90 度后循迹 */
-    {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS}, /* 减速带 */
-    {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS}, /* 草坪 */
-    {ROUTE_ACTION_LEFT,     8u, 400u, 200u, 11000u, 15000u, JUNCTION_CROSS}, /* 大台阶：后退暂时停用，左转后循迹 600 ms，再 IMU 前进 9 秒 */
-    {ROUTE_ACTION_LEFT,     9u, 600u, 400u, 4000u, 10000u, JUNCTION_CROSS} /* 窄桥 */
+    {ROUTE_ACTION_STRAIGHT, 1u, 500u, 3000u, 4500u, 10000u, JUNCTION_RIGHT, 0,0,0}, //栅格
+    {ROUTE_ACTION_RIGHT,    2u, 530u, 2000u, 4300u, 10000u, JUNCTION_CROSS, 0,0,0}, //防滑带
+    {ROUTE_ACTION_STRAIGHT, 3u, 500u, 2000u, 6500u, 10000u, JUNCTION_CROSS, 0,0,0}, /* 小台阶 */
+    {ROUTE_ACTION_RIGHT_TRACK, 4u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS, 0,0,0},      /* 十字右转后循迹 */
+    {ROUTE_ACTION_RIGHT_TRACK, 5u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT, 0,0,0},      /* 右弯闭环转 90 度后循迹 */
+    {ROUTE_ACTION_RIGHT,    6u, 500u, 1000u, 5000u, 10000u, JUNCTION_CROSS, 0,0,0}, /* 减速带 */
+    {ROUTE_ACTION_STRAIGHT, 7u, 500u, 2000u, 4000u, 10000u, JUNCTION_CROSS, 0,0,0}, /* 草坪 */
+    {ROUTE_ACTION_LEFT,     8u, 400u, 200u, 11000u, 15000u, JUNCTION_CROSS, 0,0,0}, /* 大台阶：后退暂时停用，左转后循迹 600 ms，再 IMU 前进 9 秒 */
+    {ROUTE_ACTION_LEFT,     9u, 600u, 400u, 4000u, 10000u, JUNCTION_CROSS, 0,0,1}, /* 窄桥：OBSTACLE 到时触发高台特殊收尾(final_seq=1) */
+    {ROUTE_ACTION_RIGHT_TRACK, 10u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS, 1,1,0}, /* S2+S3 十字：校准→前移→右转→校准 */
+    {ROUTE_ACTION_RIGHT_TRACK, 11u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT, 0,0,0}, /* 新增：S3 右转后循迹遇右转路口，标准右转90(快速对齐+前移+右转) */
+    {ROUTE_ACTION_LEFT_TRACK,  12u, 0u, 0u, 0u, 10000u, JUNCTION_LEFT,  0,0,0}, /* S4 左转路口标准左转 */
+    {ROUTE_ACTION_LEFT,     13u, 500u, 15000u, 0u,    20000u, JUNCTION_LEFT,  1,1,0}, /* S5+S6 U隧道：校准→左转→校准→循迹15秒(pass_ms=0) */
+    {ROUTE_ACTION_LEFT_TRACK,  14u, 0u, 0u, 0u, 10000u, JUNCTION_LEFT,  0,0,0}, /* S7a 左转 */
+    {ROUTE_ACTION_RIGHT_TRACK, 15u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS, 0,0,0}, /* S7b 右转 */
+    {ROUTE_ACTION_RIGHT_TRACK, 16u, 0u, 0u, 0u, 10000u, JUNCTION_CROSS, 1,0,0}, /* S8a 十字：校准→右转 */
+    {ROUTE_ACTION_LEFT,     17u, 500u, 15000u, 0u,    20000u, JUNCTION_LEFT,  1,1,0}, /* S8b+S9 方型隧道：校准→左转→校准→循迹15秒 */
+    {ROUTE_ACTION_LEFT_TRACK,  18u, 0u, 0u, 0u, 10000u, JUNCTION_LEFT,  0,0,0}, /* S10a 左转 */
+    {ROUTE_ACTION_RIGHT_TRACK, 19u, 0u, 0u, 0u, 10000u, JUNCTION_RIGHT, 0,0,0}, /* S10b 右转 */
+    {ROUTE_ACTION_LEFT,     20u, 500u, 2000u,  7000u, 12000u, JUNCTION_CROSS, 0,0,2} /* S10c+S11+S12 石块：左转→循迹2秒→begin_project校准→IMU7秒；final_seq=2 触发 S13 */
 };
 
 volatile Route_t g_route;
@@ -54,6 +69,7 @@ static uint8_t s_active;                   /* 真正启动的路线，不等同�
 static uint32_t s_turn_count_before;       /* 本次转弯开始前的完成总数 */
 static uint32_t s_align_count_before;      /* 本次对齐开始前的完成总数，仿 turn_count 轮询 */
 static RouteState s_align_next_state;      /* 对齐完成后要进入的阶段（OBSTACLE 或 APPROACH） */
+static uint8_t s_align_cal_flag;           /* 本次对齐是否跟 Attitude_SetYawOffset 校准：cal_before/cal_after 时置 1 */
 static uint8_t s_project_beep_frames;      /* 项目提示音剩余帧数，独立于路线阶段计时 */
 
 /**
@@ -230,7 +246,8 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
         g_route.state == ROUTE_REVERSE ||
-        g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN) {
+        g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN ||
+        g_route.state == ROUTE_S1_IMU || g_route.state == ROUTE_S13_IMU) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -262,7 +279,8 @@ static uint16_t invalid_step(void)
     for (i = ROUTE_START_STEP - 1u; i < ROUTE_ACTIVE_STEP_COUNT; ++i) {
         const RouteStep *step = &g_route_plan[i];
         if ((step->action != ROUTE_ACTION_LEFT && step->action != ROUTE_ACTION_RIGHT &&
-             step->action != ROUTE_ACTION_STRAIGHT && step->action != ROUTE_ACTION_RIGHT_TRACK) ||
+             step->action != ROUTE_ACTION_STRAIGHT && step->action != ROUTE_ACTION_RIGHT_TRACK &&
+             step->action != ROUTE_ACTION_LEFT_TRACK) ||
             (step->trigger_junction != JUNCTION_LEFT && step->trigger_junction != JUNCTION_RIGHT &&
              step->trigger_junction != JUNCTION_CROSS) ||
             step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
@@ -272,12 +290,13 @@ static uint16_t invalid_step(void)
         if (i == 7u && step->action == ROUTE_ACTION_LEFT && step->timeout_ms <= ROUTE_REVERSE_MS) {
             return i;
         }
-        if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
+        if (step->action == ROUTE_ACTION_RIGHT_TRACK || step->action == ROUTE_ACTION_LEFT_TRACK) {
             if (step->base_pwm != 0u ||
                 step->entry_ms != 0u || step->pass_ms != 0u) return i;
-        } else if (step->entry_ms == 0u || step->pass_ms == 0u ||
-                   step->timeout_ms <= step->pass_ms || step->timeout_ms <= step->entry_ms ||
-                   step->base_pwm == 0u || step->base_pwm > 1000u) {
+        } else if (step->entry_ms == 0u || step->base_pwm == 0u || step->base_pwm > 1000u ||
+                   step->timeout_ms <= step->entry_ms) {
+            return i;
+        } else if (step->pass_ms != 0u && step->timeout_ms <= step->pass_ms) {
             return i;
         }
     }
@@ -302,6 +321,7 @@ static float route_action_yaw_delta(RouteAction action)
     case ROUTE_ACTION_LEFT:  return  90.0f;
     case ROUTE_ACTION_RIGHT: return -90.0f;
     case ROUTE_ACTION_RIGHT_TRACK: return -90.0f;
+    case ROUTE_ACTION_LEFT_TRACK:  return  90.0f;
     default: return 0.0f;  /* ROUTE_ACTION_STRAIGHT */
     }
 }
@@ -527,11 +547,13 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 enter_state(ROUTE_ENTRY); /* 当前已经循迹，保留 PID 历史与电机控制。 */
             } else {
                 /* 路口前移前 TRACK→IMU：先对齐到 ideal_yaw，防循迹偏航被 IMU 直行 PID
-                 * 放大成侧摆；对齐完成后再前移、更新 ideal_yaw、绝对转弯。 */
+                 * 放大成侧摆；对齐完成后再前移、更新 ideal_yaw、绝对转弯。
+                 * cal_before 时用 align-hold 代替快速对齐，并在对齐完成时重建 yaw 基准。 */
                 s_align_count_before = g_mode_fsm.align_count;
                 s_align_next_state = ROUTE_APPROACH;
+                s_align_cal_flag = step->cal_before;
                 enter_state(ROUTE_ALIGN);
-                Car_AlignTo();
+                if (step->cal_before) Car_AlignToHold(); else Car_AlignTo();
             }
             return;
         }
@@ -569,8 +591,27 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 Car_TurnRight90(MODE_IMU);
                 DebugLog_Write(LOG_INFO, "FINAL_R90");
             }
+            else if (s_align_next_state == ROUTE_ENTRY)
+            {
+                /* cal_after：转后 align-hold 校准完成，进入口循迹 */
+                Attitude_SetYawOffset(g_route.ideal_yaw);
+                enter_state(ROUTE_ENTRY);
+                Car_Track(); /* 对齐期间 FSM 在 IMU_ALIGN，需切回循迹 */
+                DebugLog_Write(LOG_INFO, "AFTCAL>ENTRY");
+            }
+            else if (s_align_next_state == ROUTE_RECOVER)
+            {
+                /* cal_after：转后 align-hold 校准完成，恢复循迹找下个路口 */
+                Attitude_SetYawOffset(g_route.ideal_yaw);
+                enter_state(ROUTE_RECOVER);
+                Car_Track();
+                reset_junction();
+                DebugLog_Write(LOG_INFO, "AFTCAL>REC");
+            }
             else /* ROUTE_APPROACH */
             {
+                if (s_align_cal_flag)
+                    Attitude_SetYawOffset(g_route.ideal_yaw); /* cal_before：转前 align-hold 校准 */
                 enter_state(ROUTE_APPROACH);
                 Car_ImuForward(ROUTE_TURN_APPROACH_PWM);
             }
@@ -582,9 +623,9 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             enter_state(ROUTE_TURN);
             /* 提交转弯前更新理想朝向，FSM 取此绝对值作为转弯目标，转完即对齐。 */
             g_route.ideal_yaw += route_action_yaw_delta(step->action);
-            if (step->action == ROUTE_ACTION_LEFT)
+            if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK)
                 Car_TurnLeft90(MODE_TRACK);
-            else 
+            else
                 Car_TurnRight90(MODE_TRACK);
             return;
         }
@@ -599,9 +640,15 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             //     g_route.state_frames = g_mode_fsm.state_frames;
             //     return;
             // }
-            if (step->action == ROUTE_ACTION_RIGHT_TRACK) {
-                /* FSM 已在转弯完成帧接入循迹；不重复请求 TRACK，也不开始入口或 IMU 通行。 */
-                if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+            if (step->action == ROUTE_ACTION_RIGHT_TRACK || step->action == ROUTE_ACTION_LEFT_TRACK) {
+                /* RIGHT_TRACK/LEFT_TRACK 转完接循迹；cal_after 时先 align-hold 校准再恢复循迹。 */
+                if (step->cal_after) {
+                    s_align_count_before = g_mode_fsm.align_count;
+                    s_align_next_state = ROUTE_RECOVER;
+                    s_align_cal_flag = 1u;
+                    enter_state(ROUTE_ALIGN);
+                    Car_AlignToHold();
+                } else if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
                     enter_state(ROUTE_CRUISE);
                     reset_junction();
                     DebugLog_Write(LOG_INFO, "DEBUG_END");
@@ -611,6 +658,15 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 return;
             }
 
+            /* LEFT/RIGHT 转完接入口；cal_after 时先 align-hold 校准再入口循迹。 */
+            if (step->cal_after) {
+                s_align_count_before = g_mode_fsm.align_count;
+                s_align_next_state = ROUTE_ENTRY;
+                s_align_cal_flag = 1u;
+                enter_state(ROUTE_ALIGN);
+                Car_AlignToHold();
+                return;
+            }
             enter_state(ROUTE_ENTRY);
             /* Route 先于本帧 IMU 更新；此处看到的是上一帧已经完成的转弯。
              * FSM 完成帧已经运行一次循迹，将其计入入口的已完成帧，避免多算 10 ms。
@@ -633,27 +689,35 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_ENTRY: //项目入口通过循迹对正
         if (elapsed_ms >= step->entry_ms) {
-            begin_project(step);
+            if (step->pass_ms == 0u)
+                begin_recovery(); /* 纯循迹项目(隧道)：入口循迹到时直接恢复循迹，不走 IMU 通行 */
+            else
+                begin_project(step);
             return;
         }
         break;
 
     case ROUTE_OBSTACLE: //障碍物使用imu通行
         if (elapsed_ms >= step->pass_ms) {
-            if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+            if (step->final_seq == 1u) {
+                /* 该段通行到时触发高台特殊收尾：原地左转 90°、IMU 直行 3 秒、倒车、右转。
+                 * MODE_IMU 使 FSM 在转完的同一帧保持 +90°目标、以 500 PWM 直行。 */
                 reset_junction();
-                if (ROUTE_ACTIVE_STEP_COUNT == ROUTE_STEP_COUNT) {
-                    /* 最后一个项目到时直接原地转，不再前移或等待新路口。
-                     * MODE_IMU 使 FSM 在转完的同一帧保持 +90°目标、以 500 PWM 直行。 */
-                    s_turn_count_before = g_mode_fsm.turn_count;
-                    enter_state(ROUTE_FINAL_TURN);
-                    g_route.ideal_yaw += route_action_yaw_delta(ROUTE_ACTION_LEFT);
-                    Car_TurnLeft90(MODE_IMU);
-                } else {
-                    enter_state(ROUTE_CRUISE);
-                    Car_Track();
-                    DebugLog_Write(LOG_INFO, "DEBUG_END");
-                }
+                s_turn_count_before = g_mode_fsm.turn_count;
+                enter_state(ROUTE_FINAL_TURN);
+                g_route.ideal_yaw += route_action_yaw_delta(ROUTE_ACTION_LEFT);
+                Car_TurnLeft90(MODE_IMU);
+            } else if (step->final_seq == 2u) {
+                /* 末段通行到时进 S13：循迹等左转路口，再 IMU 直行 1 秒停车。 */
+                reset_junction();
+                enter_state(ROUTE_S13_WAIT);
+                Car_Track();
+            } else if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
+                /* 调试截止：持续循迹，不执行收尾。 */
+                reset_junction();
+                enter_state(ROUTE_CRUISE);
+                Car_Track();
+                DebugLog_Write(LOG_INFO, "DEBUG_END");
             } else {
                 begin_recovery();
             }
@@ -694,8 +758,52 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         return; /* 跳过 step->timeout_ms 检查，仿 ROUTE_FINAL_FORWARD */
 
-    case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成即停车结束
+    case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成接 S1 直行
         if (g_mode_fsm.turn_count != s_turn_count_before) {
+            /* 右转完成不停车，进 S1：IMU 直行 3 秒 PWM200，再切循迹找十字路口。 */
+            enter_state(ROUTE_S1_IMU);
+            Car_ImuForward(ROUTE_S1_PWM);
+            DebugLog_Write(LOG_INFO, "S1_FWD");
+        }
+        return;
+
+    case ROUTE_S1_IMU: //高台右转后 IMU 直行 3 秒 PWM200
+        if (elapsed_ms >= ROUTE_S1_IMU_MS) {
+            enter_state(ROUTE_S1_WAIT);
+            Car_Track(); /* 3 秒到，切循迹找十字路口 */
+            DebugLog_Write(LOG_INFO, "S1_TRACK");
+        }
+        return;
+
+    case ROUTE_S1_WAIT: //S1 直行后循迹等十字路口，再进 step10
+        if (g_route.junction == JUNCTION_CROSS) { /* CROSS 电平触发，仿 ROUTE_FOLLOW */
+            ++g_route.step_index; /* 从 step9 推进到 step10 */
+            if (g_route.step_index + 1u > ROUTE_ACTIVE_STEP_COUNT) {
+                /* 调试截止：step10 超出 active，持续循迹不执行后续。 */
+                enter_state(ROUTE_CRUISE);
+                reset_junction();
+                Car_Track();
+                DebugLog_Write(LOG_INFO, "DEBUG_END");
+            } else {
+                reset_junction();
+                begin_step(); /* 进入 step10 表项循迹等路口 */
+            }
+            return;
+        }
+        break;
+
+    case ROUTE_S13_WAIT: //末段 IMU 通行后循迹等左转路口，再直行 1 秒
+        if (g_route.junction == JUNCTION_LEFT && g_route.junction_event) {
+            reset_junction();
+            enter_state(ROUTE_S13_IMU);
+            Car_ImuForward(ROUTE_S13_PWM); /* 左转路口后 IMU 直行 1 秒停车，不转弯 */
+            DebugLog_Write(LOG_INFO, "S13_FWD");
+            return;
+        }
+        break;
+
+    case ROUTE_S13_IMU: //末段路口后 IMU 直行 1 秒，停车结束
+        if (elapsed_ms >= ROUTE_S13_IMU_MS) {
             s_active = g_route.enabled = 0u;
             enter_state(ROUTE_FINISHED);
             Car_Stop();

@@ -31,14 +31,19 @@ typedef enum {
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
     ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
     ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3 秒 */
-    ROUTE_FINAL_RIGHT_TURN         /* 倒车后停车校准、右转 90°，完成即结束 */
+    ROUTE_FINAL_RIGHT_TURN,        /* 倒车后停车校准、右转 90°，完成接 S1 直行 */
+    ROUTE_S1_IMU,                  /* 高台右转后 IMU 直行 3 秒 PWM200，再切循迹找十字 */
+    ROUTE_S1_WAIT,                 /* S1 直行后循迹等十字路口，再进 step10 */
+    ROUTE_S13_WAIT,                /* 末段 IMU 通行后循迹等左转路口，再直行 1 秒 */
+    ROUTE_S13_IMU                  /* 末段路口后 IMU 直行 1 秒，停车结束 */
 } RouteState;
 
 typedef enum {
     ROUTE_ACTION_LEFT = 0,         /* 接受指定路口后前移、左转，再入口对正 */
     ROUTE_ACTION_RIGHT,            /* 接受指定路口后前移、右转，再入口对正 */
     ROUTE_ACTION_STRAIGHT,         /* 接受指定路口后继续循迹，直接入口对正 */
-    ROUTE_ACTION_RIGHT_TRACK       /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
+    ROUTE_ACTION_RIGHT_TRACK,      /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
+    ROUTE_ACTION_LEFT_TRACK        /* 前移、左转后恢复循迹，不进入入口与 IMU 通行 */
 } RouteAction;
 
 /**
@@ -55,27 +60,31 @@ typedef enum {
 typedef struct {
     RouteAction action;            /* 路口继续循迹，或先前移转弯 */
     uint8_t project_id;             /* 本次路线段号，从 1 开始 */
-    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM；RIGHT_TRACK 不使用 */
-    uint32_t entry_ms;              /* 入口灰度循迹持续时间；RIGHT_TRACK 不使用 */
-    uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK 不使用 */
+    uint16_t base_pwm;              /* 本段 IMU 通行基础 PWM；RIGHT_TRACK/LEFT_TRACK 不使用 */
+    uint32_t entry_ms;              /* 入口灰度循迹持续时间；RIGHT_TRACK/LEFT_TRACK 不使用 */
+    uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK/LEFT_TRACK 不使用，纯循迹项目为 0 */
     uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
     RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
+    uint8_t cal_before;             /* 转前用 align-hold 校准代替快速对齐 */
+    uint8_t cal_after;              /* 转后、入口或恢复前 align-hold 校准 */
+    uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时触发高台特殊收尾；2=触发 S13 终点 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 9u        /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 20u       /* 当前已经按新顺序编写的段数；后续追加表项时同步增加 */
 
 /* 本次从路线表第几项开始，使用 1 至 9 的表项序号，不按 project_id 查找。
  * 例如设为 6u：从第 6 项对应路口前循迹出发，顺序执行第 6、7、8、9 项及原有收尾。
  * 默认 1u 保持从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 8u
+#define ROUTE_START_STEP 9u
 #endif
 
-/* 集中设置本次调试截止段数：9 或 0 均执行到路线末尾，再左转、直行 3 秒停车。
- * 1 至 8 只运行起始项至截止项，截止后持续循迹，不执行完整路线的收尾动作。
+/* 集中设置本次调试截止段数：20 或 0 均执行到路线末尾（高台+S1+S13 收尾）。
+ * 1 至 19 只运行起始项至截止项，截止后持续循迹，不执行完整路线的收尾动作。
+ * 设为 9 可只跑大台阶+窄桥+高台+S1 段（S1 末尾因 step10 超出 active 转 CRUISE）。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 9u
+#define ROUTE_DEBUG_STEP_LIMIT 19u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT
