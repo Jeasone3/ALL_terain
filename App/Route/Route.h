@@ -42,7 +42,7 @@ typedef enum {
     ROUTE_ACTION_RIGHT_TRACK,      /* 前移、右转后恢复循迹，不进入入口与 IMU 通行 */
     ROUTE_ACTION_LEFT_TRACK,       /* 前移、IMU 左转后恢复循迹，不进入入口与 IMU 通行 */
     ROUTE_ACTION_FOLLOW_LEFT,      /* 全程灰度循迹通过左弯，确认居中窄线后接下一项 */
-    ROUTE_ACTION_STRAIGHT_TRACK    /* 十字处继续循迹直行，确认居中窄线后接下一项，不对齐或转弯 */
+    ROUTE_ACTION_STRAIGHT_TRACK    /* 路口直行后确认窄线接下一项；cal_before 可启用直行前对齐校准 */
 } RouteAction;
 
 /**
@@ -52,8 +52,10 @@ typedef enum {
  *       entry_ms 全程使用灰度循迹；pass_ms 到时恢复循迹，不等待出口线。
  *       LEFT_TRACK / RIGHT_TRACK 均先对齐、前移、转 90°，再恢复循迹；项目参数均为 0。
  *       FOLLOW_LEFT 全程由循迹 PID 沿左弯行驶，项目参数也为 0，不执行 IMU 对齐与转弯。
- *       STRAIGHT_TRACK 保持循迹直行，确认离开路口后接下一项，项目参数均为 0。
- *       LEFT / RIGHT 转后按 entry_ms 循迹；STRAIGHT 接受路口后直接按 entry_ms 循迹。
+ *       STRAIGHT_TRACK 循迹直行，cal_before = 1 时先对齐保持校准，确认离开路口后接下一项。
+ *       STRAIGHT_TRACK 项目 PWM、入口与通行时间均为 0，不执行定时项目通行。
+ *       LEFT / RIGHT 转后按 entry_ms 循迹；STRAIGHT 接受路口后按 entry_ms 循迹。
+ *       STRAIGHT 的 cal_before = 1 时先停车对齐保持并校准，再开始入口循迹计时。
  *       pass_ms 为 0 时只定时循迹；base_pwm 保留非零供参数检查，不控制循迹速度。
  *       第 8 项转后倒退暂时停用，直接入口循迹；具体时间以路线表为准。
  *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。
@@ -68,7 +70,7 @@ typedef struct {
     uint32_t pass_ms;               /* IMU 直行持续时间；RIGHT_TRACK/LEFT_TRACK 不使用，纯循迹项目为 0 */
     uint32_t timeout_ms;            /* 等路口、入口、转弯、恢复的阶段超时 */
     RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
-    uint8_t cal_before;             /* 转前用 align-hold 校准代替快速对齐 */
+    uint8_t cal_before;             /* 路口动作前对齐保持校准；两类直行动作校准后切回循迹 */
     uint8_t cal_after;              /* 转后、入口或恢复前 align-hold 校准 */
     uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时接高台；2=ENTRY 定时循迹到时停车 */
 } RouteStep;
@@ -79,7 +81,7 @@ typedef struct {
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
  * 设为 1u 从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 10u
+#define ROUTE_START_STEP 1u
 #endif
 
 /* 调试截止表项：16 或 0 均执行到第 16 项十字右转后持续循迹。

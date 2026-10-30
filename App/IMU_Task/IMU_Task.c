@@ -32,7 +32,7 @@ static float s_target_yaw = 0.0f;
 /* 转弯 PID 限幅 */
 #define TURN_MAX_OUT      600.0f
 #define TURN_MAX_IOUT     50.0f
-#define TURN_MIN_OUT      210.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
+#define TURN_MIN_OUT      230.0f    /* 容差外的最低转弯 PWM，首轮试用 200，须按实车转动门槛标定 */
 /* 对齐用更柔的限幅：功能切换时慢转到 ideal_yaw，避免快速过冲；首轮标定值，可调 */
 #define ALIGN_MAX_OUT     600.0f
 #define ALIGN_MIN_OUT     300.0f

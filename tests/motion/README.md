@@ -8,6 +8,14 @@
 
 宿主脚本使用 GCC C99，开启 -Wall -Wextra -Werror -pedantic。产物位于 TEMP/all-terrain-motion-tests。Keil 脚本使用当前源码完整重编译，AXF/HEX/日志写入独立临时目录，不覆盖仓库旧构建产物，不烧录硬件。
 
+2026-10-30 第 12、14 项补充路口校准（当前行为）：两项保持 `STRAIGHT_TRACK`，设置 `cal_before=1`。十字确认后先原地对齐到位并保持 800 ms，重建 yaw 基准，再切回循迹进入 `ROUTE_RECOVER`；连续两帧居中窄线后接下一项。不增加定时循迹、IMU 通行或转弯前移，理想朝向不变，保留原表结构和阶段超时。未配置 `cal_before` 的纯循迹直行项仍直接循迹通过。
+
+本次 `-RouteAfterPlatformOnly` 的 9 组配置和 `-RouteStartOnly` 的 18 组配置全部通过。第 12、14 项专项覆盖直接十字与单侧升级、停车保持及校准一次、校准后才恢复循迹、宽线期间不重复触发、出口窄线防抖及截止后持续循迹；新增对齐阶段的停车/接管/禁用/IMU 故障/路线超时矩阵通过。从第 12、14 项启动时也验证对齐中及对齐完成当帧的 STOP 优先级。Keil 完整重编译生成 HEX，0 Error(s)、2 Warning(s)，仍为 `Attitude.c` 中 `ez`、`ezInt` 未使用，零警告脚本因此返回失败。产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-b15484c6d26e4002a52d6a0aa2cd97c3`。未运行全量默认宿主测试，未烧录或实车验证。
+
+2026-10-30 第 10 项补充路口校准（当前行为）：第 10 项设置 `cal_before=1`，十字连续两帧确认后立即进入对齐保持，重建 yaw 基准后切回循迹并从零计时 2000 ms；入口结束后再对齐保持并校准，随后以当前表内 PWM 500、5000 ms 通行。复用现有 `ROUTE_ALIGN → ROUTE_ENTRY` 衔接，不增加状态或字段；其他未设置 `cal_before` 的 `STRAIGHT` 项保持原流程。
+
+本次 `-RouteAfterPlatformOnly` 的 9 组配置、`-RouteStartOnly` 的 18 组配置全部通过。更新第 10 项专项，验证直接十字及单侧升级十字均先停车对齐保持、两次各校准一次、两次校准之间精确循迹 200 帧，以及通行计时、提示音与恢复衔接；既有高台衔接和各阶段中止场景通过。Keil 完整重编译生成 HEX，0 Error(s)、2 Warning(s)，仍为 `Attitude.c` 中 `ez`、`ezInt` 未使用，零警告脚本因此返回失败。产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-d8d4d24b8f4140bda6af9fc05691ab0a`。未运行全量默认宿主测试，未烧录或实车验证。
+
 2026-10-30 第 15 项项目通行及第 16 项右转（当前行为）：第 15 项改用 `LEFT`，保留转前 `cal_before=1` 的对齐保持校准、前移和闭环左转；转完循迹 400 ms 后，再复用普通项目入口的对齐到位保持 800 ms、重建 yaw 基准流程，以 PWM 500 IMU 直行 6000 ms。通行后恢复循迹并确认两帧居中窄线，再由第 16 项识别十字，以 `RIGHT_TRACK`、`cal_before=1` 停车对齐校准、PWM 500 前移 680 ms、角度闭环右转 90°，转完持续循迹。表结构及状态机不变，总数和默认截止改为 16，默认起点仍为 10。
 
 本次 `-RouteAfterPlatformOnly` 的 9 组配置通过：默认起点、起点 9、起点 9 分别截止 9～15；覆盖第 15 项从转完首帧起计的 40 帧循迹、入口保持及一次校准、600 帧 IMU 通行、通行期间屏蔽十字、窄线恢复后接受第 16 项新十字，以及第 16 项校准先于前移、680 ms 前移、闭环右转及持续循迹。各阶段停车/接管/禁用/IMU 故障/路线超时矩阵同步覆盖新增阶段。`-RouteStartOnly` 的 18 组配置通过：起点 1～16、起点 6 执行全部、起点 6 截止 8。Keil 完整重编译生成 HEX，0 Error(s)、2 Warning(s)，仍为未修改的 `Attitude.c` 中 `ez`、`ezInt` 未使用，零警告脚本因此返回失败。产物在 `C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-8e38d19b43b64ae58f8e66f0a0fb042b`。未运行全量默认宿主测试，未烧录或实车验证。
