@@ -221,8 +221,8 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
 
 
 
-/* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
-    if (g_mode_fsm.mode != MODE_OPEN_LOOP && g_imu_ready == 0U &&
+    /* 各运动模式均由 TIM4 持续采样；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
+    if (g_imu_ready == 0U &&
         (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {
       last_imu_retry_ms = HAL_GetTick();
@@ -252,7 +252,7 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
       }
       else
       {
-        /* 停车、循迹或 IMU 故障时没有新姿态，不能把保留值当成实时测量。 */
+        /* 本帧姿态无效时输出占位符，不能把保留值当成实时测量。 */
         printf("Yaw:-- Pitch:-- Roll:--\r\n");
       }
     }

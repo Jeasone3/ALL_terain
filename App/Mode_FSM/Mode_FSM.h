@@ -13,7 +13,7 @@
 typedef enum {
     MODE_TRACK = 0,                 /* 灰度循迹 PID 控制电机 */
     MODE_IMU,                      /* IMU 角度 PID 控制电机 */
-    MODE_OPEN_LOOP                 /* 超声波通行：固定两轮 PWM，不读取 IMU 或运行循迹 PID */
+    MODE_OPEN_LOOP                 /* 超声波通行：固定两轮 PWM，IMU 仅记录姿态，不运行运动 PID */
 } CarMode;
 
 /* IMU 子状态，用于 MODE_IMU 模式。 */
@@ -84,7 +84,7 @@ void ModeFSM_Tick(void);
  * @brief 提交循迹请求，由灰度传感器和循迹 PID 自动跟线。
  * @param 无。
  * @return 无。
- * @note 下一控制帧生效，暂停 IMU 采样与解算；路口去向由 Route 决定。
+ * @note 下一控制帧生效，IMU 持续采样与解算但不参与循迹调速；路口去向由 Route 决定。
  */
 void Car_Track(void);
 

@@ -31,7 +31,7 @@
 /* 路线按表项顺序执行，project_id 为屏幕显示段号；追加表项时同步增加 ROUTE_STEP_COUNT。
  * 使用字段名填写参数，未列出的字段自动为 0，不再靠末尾的 0、1、2 判断各列含义。
  *
- * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 640 ms，再转 90°；第 12 项前移 500 ms。
+ * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 640 ms，再转 90°；第 12、17 项前移 450 ms。
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
  *           STRAIGHT_TRACK 可先按 cal_before 校准，再循迹直行，通过路口并确认窄线后接下一项。
@@ -93,7 +93,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
-    {   /* 12 左侧路口左转：前移 500 ms 后闭环左转，仅本次容差 45°；转完接超声波通行。 */
+    {   /* 12 左侧路口左转：前移 450 ms 后以 90°为目标左转，本次容差 45°；转完接超声波通行。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
@@ -113,7 +113,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
-    {   /* 17 识别左侧路口后闭环左转 90°，恢复循迹并开启第二段超声波通行。 */
+    {   /* 17 左侧路口左转：同第 12 项，前移 450 ms、左转目标 90°、容差 45°，转完接第二段超声波。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 17u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
@@ -351,11 +351,12 @@ static void update_conditions(const uint16_t *sensor_data)
 /**
  * @brief 返回指定表项转弯前的前移时长，供参数检查与阶段计时共同使用。
  * @param step_index 路线表下标，从 0 开始。
- * @return 前移时长（毫秒）；第 12 项单独使用 500 ms，其余项使用原统一参数。
+ * @return 前移时长（毫秒）；第 12、17 项使用 450 ms，其余项使用原统一参数。
  */
 static uint32_t turn_approach_ms(uint16_t step_index)
 {
-    return step_index == 11u ? 500u : ROUTE_TURN_APPROACH_MS;
+    /* 两段超声波入口的转弯使用相同前移时间，表项下标从 0 开始。 */
+    return (step_index == 11u || step_index == 16u) ? 450u : ROUTE_TURN_APPROACH_MS;
 }
 
 /**
@@ -408,7 +409,7 @@ static uint16_t invalid_step(void)
  * @brief 路口动作对应的理想朝向增量，均为 90° 的整数倍。
  * @param action 当前段的路口动作。
  * @return LEFT=+90、RIGHT/RIGHT_TRACK=-90、STRAIGHT=0，单位：度。
- * @note 仅路口转弯更新 ideal_yaw；项目入口对齐本身 Δθ=0，对齐到当前 ideal_yaw。
+ * @note 此处只提供路口增量；两段超声波出口各补 180°。对齐本身 Δθ=0，目标为当前 ideal_yaw。
  */
 static float route_action_yaw_delta(RouteAction action)
 {
@@ -653,13 +654,19 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             {
                 enter_state(ROUTE_SONAR_OPEN_LOOP);
                 if (g_route.step_index == 16u)
-                    //方形隧道PWM
-                    Car_OpenLoopWithPWM(340u, 300u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
+                    //方PWM
+                    Car_OpenLoopWithPWM(450u, 320u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
                 else
                     Car_OpenLoop();
             }
             else if (g_route.state == ROUTE_SONAR_OPEN_LOOP && s_sonar_distance > 40.0f)
             {
+                /* 两段超声波通行的出口均与入口反向，各补上路线目标的 180°净变化。
+                 * 实测 yaw 持续积分保留，不在出口重设基准；第 13、18 项路口再按新目标对齐。
+                 * 随后立即离开超声波状态，保证每段只更新一次。 */
+                if (g_route.step_index == 11u || g_route.step_index == 16u)
+                    g_route.ideal_yaw += 180.0f;
+
                 /* 两段超声波分别推进第 13、18 项；begin_step 清除旧路口并恢复循迹。
                  * 截止在超声波所属项时只恢复循迹，不能越过启用范围。 */
                 if (g_route.step_index + 1u < ROUTE_ACTIVE_STEP_COUNT)
@@ -799,8 +806,8 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             /* 提交转弯前更新理想朝向，FSM 取此绝对值作为转弯目标，转完即对齐。 */
             g_route.ideal_yaw += route_action_yaw_delta(step->action);
             if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK) {
-                if (g_route.step_index == 11u)
-                    Car_TurnLeft90WithTolerance(MODE_TRACK, 45.0f); /* 仅第 12 项覆盖到位容差 */
+                if (g_route.step_index == 11u || g_route.step_index == 16u)
+                    Car_TurnLeft90WithTolerance(MODE_TRACK, 45.0f); /* 仅第 12、17 项使用 45°到位容差 */
                 else
                     Car_TurnLeft90(MODE_TRACK);
             } else

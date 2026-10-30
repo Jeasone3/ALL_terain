@@ -3146,7 +3146,7 @@ static void test_step10_11_track_parameters(void)
     puts("PASS steps10/11 PWM250, previous-error correction without slowdown, recovery/cruise and takeover restoration");
 }
 /**
- * @brief 验证第 12 项前移 500ms、局部 45°容差、两帧确认、持续循迹及普通判据恢复。
+ * @brief 验证第 12 项前移 450ms、局部 45°容差、两帧确认、持续循迹及普通判据恢复。
  * @param 无。
  * @return 无；覆盖剩余 45.1°、恰好 45°、反向过冲 45°和跨周角差。
  */
@@ -3158,6 +3158,7 @@ static void check_steps13_to20(void)
     {
         unsigned budget = 200u;
         unsigned i;
+        unsigned resets = s_resets;
         uint32_t turns = g_mode_fsm.turn_count;
         float yaw = g_route.ideal_yaw;
         uint8_t left = (uint8_t)(index != 13u && index != 15u && index != 18u && index != 19u);
@@ -3183,11 +3184,27 @@ static void check_steps13_to20(void)
         CHECK(g_route.state == ROUTE_FOLLOW);
         tick();
         CHECK(g_route.state == ROUTE_ALIGN);
+        CHECK(CLOSE(g_mode_fsm.target_yaw, yaw) && s_resets == resets);
+        if (index == 12u || index == 17u)
+        {
+            /* 第 13、18 项必须保留出口的实测偏角，按最短角差纠偏，不能把反馈改写为目标。
+             * 第一段的三个出口场景覆盖欠转、过转和相差 360°的等价反馈；直接起跑时允许零误差。 */
+            float error = IMUTask_GetError();
+            CHECK(CLOSE(error, 10.0f) || CLOSE(error, -10.0f) || CLOSE(error, 0.0f));
+            if (error > IMU_ALIGN_DONE_TOLERANCE)
+                CHECK(motorLeft.speed < 0 && motorRight.speed > 0);
+            else if (error < -IMU_ALIGN_DONE_TOLERANCE)
+                CHECK(motorLeft.speed > 0 && motorRight.speed < 0);
+            else
+                CHECK(motorLeft.speed == 0 && motorRight.speed == 0);
+        }
         set_sensors(0x18u);
         while (g_route.state == ROUTE_ALIGN && --budget != 0u)
             post_platform_tick();
         CHECK(budget != 0u && g_route.state == ROUTE_APPROACH);
-        for (i = 1u; i < 64u; ++i)
+        CHECK(CLOSE(g_mode_fsm.target_yaw, yaw) && s_resets == resets);
+        /* 第 17 项执行 45 帧前移，其余后续路口仍执行原来的 64 帧。 */
+        for (i = 1u; i < (index == 16u ? 45u : 64u); ++i)
         {
             post_platform_tick();
             CHECK(g_route.state == ROUTE_APPROACH);
@@ -3197,11 +3214,32 @@ static void check_steps13_to20(void)
         CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.mode == MODE_IMU);
         CHECK(g_mode_fsm.imu_state == (left ? IMU_TURN_LEFT : IMU_TURN_RIGHT));
         CHECK(CLOSE(g_route.ideal_yaw, yaw + (left ? 90.0f : -90.0f)));
-        s_sample_yaw = g_mode_fsm.target_yaw - 5.0f;
-        ticks(2u);
-        CHECK(g_mode_fsm.turn_count == turns); /* 不继承第 12 项的 45°容差。 */
-        s_sample_yaw = g_mode_fsm.target_yaw;
-        ticks(2u);
+        if (index == 16u)
+        {
+            /* 验证容差外继续转动；每次离开容差都必须清除完成计数。
+             * 三种边界反馈分别覆盖欠转、过转和跨 360°的等价角度。 */
+            unsigned boundary_case;
+            for (boundary_case = 0u; boundary_case < 3u; ++boundary_case)
+            {
+                s_sample_yaw = g_mode_fsm.target_yaw - 45.1f;
+                ticks(2u);
+                CHECK(g_mode_fsm.turn_count == turns && motorLeft.speed < 0 && motorRight.speed > 0);
+                s_sample_yaw = g_mode_fsm.target_yaw +
+                               (boundary_case == 0u ? -45.0f : boundary_case == 1u ? 45.0f : 315.0f);
+                tick();
+                CHECK(g_mode_fsm.turn_count == turns && motorLeft.speed == 0 && motorRight.speed == 0);
+            }
+            /* 最后一次边界只确认了一帧，再命中一帧才完成。 */
+            tick();
+        }
+        else
+        {
+            s_sample_yaw = g_mode_fsm.target_yaw - 5.0f;
+            ticks(2u);
+            CHECK(g_mode_fsm.turn_count == turns); /* 其余项不继承第 12、17 项的 45°容差。 */
+            s_sample_yaw = g_mode_fsm.target_yaw;
+            ticks(2u);
+        }
         CHECK(g_mode_fsm.turn_count == turns + 1u && g_mode_fsm.mode == MODE_TRACK);
         tick();
         if (index == 19u)
@@ -3241,7 +3279,8 @@ static void check_steps13_to20(void)
         }
         else if (index == 16u)
         {
-            unsigned imu_reads, track_calls;
+            unsigned imu_reads, attitude_ticks, pid_calls;
+            float sonar_yaw = g_route.ideal_yaw;
             CHECK(g_route.state == ROUTE_SONAR_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
             CHECK(s_sonar_triggers == triggers);
             Route_ServiceSonar();
@@ -3256,35 +3295,46 @@ static void check_steps13_to20(void)
             Route_ServiceSonar();
             tick();
             CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP && g_mode_fsm.mode == MODE_OPEN_LOOP);
-            CHECK(motorLeft.speed == 320 && motorRight.speed == 300);
+            CHECK(motorLeft.speed == 450 && motorRight.speed == 320);
             imu_reads = s_imu_reads;
-            track_calls = s_track_pid_calls;
-            s_sample_ok = 0u;
+            attitude_ticks = s_attitude_ticks;
+            pid_calls = s_pid_calls;
             set_sensors(0xFFu);
-            ticks(5u);
-            CHECK(s_imu_reads == imu_reads && s_track_pid_calls == track_calls);
-            CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 320 && motorRight.speed == 300);
+            for (i = 0u; i < 5u; ++i)
+            {
+                s_sample_yaw = sonar_yaw + 166.0f + (float)i;
+                tick();
+                CHECK(g_mode_fsm.imu_valid && CLOSE(g_euler.yaw, s_sample_yaw));
+                CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 450 && motorRight.speed == 320);
+            }
+            CHECK(s_imu_reads == imu_reads + 5u && s_attitude_ticks == attitude_ticks + 5u);
+            CHECK(s_pid_calls == pid_calls);
             Route_ServiceSonar();
             s_sonar_result.status = SR04_TIMEOUT;
             Route_ServiceSonar();
             tick();
             CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            CHECK(CLOSE(g_route.ideal_yaw, sonar_yaw));
             s_sonar_result.status = SR04_OK;
             s_sonar_result.distance_cm = 40.0f;
             Route_ServiceSonar();
             tick();
             CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            CHECK(CLOSE(g_route.ideal_yaw, sonar_yaw));
             Route_ServiceSonar();
             s_sonar_result.status = SR04_OK;
             s_sonar_result.distance_cm = 41.0f;
-            s_sample_ok = 1u;
             Route_ServiceSonar();
             tick();
             CHECK(g_mode_fsm.mode == MODE_TRACK);
+            CHECK(CLOSE(g_route.ideal_yaw, sonar_yaw + 180.0f));
+            CHECK(CLOSE(g_euler.yaw, sonar_yaw + 170.0f)); /* 保留 10°实测偏差，供第 18 项对齐。 */
             CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT > 17u ? ROUTE_FOLLOW : ROUTE_CRUISE));
             CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT > 17u ? 17u : 16u));
             triggers = s_sonar_triggers;
             set_sensors(0x18u);
+            ticks(3u);
+            CHECK(CLOSE(g_route.ideal_yaw, sonar_yaw + 180.0f)); /* 退出后不能重复累加。 */
         }
         else if (index + 1u < TEST_ACTIVE_STEP_COUNT)
         {
@@ -3304,6 +3354,59 @@ static void check_steps13_to20(void)
         Route_ServiceSonar();
         CHECK(s_sonar_triggers == triggers);
     }
+}
+
+/**
+ * @brief 验证开环也逐帧检查 IMU，有效采样时固定 PWM，采样失败或非法角度时停车。
+ * @param 无。
+ * @return 无；任一故障未停车、停车后自动恢复或执行了运动 PID 都会使测试失败。
+ * @note 两段开环共享同一执行逻辑；重新获得有效采样只恢复角度有效性，必须另发动作才恢复行驶。
+ */
+static void test_open_loop_imu_faults(void)
+{
+    unsigned scenario;
+    for (scenario = 0u; scenario < 3u; ++scenario)
+    {
+        unsigned imu_reads, attitude_ticks, pid_calls, resets;
+        begin_case("open-loop IMU sampling and fault stop", 0u);
+        Car_OpenLoop();
+        s_sample_yaw = 170.0f;
+        tick();
+        CHECK(g_mode_fsm.mode == MODE_OPEN_LOOP && g_mode_fsm.status == CAR_RUNNING);
+        CHECK(g_mode_fsm.imu_valid && CLOSE(g_euler.yaw, 170.0f));
+        CHECK(motorLeft.speed == 450 && motorRight.speed == 310);
+        imu_reads = s_imu_reads;
+        attitude_ticks = s_attitude_ticks;
+        pid_calls = s_pid_calls;
+        resets = s_resets;
+
+        s_sample_yaw = -179.0f;
+        tick();
+        CHECK(g_mode_fsm.imu_valid && CLOSE(g_euler.yaw, -179.0f));
+        CHECK(s_imu_reads == imu_reads + 1u && s_attitude_ticks == attitude_ticks + 1u);
+        CHECK(motorLeft.speed == 450 && motorRight.speed == 310);
+        CHECK(s_pid_calls == pid_calls && s_resets == resets);
+
+        if (scenario == 0u)
+            s_sample_ok = 0u;
+        else
+            s_sample_yaw = scenario == 1u ? NAN : INFINITY;
+        tick();
+        check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        CHECK(!g_mode_fsm.imu_valid && s_pid_calls == pid_calls && s_resets == resets);
+        CHECK(s_imu_reads == imu_reads + 2u);
+
+        s_sample_ok = 1u;
+        s_sample_yaw = -170.0f;
+        ticks(2u);
+        check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        CHECK(g_mode_fsm.imu_valid && CLOSE(g_euler.yaw, -170.0f));
+        Car_OpenLoop();
+        tick();
+        CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 450 && motorRight.speed == 310);
+        CHECK(s_pid_calls == pid_calls && s_resets == resets);
+    }
+    puts("PASS open-loop IMU continuity, fixed PWM, sample/NaN/Inf fault stop and explicit recovery");
 }
 
 static void test_step12_left_turn(void)
@@ -3345,14 +3448,14 @@ static void test_step12_left_turn(void)
         CHECK(budget != 0u && g_route.state == ROUTE_APPROACH);
         CHECK(g_mode_fsm.base_pwm == 500u && g_mode_fsm.state_frames == 1u);
         command = g_mode_fsm.command_id;
-        /* 前移首帧已输出；再输出 49 帧满 500ms，下一帧才允许提交左转。 */
-        for (i = 1u; i < 50u; ++i) {
+        /* 前移首帧已输出；再输出 44 帧满 450ms，下一帧才允许提交左转。 */
+        for (i = 1u; i < 45u; ++i) {
             post_platform_tick();
             CHECK(g_route.state == ROUTE_APPROACH && g_mode_fsm.command_id == command);
             CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
             CHECK(CLOSE(g_route.ideal_yaw, yaw));
         }
-        CHECK(g_mode_fsm.state_frames == 50u);
+        CHECK(g_mode_fsm.state_frames == 45u);
         post_platform_tick();
         CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.command_id == command + 1u);
         CHECK(budget != 0u && g_mode_fsm.imu_state == IMU_TURN_LEFT);
@@ -3400,28 +3503,41 @@ static void test_step12_left_turn(void)
         Route_ServiceSonar();
         tick();
         CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP && g_mode_fsm.mode == MODE_OPEN_LOOP);
-        CHECK(motorLeft.speed == 330 && motorRight.speed == 280);
+        CHECK(motorLeft.speed == 450 && motorRight.speed == 310);
         {
             unsigned imu_reads = s_imu_reads;
-            unsigned pid_calls = s_track_pid_calls;
+            unsigned attitude_ticks = s_attitude_ticks;
+            unsigned pid_calls = s_pid_calls;
+            unsigned aligns = g_mode_fsm.align_count;
             unsigned triggers;
-            s_sample_ok = 0u;
+            /* 欠转和过转各保留 10°误差；第三种反馈减去 360°，验证后续对齐使用最短角差。 */
+            float exit_feedback = scenario == 1u ? target + 190.0f : target + 170.0f;
+            if (scenario == 2u)
+                exit_feedback -= 360.0f;
             set_sensors(0xFFu);
-            ticks(5u);
-            CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 330 && motorRight.speed == 280);
-            CHECK(s_imu_reads == imu_reads && s_track_pid_calls == pid_calls);
+            for (i = 0u; i < 5u; ++i)
+            {
+                s_sample_yaw = exit_feedback - 4.0f + (float)i;
+                tick();
+                CHECK(g_mode_fsm.imu_valid && CLOSE(g_euler.yaw, s_sample_yaw));
+                CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 450 && motorRight.speed == 310);
+                CHECK(CLOSE(g_route.ideal_yaw, target));
+            }
+            CHECK(s_imu_reads == imu_reads + 5u && s_attitude_ticks == attitude_ticks + 5u);
+            CHECK(s_pid_calls == pid_calls && s_resets == resets);
             Route_ServiceSonar();
             s_sonar_result.status = SR04_OK;
             s_sonar_result.distance_cm = 40.0f;
             Route_ServiceSonar();
             tick();
             CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            CHECK(CLOSE(g_route.ideal_yaw, target));
             Route_ServiceSonar();
             s_sonar_result.status = SR04_TIMEOUT;
             Route_ServiceSonar();
             tick();
             CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
-            s_sample_ok = 1u;
+            CHECK(CLOSE(g_route.ideal_yaw, target));
             s_sonar_result.status = SR04_OK;
             s_sonar_result.distance_cm = 41.0f;
             Route_ServiceSonar();
@@ -3429,11 +3545,17 @@ static void test_step12_left_turn(void)
             CHECK(g_mode_fsm.mode == MODE_TRACK);
             CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT > 12u ? ROUTE_FOLLOW : ROUTE_CRUISE));
             CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT > 12u ? 12u : 11u));
+            CHECK(CLOSE(g_route.ideal_yaw, target + 180.0f));
+            CHECK(CLOSE(g_euler.yaw, exit_feedback) && s_resets == resets);
+            CHECK(g_mode_fsm.align_count == aligns); /* 出口只恢复循迹，不提前停车对齐。 */
             triggers = s_sonar_triggers;
             Route_ServiceSonar();
             CHECK(s_sonar_triggers == triggers);
             set_sensors(0x18u);
-            if (scenario == 0u && TEST_ACTIVE_STEP_COUNT > 12u)
+            ticks(3u);
+            CHECK(CLOSE(g_route.ideal_yaw, target + 180.0f) && s_resets == resets);
+            CHECK(g_mode_fsm.mode == MODE_TRACK && g_mode_fsm.align_count == aligns);
+            if (TEST_ACTIVE_STEP_COUNT > 12u)
                 check_steps13_to20();
         }
         /* 普通左转在同一场景紧接着启动，必须立即回到原 2°严格容差。 */
@@ -3469,7 +3591,7 @@ static void test_step12_left_turn(void)
         Car_Stop();
         tick();
     }
-    puts("PASS step12 left turn: 500ms approach, forty-five-degree boundary, overshoot/wrap, default tolerance and mailbox priority");
+    puts("PASS step12 left turn: 450ms approach, forty-five-degree boundary, overshoot/wrap, default tolerance and mailbox priority");
 }
 #endif
 
@@ -3484,6 +3606,7 @@ int main(void)
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
 #ifdef TEST_ROUTE_AFTER_PLATFORM_ONLY
     test_route_start_validation();
+    test_open_loop_imu_faults();
     if (ROUTE_START_STEP >= 13u)
     {
         post_platform_start("direct start at post-sonar route item");

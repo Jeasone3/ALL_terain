@@ -25,8 +25,8 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 volatile ModeFSM_t g_mode_fsm;
 extern Motor_Struct motorLeft, motorRight;
 
-#define OPEN_LOOP_LEFT_PWM  400u /* 超声波通行时左轮固定前进 PWM。 */
-#define OPEN_LOOP_RIGHT_PWM 300u /* 超声波通行时右轮固定前进 PWM。 */
+#define OPEN_LOOP_LEFT_PWM  450u /* 超声波通行时左轮固定前进 PWM。 */
+#define OPEN_LOOP_RIGHT_PWM 310u /* 超声波通行时右轮固定前进 PWM。 */
 
 /* 邮箱中的动作类型，与实际执行状态分开保存。 */
 typedef enum
@@ -209,8 +209,8 @@ static void apply_request(const CarRequest *request)
     g_mode_fsm.imu_valid = 0u; /* 新动作必须等待本帧有效采样。 */
     s_forward_limit_frames = 0u;
 
-    /* yaw 全程连续：不在每次 IMU 动作重建零度基准，由开机 Attitude_Init 建立唯一参考。
-     * 循迹期间 update_imu 不调用、yaw 冻结；IMU 段目标统一取 g_route.ideal_yaw（90° 倍数）。 */
+    /* 切换动作时保留姿态基准；循迹与开环期间也持续采样，避免漏记实际偏航。
+     * update_imu 只处理 IMU 动作的完成条件；IMU 段目标统一取 g_route.ideal_yaw。 */
     if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK &&
         request->command != COMMAND_OPEN_LOOP) //IMU 动作
     {
@@ -454,7 +454,7 @@ void ModeFSM_Init(void)
  * @param 无。
  * @return 无。
  * @note 外部请求优先于 Route；灰度在 IMU 模式中仅用于条件观察，不能调用循迹 PID。
- *       每帧先撤销角度有效标记，只有本帧成功读取 IMU 后才能恢复，循迹期间显示 --。
+ *       每帧先撤销角度有效标记，只有本帧成功采样并解算有限 yaw 后才能恢复。
  *       顺序：采样灰度 → 接受外部请求 → Route 决策 → 接受本帧请求 → IMU 更新 → 控制输出。
  */
 void ModeFSM_Tick(void)
@@ -493,26 +493,22 @@ void ModeFSM_Tick(void)
            g_mode_fsm.imu_state == IMU_TURN_LEFT ||
            g_mode_fsm.imu_state == IMU_TURN_RIGHT)));
 
-    /* 每帧读 IMU 并解算 yaw，使姿态全程连续跟踪实际朝向（含循迹期间的偏航）。
-     * 循迹段若不积分 yaw，进 IMU 对齐时 error=ideal_yaw-yaw=0，无法纠正循迹偏航；
-     * 循迹段的积分漂移由每次切换点的对齐清除。IMU 失败时运行中故障停车。
+    /* 所有运动模式都逐帧采样并解算 yaw，记录循迹偏航和开环通行中的实际转动。
+     * 开环只使用固定 PWM，不运行角度 PID；持续测角供退出后的路口对齐使用。
+     * 采样失败或 yaw 非有限时沿用 IMU 故障停车，不能用失效角度继续执行对齐。
      * 放在 apply_request 之后，避免新动作的 status=RUNNING 覆盖本帧 IMU 故障。 */
-    if (g_mode_fsm.mode != MODE_OPEN_LOOP)
+    Int_MPU6050_Tick();
+    if (g_imu_ready != 0u)
     {
-        /* 开环阶段完全跳过采样和姿态故障判断，避免 IMU 通信影响固定 PWM。 */
-        Int_MPU6050_Tick();
-        if (g_imu_ready != 0u)
-        {
-            Attitude_Tick();
-            if (isfinite(g_euler.yaw))
-                g_mode_fsm.imu_valid = 1u;
-            else if (g_mode_fsm.status == CAR_RUNNING)
-                set_fault(CAR_FAULT_IMU);
-        }
+        Attitude_Tick();
+        if (isfinite(g_euler.yaw))
+            g_mode_fsm.imu_valid = 1u;
         else if (g_mode_fsm.status == CAR_RUNNING)
-        {
             set_fault(CAR_FAULT_IMU);
-        }
+    }
+    else if (g_mode_fsm.status == CAR_RUNNING)
+    {
+        set_fault(CAR_FAULT_IMU);
     }
 
     /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
