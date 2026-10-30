@@ -9,14 +9,14 @@ all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f1xx.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f103xe.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Include/core_cm3.h
-all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\debug_log.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Include/cmsis_version.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
 all_terain_for_11\debug_log.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h
-all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
+all_terain_for_11\debug_log.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc_ex.h
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio.h
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio_ex.h
@@ -35,8 +35,8 @@ all_terain_for_11\debug_log.o: ../Int/Int_OLED/Int_OLED.h
 all_terain_for_11\debug_log.o: ../App/Route/Route.h
 all_terain_for_11\debug_log.o: ../App/Track_Task/Track_Task.h
 all_terain_for_11\debug_log.o: ../Int/Int_Track/Int_Track.h
-all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
-all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h
+all_terain_for_11\debug_log.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
+all_terain_for_11\debug_log.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
 all_terain_for_11\debug_log.o: ../Com/Com_Limit/Com_Limit.h
 all_terain_for_11\debug_log.o: ../Com/Com_PID/Com_pid.h
 all_terain_for_11\debug_log.o: ../Int/Int_Motor/motor.h
@@ -47,4 +47,4 @@ all_terain_for_11\debug_log.o: ../Com/Com_IIC/iic.h
 all_terain_for_11\debug_log.o: ../Com/Com_Delay_us/Delay_us.h
 all_terain_for_11\debug_log.o: ../Com/Com_IMU_Config/IMU_Config.h
 all_terain_for_11\debug_log.o: ../Com/Com_Attitude/Attitude.h
-all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdio.h
+all_terain_for_11\debug_log.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h

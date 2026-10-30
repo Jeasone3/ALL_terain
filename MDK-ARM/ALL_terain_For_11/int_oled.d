@@ -1,9 +1,9 @@
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.c
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\Int_OLED.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\int_oled.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+all_terain_for_11\int_oled.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\OLED_Port.h
 all_terain_for_11\int_oled.o: ..\Int\Int_OLED\oledfont.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdarg.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdio.h
-all_terain_for_11\int_oled.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\string.h
+all_terain_for_11\int_oled.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
+all_terain_for_11\int_oled.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+all_terain_for_11\int_oled.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h

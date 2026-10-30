@@ -1,8 +1,8 @@
 all_terain_for_11\oled_port.o: ..\Int\Int_OLED\OLED_Port.c
 all_terain_for_11\oled_port.o: ..\Int\Int_OLED\OLED_Port.h
 all_terain_for_11\oled_port.o: ..\Int\Int_OLED\Int_OLED.h
-all_terain_for_11\oled_port.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
-all_terain_for_11\oled_port.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\oled_port.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+all_terain_for_11\oled_port.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\oled_port.o: ../Core/Inc/i2c.h
 all_terain_for_11\oled_port.o: ../Core/Inc/main.h
 all_terain_for_11\oled_port.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h

@@ -3170,8 +3170,8 @@ static void check_steps13_to20(void)
               left ? ROUTE_ACTION_LEFT_TRACK : ROUTE_ACTION_RIGHT_TRACK));
         CHECK(g_route_plan[index].trigger_junction == (junction_pattern == 0xFFu ? JUNCTION_CROSS :
               junction_pattern == 0xF0u ? JUNCTION_RIGHT : JUNCTION_LEFT));
-        CHECK(g_line_controller.base_speed == ((index == 14u || index == 15u || index == 19u) ? 250 : LINE_DEFAULT_BASE_PWM));
-        CHECK(g_line_controller.lost_slowdown_enabled == !(index == 14u || index == 15u || index == 19u));
+        CHECK(g_line_controller.base_speed == ((index == 14u || index == 15u || index == 18u || index == 19u) ? 250 : LINE_DEFAULT_BASE_PWM));
+        CHECK(g_line_controller.lost_slowdown_enabled == !(index == 14u || index == 15u || index == 18u || index == 19u));
         set_sensors(0x18u);
         ticks(2u);
         set_sensors(junction_pattern == 0x0Fu ? 0xF0u : 0x0Fu); /* 错误方向的路口不能触发本项。 */
