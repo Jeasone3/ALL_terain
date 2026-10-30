@@ -660,7 +660,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 enter_state(ROUTE_SONAR_OPEN_LOOP);
                 if (g_route.step_index == 16u)
                     //方PWM
-                    Car_OpenLoopWithPWM(500u, 300u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
+                    Car_OpenLoopWithPWM(460u, 200u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
                 else
                     Car_OpenLoop();
             }
