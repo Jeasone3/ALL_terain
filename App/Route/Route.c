@@ -13,7 +13,7 @@
 
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
-#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
+#define ROUTE_PROJECT_BEEP_FRAMES 10u /* 接受指定路口或进入超声波开环时短鸣 100 ms，独立计时 */
 #define ROUTE_TURN_APPROACH_MS   640u /* 表内路口转弯前保持航向前移 64 帧，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
@@ -151,7 +151,7 @@ static uint8_t s_align_cal_flag;           /* 本次对齐是否跟 Attitude_Set
 static uint8_t s_project_beep_frames;      /* 项目提示音剩余帧数，独立于路线阶段计时 */
 
 /**
- * @brief 每个控制帧维护路口短鸣和高台倒车持续鸣叫，到时或取消时关闭蜂鸣器。
+ * @brief 每个控制帧维护路口、超声波开环短鸣和高台倒车持续鸣叫，到时或取消时关闭蜂鸣器。
  * @param cancel 非零立即关闭路线提示音；零消耗短鸣的一个 10 ms 帧，倒车期间保持鸣叫。
  * @return 无。
  * @note 只管理 Route 自己启动的提示音，不影响控制定时器启动前的上电校准蜂鸣。
@@ -658,6 +658,9 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             if (g_route.state == ROUTE_SONAR_FOLLOW && s_sonar_distance < 40.0f)
             {
                 enter_state(ROUTE_SONAR_OPEN_LOOP);
+                /* 两段超声波均在进入开环时短鸣一次，后续测距帧不重复触发。 */
+                s_project_beep_frames = ROUTE_PROJECT_BEEP_FRAMES;
+                Int_Beep_On();
                 if (g_route.step_index == 16u)
                     //方PWM
                     Car_OpenLoopWithPWM(500u, 300u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */

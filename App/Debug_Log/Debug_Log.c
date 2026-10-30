@@ -439,12 +439,9 @@ OLED_Status DebugLog_Display(void)
         OLED_PrintLine(2u, "E:%s N:%lu", error_text,
                        (unsigned long)display.state.motion.state_frames);
     }
-    (void)line_text; /* 临时诊断期间第3行不显示灰度，避免 unused 警告。 */
-    /* 临时诊断行：z=gz(°/s，已扣静态零偏)，a=加速度模长相对 1g 的偏差。
-     * 用来定位上下坡偏航根因；定位后恢复 G:%s I:%u 显示。 */
-    OLED_PrintLine(3u, "z:%+.1f a:%+.2f",
-                   (double)display.state.gz_dps,
-                   (double)display.state.accel_norm_dev);
+    /* 八位从左到右对应 IN1 至 IN8，1 表示检测到线，0 表示未检测到线。
+     * 使用本次显示快照，保持与同屏路线、姿态和电机状态一致。 */
+    OLED_PrintLine(3u, "G:%s I:%u", line_text, (unsigned int)display.state.imu_ready);
     OLED_PrintLine(4u, "L:%+d R:%+d", (int)display.state.left_pwm, (int)display.state.right_pwm);
     first_log_row = (uint8_t)(DEBUG_LOG_CAPACITY - display.count);
     for (row = 0u; row < DEBUG_LOG_CAPACITY; row++) {
