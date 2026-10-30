@@ -1,6 +1,7 @@
-param(
+﻿param(
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
+    [switch]$ImuRetryOnly,
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
     [switch]$RouteStartOnly,
@@ -66,6 +67,19 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($ImuRetryOnly) {
+    # 链接真实 MPU6050 驱动验证总线重试，再链接真实状态机验证暂停和故障边界。
+    Invoke-MotionTest -Name 'test_imu_retry_driver' -Arguments @(
+        (Join-Path $PSScriptRoot 'test_imu_bias.c'),
+        (Join-Path $projectRoot 'Int/Int_MPU6050/Int_MPU6050.c'),
+        (Join-Path $projectRoot 'Com/Com_Attitude/Attitude.c'),
+        # 当前姿态算法的既有 ez 未使用警告不影响总线回归，保留可见警告。
+        '-Wno-error=unused-but-set-variable'
+    )
+    Invoke-MotionTest -Name 'test_imu_retry_policy' -Arguments ($motionSources + '-DTEST_IMU_RETRY_ONLY')
+    return
+}
 
 if ($RouteAfterPlatformOnly) {
     # 验证两次右转后接第 12 项左转，以及仅本次左转使用 10°容差。

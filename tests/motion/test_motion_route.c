@@ -224,12 +224,12 @@ void Read_All_Track(uint16_t *sensor_values)
  * @return 无。
  * @note 记录当前帧号；姿态替身禁止在没有本帧采样的情况下更新反馈。
  */
-void Int_MPU6050_Tick(void)
+uint8_t Int_MPU6050_Tick(void)
 {
     ++s_imu_reads;
     s_imu_frame = s_frame;
     s_imu_order = ++s_order;
-    g_imu_ready = s_sample_ok;
+    return (uint8_t)(g_imu_ready != 0u && s_sample_ok != 0u);
 }
 
 /**
@@ -409,7 +409,7 @@ static void tick(void)
     CHECK(s_irq_mask == irq_before);
     /* 运行帧 imu_valid 不强校验：循迹段每帧读 IMU 积分 yaw 使 imu_valid=1，
      * 而 finish_turn 接循迹帧显式置 0 取消角度有效标记；二者均为合法运行帧。
-     * IMU 读取失败已在 ModeFSM_Tick 转 CAR_FAULT，不会留在 CAR_RUNNING。
+     * IMU 暂态读取失败允许留在 CAR_RUNNING，但必须输出零 PWM。
      * imu_valid 非零时 yaw 必有限，由下方 CHECK 保证。 */
     if (g_mode_fsm.imu_valid != 0u) {
         CHECK(isfinite(g_euler.yaw));
@@ -3601,9 +3601,88 @@ static void test_step12_left_turn(void)
  * @return EXIT_SUCCESS 表示全部场景通过；断言失败由 CHECK 立即退出。
  * @note 通过宿主测试只能说明软件状态与控制计算正确，不能替代小车参数校准。
  */
+/**
+ * @brief 验证暂态失败停输出、恢复、连续故障锁存和有效帧确认/超时边界。
+ * @note 使用真实状态机和 PID；总线内重试由 test_imu_bias 链接真实驱动验证。
+ */
+static void test_imu_retry_policy(void)
+{
+    unsigned mode, before;
+    uint32_t frames;
+    for (mode = 0u; mode < 5u; ++mode) {
+        begin_case("transient IMU failure pauses each motion mode", 0u);
+        if (mode == 1u) Car_ImuForward(500u);
+        if (mode == 2u) Car_OpenLoopWithPWM(450u, 310u);
+        if (mode == 3u) Car_Reverse(400u);
+        if (mode == 4u) Car_TurnLeft90(MODE_TRACK);
+        tick();
+        frames = g_mode_fsm.state_frames;
+        before = s_attitude_ticks;
+        s_sample_ok = 0u;
+        tick();
+        check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+        CHECK(g_imu_ready && !g_mode_fsm.imu_valid);
+        CHECK(s_attitude_ticks == before && g_mode_fsm.state_frames == frames + 1u);
+        CHECK(DebugLog_Display() == OLED_OK && !log_has("IMU_ERR"));
+        s_sample_ok = 1u;
+        tick();
+        CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.imu_valid);
+        CHECK(motorLeft.speed != 0 || motorRight.speed != 0);
+        /* 成功帧清连续计数，随后两帧失败仍允许恢复。 */
+        s_sample_ok = 0u;
+        ticks(2u);
+        check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+        CHECK(g_imu_ready);
+        tick();
+        check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        CHECK(!g_imu_ready);
+        CHECK(DebugLog_Display() == OLED_OK && log_has("IMU_ERR"));
+        s_sample_ok = g_imu_ready = 1u;
+        ticks(2u);
+        check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+        Car_ImuForward(500u);
+        tick();
+        CHECK(g_mode_fsm.status == CAR_RUNNING);
+    }
+
+    begin_case("failed frame breaks consecutive turn confirmation", 0u);
+    Car_TurnLeft90(MODE_TRACK);
+    tick();
+    s_sample_yaw = g_mode_fsm.target_yaw;
+    tick();
+    s_sample_ok = 0u;
+    tick();
+    CHECK(g_mode_fsm.turn_count == 0u);
+    s_sample_ok = 1u;
+    tick();
+    CHECK(g_mode_fsm.turn_count == 0u);
+    tick();
+    CHECK(g_mode_fsm.turn_count == 1u);
+
+    begin_case("failed frame cannot extend turn timeout", 0u);
+    Car_TurnLeft90(MODE_TRACK);
+    ticks(499u);
+    s_sample_ok = 0u;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(g_mode_fsm.state_frames == 500u);
+
+    begin_case("invalid yaw faults immediately with separate log", 0u);
+    Car_ImuForward(500u);
+    s_sample_yaw = NAN;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_IMU_DATA);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("YAW_ERR") && !log_has("IMU_ERR"));
+    puts("PASS IMU transient pause, recovery, three-frame latch, confirmation and timeout");
+}
+
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+    test_imu_retry_policy();
+#ifdef TEST_IMU_RETRY_ONLY
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_ROUTE_AFTER_PLATFORM_ONLY
     test_route_start_validation();
     test_open_loop_imu_faults();

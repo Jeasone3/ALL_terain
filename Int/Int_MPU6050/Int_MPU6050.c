@@ -209,10 +209,15 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data)
     return 1;
 }
 
-/* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；失败后停止读取，
-   由 main 主循环 1s 后重试 Int_MPU6050_Init 恢复 */
-void Int_MPU6050_Tick(void)
+/**
+ * @brief 每 10 ms 采样六轴数据；通信失败后从 START 开始完整重试一次。
+ * @return 1：本帧获得新数据；0：未初始化或两次读取均失败。
+ * @note 每次失败的寄存器读取都会先发送 STOP；失败不覆盖旧数据，也不清 ready。
+ *       ready 仅表示设备已初始化，连续失败阈值由运动状态机判断并撤销。
+ */
+uint8_t Int_MPU6050_Tick(void)
 {
-    if (g_imu_ready)
-        g_imu_ready = Int_MPU6050_Get_Data(&g_imu_data);
+    if (!g_imu_ready) return 0u;
+    if (Int_MPU6050_Get_Data(&g_imu_data)) return 1u;
+    return Int_MPU6050_Get_Data(&g_imu_data);
 }

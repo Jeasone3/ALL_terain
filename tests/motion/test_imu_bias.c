@@ -22,6 +22,8 @@ static uint8_t s_frame[14];
 static uint8_t s_sent, s_register, s_read_index;
 static uint8_t s_ack = ACK, s_force_high;
 static unsigned int s_frame_count;
+/* 注入一次事务的指定 ACK 阶段失败，并记录事务边界，检查完整重试。 */
+static unsigned int s_ack_count, s_fail_ack, s_starts, s_stops;
 static uint32_t s_time_ms, s_primask;
 
 /**
@@ -36,9 +38,14 @@ static void put_sample(unsigned int offset, int16_t value)
     s_frame[offset + 1u] = (uint8_t)bits;
 }
 
-void I2C_Start(void) { s_sent = 0u; }
-void I2C_Stop(void) { }
-uint8_t I2C_WaitAck(void) { return s_ack; }
+void I2C_Start(void) { s_sent = 0u; ++s_starts; }
+void I2C_Stop(void) { ++s_stops; }
+uint8_t I2C_WaitAck(void)
+{
+    ++s_ack_count;
+    if (s_ack_count == s_fail_ack) return NACK;
+    return s_ack;
+}
 uint32_t HAL_GetTick(void) { return s_time_ms; }
 void HAL_Delay(uint32_t milliseconds) { s_time_ms += milliseconds; }
 uint32_t __get_PRIMASK(void) { return s_primask; }
@@ -101,10 +108,45 @@ static void check_stationary_bias(void)
     CHECK(fabsf(g_euler.yaw) < 0.02f);
 }
 
+/**
+ * @brief 注入三个寻址阶段的偶发 NACK，验证 STOP 后从完整寻址重试。
+ * @note 连续失败保留旧数据和 ready，恢复后无需重新初始化即可继续采样。
+ */
+static void check_read_retry(void)
+{
+    unsigned int phase;
+    Gyro_Accel_Struct saved;
+    for (phase = 1u; phase <= 3u; ++phase) {
+        s_ack_count = s_starts = s_stops = 0u;
+        s_fail_ack = phase;
+        CHECK(Int_MPU6050_Tick() == 1u);
+        CHECK(s_ack_count == phase + 3u && s_stops == 2u);
+        CHECK(s_starts == (phase == 3u ? 4u : 3u));
+        CHECK(g_imu_ready == 1u);
+    }
+    s_fail_ack = 0u;
+    saved = g_imu_data;
+    s_ack = NACK;
+    s_ack_count = s_starts = s_stops = 0u;
+    CHECK(Int_MPU6050_Tick() == 0u);
+    CHECK(s_ack_count == 2u && s_starts == 2u && s_stops == 2u);
+    CHECK(g_imu_ready == 1u);
+    CHECK(g_imu_data.accel.accel_z == saved.accel.accel_z);
+    CHECK(g_imu_data.gyro.gyro_z == saved.gyro.gyro_z);
+    s_ack = ACK;
+    CHECK(Int_MPU6050_Tick() == 1u);
+    g_imu_ready = 0u;
+    s_ack_count = 0u;
+    CHECK(Int_MPU6050_Tick() == 0u && s_ack_count == 0u);
+    g_imu_ready = 1u;
+    puts("PASS full transaction retry at each ACK stage and failed frame preservation");
+}
+
 int main(void)
 {
     Gyro_Accel_Struct sample;
     g_imu_ready = 1u;
+    check_read_retry();
     CHECK(Int_MPU6050_Calibrate(100u) != 0u);
     check_stationary_bias();
 

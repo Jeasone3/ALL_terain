@@ -12,9 +12,9 @@ extern uint8_t g_imu_ready;
 /**
  * @brief 在当前测试帧发布预设的采样结果。
  * @param 无。
- * @return 无。
+ * @return 本帧是否获得有效采样。
  * @note 实现记录采样序号，供姿态与电机 mock 检查本帧调用顺序。
  */
-void Int_MPU6050_Tick(void);
+uint8_t Int_MPU6050_Tick(void);
 
 #endif

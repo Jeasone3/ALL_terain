@@ -175,13 +175,14 @@ void DebugLog_Write(LogLevel level, const char *text)
 /**
  * @brief 取得故障的短英文消息，供中断直接记录而无需格式化。
  * @param fault 本次运动故障类型。
- * @return 静态字符串：IMU_ERR、TURN_TO 或 BAD_CMD。
+ * @return 静态字符串：通信 IMU_ERR、姿态 YAW_ERR、TURN_TO、ROUTE_TO 或 BAD_CMD。
  * @note 未知故障类型也显示 BAD_CMD；只返回常量，不修改任何状态。
  */
 static const char *fault_text(CarFault fault)
 {
     switch (fault) {
         case CAR_FAULT_IMU:          return "IMU_ERR";
+        case CAR_FAULT_IMU_DATA:     return "YAW_ERR";
         case CAR_FAULT_TURN_TIMEOUT: return "TURN_TO";
         case CAR_FAULT_COMMAND:      return "BAD_CMD";
         case CAR_FAULT_ROUTE_TIMEOUT:return "ROUTE_TO";

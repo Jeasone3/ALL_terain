@@ -34,10 +34,11 @@ typedef enum {
 
 typedef enum {
     CAR_FAULT_NONE = 0,
-    CAR_FAULT_IMU,                 /* IMU 不可用、读取失败或角度无效 */
+    CAR_FAULT_IMU,                 /* IMU 未初始化或连续三帧读取失败 */
     CAR_FAULT_TURN_TIMEOUT,        /* 转弯 5 秒内未进容差，或截止确认期间离开容差 */
     CAR_FAULT_COMMAND,             /* 转后模式或直行 PWM 参数不合法 */
-    CAR_FAULT_ROUTE_TIMEOUT        /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_ROUTE_TIMEOUT,       /* 路口等待、项目通行或出口确认超时 */
+    CAR_FAULT_IMU_DATA             /* 通信成功，但解算 yaw 为 NaN 或无穷大 */
 } CarFault;
 
 //状态机对象，用于保存当前状态

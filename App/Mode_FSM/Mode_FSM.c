@@ -14,6 +14,8 @@
 #include "motor.h"
 #include <math.h>
 
+#define IMU_FAILURE_FRAMES 3u   /* 连续三帧两次采样均失败才锁存通信故障，暂态失败帧输出零 PWM。 */
+
 #define TURN_DONE_FRAMES 2u      /* 误差连续两帧在容差内才算完成 */
 #define ALIGN_DONE_FRAMES 10u   /* 对齐要求连续 10 帧(100ms)在容差内才完成，避免过冲振荡时偶然判完成 */
 #define ALIGN_HOLD_FRAMES 80u   /* 进项目对齐到位后原地保持 80 帧(800ms) 再切 IMU 直行，等待角度稳定对齐项目 */
@@ -60,6 +62,7 @@ typedef struct
 
 /* 单个请求邮箱：正常请求最后一个生效，同帧停车请求优先。 存储外部命令信息 */
 static volatile CarRequest s_request;
+static uint8_t s_imu_failed_frames; /* 连续无有效采样的帧数；一次成功立即清零。 */
 static uint8_t s_turn_done_frames; // 转弯完成帧数
 static uint8_t s_align_done_frames; // 对齐完成帧数
 static uint8_t s_align_hold;        /* 本次对齐是否到位后保持 800ms，由 apply_request 按 command 设置 */
@@ -353,13 +356,13 @@ static void finish_align(void)
  * @brief 检查转弯与对齐的完成和超时；IMU 读取与姿态解算已在 ModeFSM_Tick 每帧完成。
  * @param 无。
  * @return 无；超时故障时更新 status，由 ModeFSM_Tick 的统一出口停车。
- * @note 本帧 IMU 无效（imu_valid=0）时直接返回，故障已在 ModeFSM_Tick 锁存。
+ * @note 本帧 IMU 无效（imu_valid=0）时不做完成判断，暂态暂停由 ModeFSM_Tick 处理。
  *       禁止用旧 yaw 判完成；第 500 帧已进容差而确认不足两帧时最多补一帧。
  */
 static void update_imu(void)
 {
     float error;
-    /* IMU 读取与 Attitude_Tick 已在 ModeFSM_Tick 每帧执行；本帧无效时故障已设置，直接返回。 */
+    /* IMU 读取与 Attitude_Tick 已在 ModeFSM_Tick 每帧执行；本帧无效时直接返回，不使用旧数据。 */
     if (g_mode_fsm.imu_valid == 0u)
         return;
 
@@ -438,6 +441,7 @@ void ModeFSM_Init(void)
                          MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u, 0u};
     g_mode_fsm = initial;    //不直接修改动作，避免中断时出错
     s_request.pending = 0u;
+    s_imu_failed_frames = 0u;
     s_turn_done_frames = 0u;
     s_align_done_frames = 0u;
     s_align_hold = 0u;
@@ -493,22 +497,26 @@ void ModeFSM_Tick(void)
            g_mode_fsm.imu_state == IMU_TURN_LEFT ||
            g_mode_fsm.imu_state == IMU_TURN_RIGHT)));
 
-    /* 所有运动模式都逐帧采样并解算 yaw，记录循迹偏航和开环通行中的实际转动。
-     * 开环只使用固定 PWM，不运行角度 PID；持续测角供退出后的路口对齐使用。
-     * 采样失败或 yaw 非有限时沿用 IMU 故障停车，不能用失效角度继续执行对齐。
-     * 放在 apply_request 之后，避免新动作的 status=RUNNING 覆盖本帧 IMU 故障。 */
-    Int_MPU6050_Tick();
-    if (g_imu_ready != 0u)
+    /* ready 表示设备已初始化；只有 Tick 返回成功，才允许解算并使用本帧数据。
+     * 重试仍失败时立即停输出但保留动作，下一帧继续采样；成功后清连续失败计数。
+     * 连续三帧失败撤销 ready，交给前台重初始化；已锁存的运动故障不会自动解除。 */
+    if (Int_MPU6050_Tick() != 0u)
     {
+        s_imu_failed_frames = 0u;
         Attitude_Tick();
         if (isfinite(g_euler.yaw))
             g_mode_fsm.imu_valid = 1u;
         else if (g_mode_fsm.status == CAR_RUNNING)
-            set_fault(CAR_FAULT_IMU);
+            set_fault(CAR_FAULT_IMU_DATA);
     }
-    else if (g_mode_fsm.status == CAR_RUNNING)
+    else
     {
-        set_fault(CAR_FAULT_IMU);
+        if (s_imu_failed_frames < IMU_FAILURE_FRAMES)
+            s_imu_failed_frames++;
+        if (s_imu_failed_frames >= IMU_FAILURE_FRAMES)
+            g_imu_ready = 0u;
+        if (g_mode_fsm.status == CAR_RUNNING && g_imu_ready == 0u)
+            set_fault(CAR_FAULT_IMU);
     }
 
     /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
@@ -519,6 +527,24 @@ void ModeFSM_Tick(void)
         g_mode_fsm.status = CAR_STOPPED; //停车
         reset_controllers(g_mode_fsm.target_yaw);
         DebugLog_Write(LOG_INFO, "TEST_DONE");
+    }
+
+    /* 暂态失败不能使用旧 yaw 判到位或执行任一运动控制器。
+     * 失效帧打断连续到位/保持确认；动作计时仍推进，防止偶发失败反复延长超时。
+     * 在转弯/对齐截止帧仍没有有效反馈时按原 5 秒限制结束动作。 */
+    if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.imu_valid == 0u)
+    {
+        s_turn_done_frames = 0u;
+        s_align_done_frames = 0u;
+        s_align_hold_frames = 0u;
+        g_mode_fsm.state_frames++;
+        if (g_mode_fsm.mode == MODE_IMU &&
+            g_mode_fsm.imu_state != IMU_FORWARD &&
+            g_mode_fsm.imu_state != IMU_REVERSE &&
+            g_mode_fsm.state_frames >= TURN_TIMEOUT_FRAMES)
+            set_fault(CAR_FAULT_TURN_TIMEOUT);
+        IMUTask_Stop();
+        return;
     }
 
     if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU)

@@ -25,6 +25,7 @@
 /* 六轴测量值与通信状态：加速度为原始 ADC 值，陀螺为保留小数的已扣偏计数值。
    由 Int_MPU6050_Tick 在 TIM4 中断里更新，其他模块可直接读。 */
 extern Gyro_Accel_Struct g_imu_data;
+/* 设备已初始化标志；暂态读取失败不清零，连续失败后由状态机清零以触发前台重初始化。 */
 extern uint8_t g_imu_ready;
 
 /* 成功返回 1；设备不存在、IIC 错误或配置失败返回 0 */
@@ -38,7 +39,7 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
    samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
 uint8_t Int_MPU6050_Calibrate(uint16_t samples);
 
-/* 10ms 周期调用：ready 时读取六轴并刷新 g_imu_ready；放定时中断里 */
-void Int_MPU6050_Tick(void);
+/* 10 ms 周期采样，失败完整重试一次；返回本帧是否成功，不用 ready 代替采样结果。 */
+uint8_t Int_MPU6050_Tick(void);
 
 #endif /* __INT_MPU6050_H__ */
