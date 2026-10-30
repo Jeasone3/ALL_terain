@@ -122,11 +122,11 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .timeout_ms = 15000u
     },
     {   /* 19 循迹找右路口，按原前移和闭环流程右转 90°。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_LEFT,
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
     {   /* 20 十字右转后循迹 1 秒，再按项目流程对齐保持、重建航向基准，以 PWM500 直行 5 秒后停车。 */
-        .action = ROUTE_ACTION_RIGHT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
+        .action = ROUTE_ACTION_LEFT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
         .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 5000u, .timeout_ms = 15000u,
         .final_seq = 3u
     }
