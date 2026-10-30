@@ -17,7 +17,7 @@
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 3300u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
+#define ROUTE_REVERSE_DRIVE_MS 3100u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
 #define ROUTE_S1_IMU_MS        5000u /* 高台右转后 IMU 直行 5 秒 PWM300，再切循迹找十字 */
 #define ROUTE_S1_PWM           300u  /* S1 直行基础 PWM（慢速清出高台区域） */
 
