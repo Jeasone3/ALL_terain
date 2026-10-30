@@ -81,7 +81,7 @@ typedef struct {
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
  * 设为 1u 从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 1u
+#define ROUTE_START_STEP 9u
 #endif
 
 /* 调试截止表项：16 或 0 均执行到第 16 项十字右转后持续循迹。

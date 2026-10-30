@@ -226,7 +226,7 @@ static void apply_request(const CarRequest *request)
         break;
     case COMMAND_LEFT:
     case COMMAND_RIGHT:
-        g_mode_fsm.base_pwm = 500u; // 转弯后的普通 IMU 直行基础 PWM
+        g_mode_fsm.base_pwm = 600u; // 转弯后的普通 IMU 直行基础 PWM
         g_mode_fsm.imu_state = request->command == COMMAND_LEFT ? IMU_TURN_LEFT : IMU_TURN_RIGHT;
         /* 绝对目标：Route 提交转弯前已把 ideal_yaw 更新为转后朝向（90° 倍数），
          * 起点偏则转完仍对齐理想坐标系，偏差不累积。 */

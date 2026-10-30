@@ -13,13 +13,13 @@
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
-#define ROUTE_TURN_APPROACH_MS   650u /* 表内路口转弯前保持航向前移 68 帧，按车身对齐位置标定 */
+#define ROUTE_TURN_APPROACH_MS   640u /* 表内路口转弯前保持航向前移 68 帧，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 3100u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
-#define ROUTE_S1_IMU_MS        5000u /* 高台右转后 IMU 直行 5 秒 PWM300，再切循迹找十字 */
-#define ROUTE_S1_PWM           300u  /* S1 直行基础 PWM（慢速清出高台区域） */
+#define ROUTE_REVERSE_DRIVE_MS 3200u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
+#define ROUTE_S1_IMU_MS        3500u /* 高台右转后 IMU 直行 5 秒 PWM300，再切循迹找十字 */
+#define ROUTE_S1_PWM           500u  /* S1 直行基础 PWM（慢速清出高台区域） */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
 #define ROUTE_ACTIVE_STEP_COUNT ROUTE_STEP_COUNT
@@ -55,15 +55,15 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 03 小台阶：十字直行，循迹 2 秒，再 IMU 通行 6.5 秒。 */
         .action = ROUTE_ACTION_STRAIGHT, .project_id = 3u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 1500u, .pass_ms = 6000u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 1500u, .pass_ms = 5000u, .timeout_ms = 10000u
     },
     {   /* 04 十字右转后循迹。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 4u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u
+        .timeout_ms = 15000u
     },
     {   /* 05 右侧路口右转后循迹。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 5u, .trigger_junction = JUNCTION_RIGHT,
-        .timeout_ms = 10000u
+        .timeout_ms = 15000u
     },
     {   /* 06 减速带：十字右转，循迹 1 秒，再 IMU 通行 5 秒。 */
         .action = ROUTE_ACTION_RIGHT, .project_id = 6u, .trigger_junction = JUNCTION_CROSS,
@@ -79,7 +79,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 09 窄桥：十字左转，循迹 400 ms，再 IMU 通行 4 秒，随后接高台及 S1。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 9u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 600u, .entry_ms = 400u, .pass_ms = 3000u, .timeout_ms = 10000u,
+        .base_pwm = 600u, .entry_ms = 400u, .pass_ms = 3500u, .timeout_ms = 10000u,
         .final_seq = 1u
     },
 
@@ -132,14 +132,19 @@ static uint8_t s_align_cal_flag;           /* 本次对齐是否跟 Attitude_Set
 static uint8_t s_project_beep_frames;      /* 项目提示音剩余帧数，独立于路线阶段计时 */
 
 /**
- * @brief 每个控制帧维护项目提示音，到时或取消时关闭蜂鸣器。
- * @param cancel 非零立即结束当前项目提示；零消耗一个已完成的 10 ms 帧。
+ * @brief 每个控制帧维护路口短鸣和高台倒车持续鸣叫，到时或取消时关闭蜂鸣器。
+ * @param cancel 非零立即关闭路线提示音；零消耗短鸣的一个 10 ms 帧，倒车期间保持鸣叫。
  * @return 无。
- * @note 只管理 Route 自己启动的短鸣，不影响控制定时器启动前的上电校准蜂鸣。
+ * @note 只管理 Route 自己启动的提示音，不影响控制定时器启动前的上电校准蜂鸣。
  *       必须在路线提前返回前调用，保证离开项目或中止路线后不会留下持续鸣叫。
  */
-static void update_project_beep(uint8_t cancel)
+static void update_route_beep(uint8_t cancel)
 {
+    /* 倒车提示由倒车阶段结束时关闭；中途停车、禁用、接管或故障时在此提前关闭。 */
+    if (g_route.state == ROUTE_REVERSE_DRIVE) {
+        if (cancel) Int_Beep_Off();
+        return;
+    }
     if (s_project_beep_frames == 0u) return;
     if (cancel) {
         s_project_beep_frames = 0u;
@@ -469,7 +474,7 @@ static void begin_project(const RouteStep *step)
 void Route_Init(void)
 {
     Route_t initial = {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f};
-    update_project_beep(1u); /* 重新从起点初始化时，清除上一轮尚未结束的项目短鸣。 */
+    update_route_beep(1u); /* 重新初始化前，关闭上一轮尚未结束的短鸣或倒车提示音。 */
     g_route = initial;
     s_line_candidate = s_line_frames = s_narrow_frames = s_active = 0u;
     s_turn_count_before = 0u;
@@ -553,7 +558,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     uint32_t elapsed_ms;
 
     /* 先服务提示音；路线未启动、被关闭或本帧外部接管时也能及时关蜂鸣器。 */
-    update_project_beep((uint8_t)(external_command || !g_route.enabled ||
+    update_route_beep((uint8_t)(external_command || !g_route.enabled ||
                                  g_mode_fsm.status != CAR_RUNNING));
    //更新路口事件
     update_conditions(sensor_data);
@@ -667,6 +672,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 Attitude_SetYawOffset(g_route.ideal_yaw);
                 enter_state(ROUTE_REVERSE_DRIVE);
                 Car_Reverse(500u);
+                Int_Beep_On(); /* 与倒车请求同帧开启，整个高台倒车阶段持续鸣叫。 */
                 DebugLog_Write(LOG_INFO, "PLATFORM_REV");
             }
             else if (s_align_next_state == ROUTE_FINAL_RIGHT_TURN)
@@ -841,6 +847,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_REVERSE_DRIVE: //高台倒车：保持 ideal_yaw 倒退 3 秒，再停车对齐校准
         if (elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
+            Int_Beep_Off(); /* 倒车计时结束即关闭，后续停车校准和右转期间不再鸣叫。 */
             s_align_count_before = g_mode_fsm.align_count;
             s_align_next_state = ROUTE_FINAL_RIGHT_TURN;
             enter_state(ROUTE_ALIGN);
@@ -895,7 +902,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     if (elapsed_ms >= step->timeout_ms) {
         /* 不先清阶段或计时，运动层捕获的故障现场仍指向发生超时的位置。 */
         s_active = g_route.enabled = 0u;
-        update_project_beep(1u);
+        update_route_beep(1u);
         Car_RouteTimeout();
     }
 }
