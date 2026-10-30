@@ -11,6 +11,7 @@
 #include "Attitude.h"
 #include "IMU_Task.h"
 #include "Debug_Log.h"
+#include "motor.h"
 #include <math.h>
 
 #define TURN_DONE_FRAMES 2u      /* 误差连续两帧在容差内才算完成 */
@@ -22,11 +23,16 @@
 extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 /* 由 TIM4 维护的当前运动状态。 */
 volatile ModeFSM_t g_mode_fsm;
+extern Motor_Struct motorLeft, motorRight;
+
+#define OPEN_LOOP_LEFT_PWM  400u /* 超声波通行时左轮固定前进 PWM。 */
+#define OPEN_LOOP_RIGHT_PWM 300u /* 超声波通行时右轮固定前进 PWM。 */
 
 /* 邮箱中的动作类型，与实际执行状态分开保存。 */
 typedef enum
 {
     COMMAND_TRACK = 0,              //循迹态
+    COMMAND_OPEN_LOOP,             /* 超声波阶段固定差速，不执行姿态或循迹闭环。 */
     COMMAND_IMU_FORWARD,            //IMU 直行态
     COMMAND_IMU_TIMED,              //转向前移
     COMMAND_LEFT,                   //左转
@@ -46,6 +52,7 @@ typedef struct
     CarCommand command; // 要执行什么动作
     CarMode next_mode;  // 转弯完成后的模式
     uint16_t base_pwm;  /* IMU 直行基础占空比，与 command 在同一临界区复制 */
+    uint16_t right_pwm; /* 开环右轮 PWM；开环左轮使用 base_pwm，两轮随同一动作提交。 */
     uint32_t duration_ms; /* 单项目测试限时，普通动作不使用 */
     float turn_tolerance; /* 本次转弯的局部容差；0 使用全局值，与动作一起提交 */
     uint8_t pending;    // 请求标志
@@ -58,19 +65,21 @@ static uint8_t s_align_done_frames; // 对齐完成帧数
 static uint8_t s_align_hold;        /* 本次对齐是否到位后保持 800ms，由 apply_request 按 command 设置 */
 static uint8_t s_align_hold_frames; /* 对齐到位后已保持帧数，达到 ALIGN_HOLD_FRAMES 才 finish_align */
 static uint32_t s_forward_limit_frames; /* 单项目测试最多执行帧数；0 表示普通持续直行 */
+static uint16_t s_open_left_pwm, s_open_right_pwm; /* 已接受的开环两轮输出，切换前不受新请求影响。 */
 
 /**
  * @brief 将动作写入请求邮箱，使上层无需直接改运动状态。
  * @param command 请求动作，不在此函数内执行。
  * @param next_mode 转弯完成后的模式；非转弯动作不使用此参数。
- * @param base_pwm 直行 PWM；转弯后接 IMU 时使用普通直行值 500。
+ * @param base_pwm 直行 PWM，开环时为左轮 PWM；转弯后接 IMU 时使用普通直行值 500。
  * @param duration_ms 单项目测试时长，普通动作传 0。
  * @param turn_tolerance 本次转弯容差，0 沿用全局值；非转弯动作传 0。
+ * @param right_pwm 开环右轮 PWM；其他动作传 0，与左轮参数在同一临界区提交。
  * @return 无。
  * @note 可从主循环或 Route 调用；短暂屏蔽中断，待处理停车不会被运动请求覆盖。
  */
 static void submit_request(CarCommand command, CarMode next_mode, uint16_t base_pwm,
-                           uint32_t duration_ms, float turn_tolerance)
+                           uint32_t duration_ms, float turn_tolerance, uint16_t right_pwm)
 {
     uint32_t saved_primask = __get_PRIMASK();
     __disable_irq();
@@ -81,6 +90,7 @@ static void submit_request(CarCommand command, CarMode next_mode, uint16_t base_
         s_request.command = command;
         s_request.next_mode = next_mode;
         s_request.base_pwm = base_pwm;
+        s_request.right_pwm = right_pwm;
         s_request.duration_ms = duration_ms;
         s_request.turn_tolerance = turn_tolerance;
         s_request.pending = 1u; // 产生请求
@@ -175,7 +185,10 @@ static void apply_request(const CarRequest *request)
         ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED ||
           request->command == COMMAND_REVERSE) &&
          (request->base_pwm == 0u || request->base_pwm > 1000u)) ||
-        (request->command == COMMAND_IMU_TIMED && request->duration_ms == 0u))
+        (request->command == COMMAND_IMU_TIMED && request->duration_ms == 0u) ||
+        (request->command == COMMAND_OPEN_LOOP &&
+         (request->base_pwm == 0u || request->base_pwm > 1000u ||
+          request->right_pwm == 0u || request->right_pwm > 1000u)))
     {
         set_fault(CAR_FAULT_COMMAND);
         return;
@@ -198,7 +211,8 @@ static void apply_request(const CarRequest *request)
 
     /* yaw 全程连续：不在每次 IMU 动作重建零度基准，由开机 Attitude_Init 建立唯一参考。
      * 循迹期间 update_imu 不调用、yaw 冻结；IMU 段目标统一取 g_route.ideal_yaw（90° 倍数）。 */
-    if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK) //IMU 动作
+    if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK &&
+        request->command != COMMAND_OPEN_LOOP) //IMU 动作
     {
         g_mode_fsm.mode = MODE_IMU;
     }
@@ -207,6 +221,12 @@ static void apply_request(const CarRequest *request)
     s_align_hold = 0u; /* 默认非保持；仅 COMMAND_ALIGN_HOLD 在下方 switch 内覆盖为 1 */
     switch (request->command) //根据请求的动作类型设置状态
     {
+    case COMMAND_OPEN_LOOP:
+        g_mode_fsm.mode = MODE_OPEN_LOOP;
+        s_open_left_pwm = request->base_pwm;
+        s_open_right_pwm = request->right_pwm;
+        command_text = "OPEN_LOOP";
+        break;
     case COMMAND_TRACK:
         g_mode_fsm.mode = MODE_TRACK;
         command_text = "TRACK";
@@ -477,18 +497,22 @@ void ModeFSM_Tick(void)
      * 循迹段若不积分 yaw，进 IMU 对齐时 error=ideal_yaw-yaw=0，无法纠正循迹偏航；
      * 循迹段的积分漂移由每次切换点的对齐清除。IMU 失败时运行中故障停车。
      * 放在 apply_request 之后，避免新动作的 status=RUNNING 覆盖本帧 IMU 故障。 */
-    Int_MPU6050_Tick();
-    if (g_imu_ready != 0u)
+    if (g_mode_fsm.mode != MODE_OPEN_LOOP)
     {
-        Attitude_Tick();
-        if (isfinite(g_euler.yaw))
-            g_mode_fsm.imu_valid = 1u;
+        /* 开环阶段完全跳过采样和姿态故障判断，避免 IMU 通信影响固定 PWM。 */
+        Int_MPU6050_Tick();
+        if (g_imu_ready != 0u)
+        {
+            Attitude_Tick();
+            if (isfinite(g_euler.yaw))
+                g_mode_fsm.imu_valid = 1u;
+            else if (g_mode_fsm.status == CAR_RUNNING)
+                set_fault(CAR_FAULT_IMU);
+        }
         else if (g_mode_fsm.status == CAR_RUNNING)
+        {
             set_fault(CAR_FAULT_IMU);
-    }
-    else if (g_mode_fsm.status == CAR_RUNNING)
-    {
-        set_fault(CAR_FAULT_IMU);
+        }
     }
 
     /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
@@ -515,7 +539,13 @@ void ModeFSM_Tick(void)
 
     g_mode_fsm.state_frames++;//状态帧数加一
 
-    if (g_mode_fsm.mode == MODE_TRACK)  //循迹态
+    if (g_mode_fsm.mode == MODE_OPEN_LOOP)
+    {
+        /* 唯一运动出口直接给定前进 PWM，IMU 和灰度都不参与修正。 */
+        Motor_SetSpeed(&motorLeft, s_open_left_pwm);
+        Motor_SetSpeed(&motorRight, s_open_right_pwm);
+    }
+    else if (g_mode_fsm.mode == MODE_TRACK)  //循迹态
     {
         follow_line(&g_line_controller, g_sensor_data, LINE_RAW_VALUE);
     }
@@ -546,7 +576,17 @@ void ModeFSM_Tick(void)
  */
 void Car_Track(void)
 {
-    submit_request(COMMAND_TRACK, MODE_TRACK, 0u, 0u, 0.0f);
+    submit_request(COMMAND_TRACK, MODE_TRACK, 0u, 0u, 0.0f, 0u);
+}
+
+void Car_OpenLoop(void)
+{
+    Car_OpenLoopWithPWM(OPEN_LOOP_LEFT_PWM, OPEN_LOOP_RIGHT_PWM);
+}
+
+void Car_OpenLoopWithPWM(uint16_t left_pwm, uint16_t right_pwm)
+{
+    submit_request(COMMAND_OPEN_LOOP, MODE_OPEN_LOOP, left_pwm, 0u, 0.0f, right_pwm);
 }
 
 /**
@@ -557,7 +597,7 @@ void Car_Track(void)
  */
 void Car_ImuForward(uint16_t base_pwm)
 {
-    submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u, 0.0f);
+    submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u, 0.0f, 0u);
 }
 
 /**
@@ -568,7 +608,7 @@ void Car_ImuForward(uint16_t base_pwm)
  */
 void Car_Reverse(uint16_t base_pwm)
 {
-    submit_request(COMMAND_REVERSE, MODE_IMU, base_pwm, 0u, 0.0f);
+    submit_request(COMMAND_REVERSE, MODE_IMU, base_pwm, 0u, 0.0f, 0u);
 }
 
 /**
@@ -579,7 +619,7 @@ void Car_Reverse(uint16_t base_pwm)
  */
 void Car_ImuForwardTimed(uint16_t base_pwm, uint32_t duration_ms)
 {
-    submit_request(COMMAND_IMU_TIMED, MODE_IMU, base_pwm, duration_ms, 0.0f);
+    submit_request(COMMAND_IMU_TIMED, MODE_IMU, base_pwm, duration_ms, 0.0f, 0u);
 }
 
 /**
@@ -590,7 +630,7 @@ void Car_ImuForwardTimed(uint16_t base_pwm, uint32_t duration_ms)
  */
 void Car_RouteTimeout(void)
 {
-    submit_request(COMMAND_ROUTE_TIMEOUT, MODE_TRACK, 0u, 0u, 0.0f);
+    submit_request(COMMAND_ROUTE_TIMEOUT, MODE_TRACK, 0u, 0u, 0.0f, 0u);
 }
 
 /**
@@ -601,7 +641,7 @@ void Car_RouteTimeout(void)
  */
 void Car_TurnLeft90(CarMode next_mode)
 {
-    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, 0.0f);
+    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, 0.0f, 0u);
 }
 
 /**
@@ -612,7 +652,7 @@ void Car_TurnLeft90(CarMode next_mode)
  */
 void Car_TurnLeft90WithTolerance(CarMode next_mode, float tolerance_deg)
 {
-    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, tolerance_deg);
+    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, tolerance_deg, 0u);
 }
 
 /**
@@ -623,7 +663,7 @@ void Car_TurnLeft90WithTolerance(CarMode next_mode, float tolerance_deg)
  */
 void Car_TurnRight90(CarMode next_mode)
 {
-    submit_request(COMMAND_RIGHT, next_mode, 500u, 0u, 0.0f);
+    submit_request(COMMAND_RIGHT, next_mode, 500u, 0u, 0.0f, 0u);
 }
 
 /**
@@ -635,7 +675,7 @@ void Car_TurnRight90(CarMode next_mode)
  */
 void Car_AlignTo(void)
 {
-    submit_request(COMMAND_ALIGN, MODE_IMU, 0u, 0u, 0.0f);
+    submit_request(COMMAND_ALIGN, MODE_IMU, 0u, 0u, 0.0f, 0u);
 }
 
 /**
@@ -647,7 +687,7 @@ void Car_AlignTo(void)
  */
 void Car_AlignToHold(void)
 {
-    submit_request(COMMAND_ALIGN_HOLD, MODE_IMU, 0u, 0u, 0.0f);
+    submit_request(COMMAND_ALIGN_HOLD, MODE_IMU, 0u, 0u, 0.0f, 0u);
 }
 
 /**
@@ -659,7 +699,7 @@ void Car_AlignToHold(void)
  */
 void Car_Stop(void)
 {
-    submit_request(COMMAND_STOP, MODE_TRACK, 0u, 0u, 0.0f);
+    submit_request(COMMAND_STOP, MODE_TRACK, 0u, 0u, 0.0f, 0u);
 }
 
 /**

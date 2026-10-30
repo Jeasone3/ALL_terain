@@ -45,3 +45,4 @@ all_terain_for_11\route.o: ../Int/Int_Motor/motor.h
 all_terain_for_11\route.o: ../Core/Inc/tim.h
 all_terain_for_11\route.o: ../Core/Inc/gpio.h
 all_terain_for_11\route.o: ../Int/Int_Beep/Int_Beep.h
+all_terain_for_11\route.o: ../Int/Int_SR04/Int_SR04.h

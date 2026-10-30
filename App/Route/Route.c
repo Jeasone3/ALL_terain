@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按路线表依次通过路口和项目，高台后两次右转，再以局部容差左转后持续循迹。
+ * @brief 按表通行，两段超声波后，第 20 项转弯、循迹、对齐并定时 IMU 直行后停车。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -9,6 +9,7 @@
 #include "Debug_Log.h"
 #include "Track_Task.h"
 #include "Int_Beep.h"
+#include "Int_SR04.h"
 
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
@@ -92,9 +93,42 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
-    {   /* 12 左侧路口左转：快速对齐、前移 500 ms 后闭环左转 90°，仅本次转弯容差为 10°，转完持续循迹。 */
+    {   /* 12 左侧路口左转：前移 500 ms 后闭环左转，仅本次容差 45°；转完接超声波通行。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
+    },
+    {   /* 13 超声波通行后循迹找左路口：快速对齐、前移 640 ms、角度闭环左转 90°再循迹。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 13u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 15000u
+    },
+    {   /* 14 循迹找右路口：按相同前移流程闭环右转 90°，确认窄线后接下一项。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 14u, .trigger_junction = JUNCTION_RIGHT,
+        .timeout_ms = 15000u
+    },
+    {   /* 15 与第 10 项相同：慢速循迹找十字、快速对齐、前移 640 ms，仅转向改为闭环左转 90°。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 15u, .trigger_junction = JUNCTION_CROSS,
+        .timeout_ms = 15000u
+    },
+    {   /* 16 慢速循迹识别右侧路口后按原流程闭环右转 90°，转后恢复循迹。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_RIGHT,
+        .timeout_ms = 15000u
+    },
+    {   /* 17 识别左侧路口后闭环左转 90°，恢复循迹并开启第二段超声波通行。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 17u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 15000u
+    },
+    {   /* 18 第二段超声波通行结束后，循迹找左路口并闭环左转 90°。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 18u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 15000u
+    },
+    {   /* 19 循迹找右路口，按原前移和闭环流程右转 90°。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_RIGHT,
+        .timeout_ms = 15000u
+    },
+    {   /* 20 十字右转后循迹 1 秒，再按项目流程对齐保持、重建航向基准，以 PWM500 直行 5 秒后停车。 */
+        .action = ROUTE_ACTION_RIGHT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
+        .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 5000u, .timeout_ms = 15000u,
+        .final_seq = 3u
     }
 };
 
@@ -107,6 +141,9 @@ static uint8_t s_line_candidate;           /* 任意通道在线的候选值 */
 static uint8_t s_line_frames;              /* 有线/无线连续帧数 */
 static uint8_t s_narrow_frames;            /* 当前阶段出口窄线连续帧数 */
 static uint8_t s_active;                   /* 真正启动的路线，不等同于 enabled */
+static uint8_t s_sonar_pending;            /* 前台已接受一次测距，尚未取出终态。 */
+static volatile uint8_t s_sonar_valid;     /* 新的成功结果，10 ms 路线帧消费后清零。 */
+static volatile float s_sonar_distance;   /* 与有效标记一起在短临界区内发布，单位 cm。 */
 static uint32_t s_turn_count_before;       /* 本次转弯开始前的完成总数 */
 static uint32_t s_align_count_before;      /* 本次对齐开始前的完成总数，仿 turn_count 轮询 */
 static RouteState s_align_next_state;      /* 对齐完成后要进入的阶段（OBSTACLE 或 APPROACH） */
@@ -293,7 +330,8 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
         g_route.state == ROUTE_REVERSE ||
         g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN ||
-        g_route.state == ROUTE_S1_IMU) {
+        g_route.state == ROUTE_S1_IMU || g_route.state == ROUTE_SONAR_FOLLOW ||
+        g_route.state == ROUTE_SONAR_OPEN_LOOP) {
         reset_junction();
     } else {
         update_junction(raw_junction);
@@ -394,7 +432,7 @@ static void enter_state(RouteState state)
 
 /**
  * @brief 切换当前路段的循迹速度及丢线降速许可，不重置 PID 或修改 IMU 动作参数。
- * @param slow_track 非零表示第 10、11 项的慢速循迹；零表示恢复普通循迹配置。
+ * @param slow_track 非零表示第 10、11、15、16、20 项的慢速循迹；零表示恢复普通循迹配置。
  * @return 无。
  * @note 第 10 项恢复循迹及第 11 项转后持续循迹均保留本配置，中止、结束或重新初始化时恢复默认。
  */
@@ -413,7 +451,9 @@ static void set_track_parameters(uint8_t slow_track)
 static void begin_step(void)
 {
     const RouteStep *step = &g_route_plan[g_route.step_index];
-    set_track_parameters((uint8_t)(g_route.step_index == 9u || g_route.step_index == 10u));
+    set_track_parameters((uint8_t)(g_route.step_index == 9u || g_route.step_index == 10u ||
+                                   g_route.step_index == 14u || g_route.step_index == 15u ||
+                                   g_route.step_index == 19u)); /* 第 15、16、20 项复用第 10 项的 PWM250 循迹配置。 */
     g_route.project_id = step->project_id;
     reset_junction();
     enter_state(ROUTE_FOLLOW);
@@ -555,7 +595,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
- *       第 10、11 项右转后确认窄线接下一项；第 12 项左转使用局部 10°容差，转完持续循迹。
+ *       第 10、11 项右转后确认窄线接下一项；第 12 项左转使用局部 45°容差，转完接超声波通行。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -601,6 +641,39 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
     /* 截止后仅更新显示计时和保留接管检查，不再计路线超时或派发后续动作。 */
     if (g_route.state == ROUTE_CRUISE) 
         return;
+
+    /* 只消费本阶段新完成的有效距离；40 cm 和超时均保持当前动作。
+     * 完成一次开环通行后回到普通循迹，前台随即停止发送超声波触发脉冲。 */
+    if (g_route.state == ROUTE_SONAR_FOLLOW || g_route.state == ROUTE_SONAR_OPEN_LOOP)
+    {
+        if (s_sonar_valid != 0u)
+        {
+            s_sonar_valid = 0u;
+            if (g_route.state == ROUTE_SONAR_FOLLOW && s_sonar_distance < 40.0f)
+            {
+                enter_state(ROUTE_SONAR_OPEN_LOOP);
+                if (g_route.step_index == 16u)
+                    //方形隧道PWM
+                    Car_OpenLoopWithPWM(340u, 300u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
+                else
+                    Car_OpenLoop();
+            }
+            else if (g_route.state == ROUTE_SONAR_OPEN_LOOP && s_sonar_distance > 40.0f)
+            {
+                /* 两段超声波分别推进第 13、18 项；begin_step 清除旧路口并恢复循迹。
+                 * 截止在超声波所属项时只恢复循迹，不能越过启用范围。 */
+                if (g_route.step_index + 1u < ROUTE_ACTIVE_STEP_COUNT)
+                    finish_step();
+                else
+                {
+                    enter_state(ROUTE_CRUISE);
+                    Car_Track();
+                }
+                DebugLog_Write(LOG_INFO, "SONAR_DONE");
+            }
+        }
+        return;
+    }
     
     //计算已运行时间
     elapsed_ms = g_route.state_frames * ROUTE_FRAME_MS;
@@ -727,7 +800,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             g_route.ideal_yaw += route_action_yaw_delta(step->action);
             if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK) {
                 if (g_route.step_index == 11u)
-                    Car_TurnLeft90WithTolerance(MODE_TRACK, 10.0f); /* 仅第 12 项覆盖到位容差 */
+                    Car_TurnLeft90WithTolerance(MODE_TRACK, 45.0f); /* 仅第 12 项覆盖到位容差 */
                 else
                     Car_TurnLeft90(MODE_TRACK);
             } else
@@ -753,6 +826,12 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                     s_align_cal_flag = 1u;
                     enter_state(ROUTE_ALIGN);
                     Car_AlignToHold();
+                } else if (g_route.step_index == 11u || g_route.step_index == 16u) {
+                    /* 第 12、17 项转后先执行对应超声波通行，再衔接第 13、18 项。 */
+                    s_sonar_pending = s_sonar_valid = 0u;
+                    enter_state(ROUTE_SONAR_FOLLOW);
+                    reset_junction();
+                    DebugLog_Write(LOG_INFO, "SONAR_BEGIN");
                 } else if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
                     enter_state(ROUTE_CRUISE);
                     reset_junction();
@@ -812,7 +891,15 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_OBSTACLE: //障碍物使用imu通行
         if (elapsed_ms >= step->pass_ms) {
-            if (step->final_seq == 1u) {
+            if (step->final_seq == 3u) {
+                /* 定时 IMU 直行完成：先结束路线调度，再提交停车，防止下一帧误判为接管。
+                 * 停车仍由唯一运动出口执行，不恢复循迹，也不等待灰度出口线。 */
+                s_active = g_route.enabled = 0u;
+                enter_state(ROUTE_FINISHED);
+                set_track_parameters(0u);
+                Car_Stop();
+                DebugLog_Write(LOG_INFO, "ROUTE_DONE");
+            } else if (step->final_seq == 1u) {
                 /* 该段通行到时触发高台特殊收尾：原地左转 90°、IMU 直行 3 秒、倒车、右转。
                  * MODE_IMU 使 FSM 在转完的同一帧保持 +90°目标、以 500 PWM 直行。 */
                 reset_junction();
@@ -917,4 +1004,40 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         Car_RouteTimeout();
         set_track_parameters(0u);
     }
+}
+
+/**
+ * @brief 在主循环服务一次异步测距，保持超声波驱动的前台调用约定。
+ * @note 短临界区串行化阶段判断、结果发布和触发，防止退出阶段后又发出脉冲。
+ *       驱动自行限制至少 60 ms 触发间隔；不等待回波，超时只丢弃本次结果。
+ */
+void Route_ServiceSonar(void)
+{
+    SR04_Result result;
+    uint32_t saved_primask = __get_PRIMASK();
+    __disable_irq();
+    if (!s_active || !g_route.enabled || g_mode_fsm.status != CAR_RUNNING ||
+        (g_route.state != ROUTE_SONAR_FOLLOW && g_route.state != ROUTE_SONAR_OPEN_LOOP))
+    {
+        s_sonar_pending = 0u;
+        s_sonar_valid = 0u;
+        __set_PRIMASK(saved_primask);
+        return;
+    }
+    if (s_sonar_pending != 0u)
+    {
+        Int_SR04_GetResult(&result);
+        if (result.status == SR04_OK || result.status == SR04_TIMEOUT)
+        {
+            s_sonar_pending = 0u;
+            if (result.status == SR04_OK)
+            {
+                s_sonar_distance = result.distance_cm;
+                s_sonar_valid = 1u;
+            }
+        }
+    }
+    if (s_sonar_pending == 0u && s_sonar_valid == 0u)
+        s_sonar_pending = Int_SR04_Trigger();
+    __set_PRIMASK(saved_primask);
 }

@@ -12,6 +12,7 @@
 #include "Int_MPU6050.h"
 #include "motor.h"
 #include "Int_Beep.h"
+#include "Int_SR04.h"
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -43,6 +44,21 @@ static RouteStep s_original_plan[ROUTE_STEP_COUNT];
 static void calibrate_test_plan(void);
 static int log_has(const char *message);
 static const char *s_case_name;
+static SR04_Result s_sonar_result;
+static unsigned s_sonar_triggers;
+
+/* 路线集成测试只替代超声波采集；底层脉宽与触发间隔由 tests/sr04 单独验证。 */
+uint8_t Int_SR04_Trigger(void)
+{
+    ++s_sonar_triggers;
+    s_sonar_result.status = SR04_BUSY;
+    return 1u;
+}
+
+void Int_SR04_GetResult(SR04_Result *result)
+{
+    *result = s_sonar_result;
+}
 static uint16_t s_sensor_input[GRAYSCALE_SENSOR_CHANNELS];
 static float s_sample_yaw;
 static uint8_t s_sample_ok;
@@ -3130,19 +3146,175 @@ static void test_step10_11_track_parameters(void)
     puts("PASS steps10/11 PWM250, previous-error correction without slowdown, recovery/cruise and takeover restoration");
 }
 /**
- * @brief 验证第 12 项前移 500ms、局部 10°容差、两帧确认、持续循迹及普通判据恢复。
+ * @brief 验证第 12 项前移 500ms、局部 45°容差、两帧确认、持续循迹及普通判据恢复。
  * @param 无。
- * @return 无；覆盖剩余 10.1°、恰好 10°、反向过冲 10°和跨周角差。
+ * @return 无；覆盖剩余 45.1°、恰好 45°、反向过冲 45°和跨周角差。
  */
+static void check_steps13_to20(void)
+{
+    unsigned index;
+    unsigned triggers = s_sonar_triggers;
+    for (index = g_route.step_index; index < TEST_ACTIVE_STEP_COUNT; ++index)
+    {
+        unsigned budget = 200u;
+        unsigned i;
+        uint32_t turns = g_mode_fsm.turn_count;
+        float yaw = g_route.ideal_yaw;
+        uint8_t left = (uint8_t)(index != 13u && index != 15u && index != 18u && index != 19u);
+        uint8_t junction_pattern = (index == 14u || index == 19u) ? 0xFFu :
+                                   (index == 13u || index == 15u || index == 18u) ? 0xF0u : 0x0Fu;
+        CHECK(g_route.step_index == index && g_route.project_id == index + 1u);
+        CHECK(g_route.state == ROUTE_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
+        CHECK(g_route_plan[index].action == (index == 19u ? ROUTE_ACTION_RIGHT :
+              left ? ROUTE_ACTION_LEFT_TRACK : ROUTE_ACTION_RIGHT_TRACK));
+        CHECK(g_route_plan[index].trigger_junction == (junction_pattern == 0xFFu ? JUNCTION_CROSS :
+              junction_pattern == 0xF0u ? JUNCTION_RIGHT : JUNCTION_LEFT));
+        CHECK(g_line_controller.base_speed == ((index == 14u || index == 15u || index == 19u) ? 250 : LINE_DEFAULT_BASE_PWM));
+        CHECK(g_line_controller.lost_slowdown_enabled == !(index == 14u || index == 15u || index == 19u));
+        set_sensors(0x18u);
+        ticks(2u);
+        set_sensors(junction_pattern == 0x0Fu ? 0xF0u : 0x0Fu); /* 错误方向的路口不能触发本项。 */
+        ticks(2u);
+        CHECK(g_route.state == ROUTE_FOLLOW);
+        set_sensors(0x18u);
+        ticks(2u);
+        set_sensors(junction_pattern);
+        tick();
+        CHECK(g_route.state == ROUTE_FOLLOW);
+        tick();
+        CHECK(g_route.state == ROUTE_ALIGN);
+        set_sensors(0x18u);
+        while (g_route.state == ROUTE_ALIGN && --budget != 0u)
+            post_platform_tick();
+        CHECK(budget != 0u && g_route.state == ROUTE_APPROACH);
+        for (i = 1u; i < 64u; ++i)
+        {
+            post_platform_tick();
+            CHECK(g_route.state == ROUTE_APPROACH);
+            CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
+        }
+        post_platform_tick();
+        CHECK(g_route.state == ROUTE_TURN && g_mode_fsm.mode == MODE_IMU);
+        CHECK(g_mode_fsm.imu_state == (left ? IMU_TURN_LEFT : IMU_TURN_RIGHT));
+        CHECK(CLOSE(g_route.ideal_yaw, yaw + (left ? 90.0f : -90.0f)));
+        s_sample_yaw = g_mode_fsm.target_yaw - 5.0f;
+        ticks(2u);
+        CHECK(g_mode_fsm.turn_count == turns); /* 不继承第 12 项的 45°容差。 */
+        s_sample_yaw = g_mode_fsm.target_yaw;
+        ticks(2u);
+        CHECK(g_mode_fsm.turn_count == turns + 1u && g_mode_fsm.mode == MODE_TRACK);
+        tick();
+        if (index == 19u)
+        {
+            unsigned align_count = g_mode_fsm.align_count;
+            unsigned resets = s_resets;
+            CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.mode == MODE_TRACK);
+            CHECK(g_mode_fsm.state_frames == 2u); /* 转弯完成帧和本帧已各执行一次循迹。 */
+            for (i = 2u; i < 80u; ++i)
+            {
+                post_platform_tick();
+                CHECK(g_route.state == ROUTE_ENTRY && g_mode_fsm.mode == MODE_TRACK);
+            }
+            CHECK(g_mode_fsm.state_frames == 80u);
+            post_platform_tick();
+            CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.imu_state == IMU_ALIGN);
+            budget = 200u;
+            while (g_route.state == ROUTE_ALIGN && --budget != 0u)
+                post_platform_tick();
+            CHECK(budget != 0u && g_route.state == ROUTE_OBSTACLE);
+            CHECK(g_mode_fsm.align_count == align_count + 1u && s_resets == resets + 1u);
+            CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.base_pwm == 500u);
+            CHECK(g_mode_fsm.state_frames == 1u);
+            for (i = 1u; i < 500u; ++i)
+            {
+                post_platform_tick();
+                CHECK(g_route.state == ROUTE_OBSTACLE && g_mode_fsm.status == CAR_RUNNING);
+                CHECK(motorLeft.speed == 500 && motorRight.speed == 500);
+            }
+            CHECK(g_mode_fsm.state_frames == 500u);
+            post_platform_tick();
+            CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled);
+            check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            ticks(600u);
+            CHECK(g_route.state == ROUTE_FINISHED && !g_route.enabled);
+            check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        }
+        else if (index == 16u)
+        {
+            unsigned imu_reads, track_calls;
+            CHECK(g_route.state == ROUTE_SONAR_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
+            CHECK(s_sonar_triggers == triggers);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 40.0f;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_FOLLOW);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 39.0f;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP && g_mode_fsm.mode == MODE_OPEN_LOOP);
+            CHECK(motorLeft.speed == 320 && motorRight.speed == 300);
+            imu_reads = s_imu_reads;
+            track_calls = s_track_pid_calls;
+            s_sample_ok = 0u;
+            set_sensors(0xFFu);
+            ticks(5u);
+            CHECK(s_imu_reads == imu_reads && s_track_pid_calls == track_calls);
+            CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 320 && motorRight.speed == 300);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_TIMEOUT;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 40.0f;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 41.0f;
+            s_sample_ok = 1u;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_mode_fsm.mode == MODE_TRACK);
+            CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT > 17u ? ROUTE_FOLLOW : ROUTE_CRUISE));
+            CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT > 17u ? 17u : 16u));
+            triggers = s_sonar_triggers;
+            set_sensors(0x18u);
+        }
+        else if (index + 1u < TEST_ACTIVE_STEP_COUNT)
+        {
+            CHECK(g_route.state == ROUTE_RECOVER && g_route.step_index == index);
+            set_sensors(0xFFu);
+            ticks(2u);
+            CHECK(g_route.state == ROUTE_RECOVER); /* 未离开原路口不能推进。 */
+            set_sensors(0x18u);
+            ticks(2u);
+        }
+        else
+        {
+            CHECK(g_route.state == ROUTE_CRUISE);
+            ticks(1600u);
+            CHECK(g_route.state == ROUTE_CRUISE && g_mode_fsm.status == CAR_RUNNING);
+        }
+        Route_ServiceSonar();
+        CHECK(s_sonar_triggers == triggers);
+    }
+}
+
 static void test_step12_left_turn(void)
 {
     unsigned scenario;
-    if (TEST_ACTIVE_STEP_COUNT < 12u) return;
+    if (TEST_ACTIVE_STEP_COUNT < 12u || ROUTE_START_STEP > 12u) return;
     for (scenario = 0u; scenario < 3u; ++scenario) {
         unsigned budget = 200u, i, beep, resets;
         uint32_t turns, command;
         float yaw, target, boundary;
-        post_platform_start("step12 local ten-degree left turn tolerance");
+        post_platform_start("step12 local forty-five-degree left turn tolerance");
         post_platform_reach(11u, ROUTE_FOLLOW);
         CHECK(g_route.project_id == 12u && g_route_plan[11].action == ROUTE_ACTION_LEFT_TRACK);
         CHECK(g_line_controller.base_speed == LINE_DEFAULT_BASE_PWM);
@@ -3188,18 +3360,18 @@ static void test_step12_left_turn(void)
         CHECK(CLOSE(g_mode_fsm.target_yaw, target) && CLOSE(g_route.ideal_yaw, target));
         CHECK(motorLeft.speed < 0 && motorRight.speed > 0);
         turns = g_mode_fsm.turn_count;
-        s_sample_yaw = target - 10.1f;
+        s_sample_yaw = target - 45.1f;
         ticks(2u);
         CHECK(g_mode_fsm.turn_count == turns && g_mode_fsm.mode == MODE_IMU);
         CHECK(motorLeft.speed != 0 && motorRight.speed != 0);
-        boundary = scenario == 0u ? target - 10.0f :
-                   scenario == 1u ? target + 10.0f : target + 350.0f;
+        boundary = scenario == 0u ? target - 45.0f :
+                   scenario == 1u ? target + 45.0f : target + 315.0f;
         s_sample_yaw = boundary;
         tick();
         CHECK(g_mode_fsm.turn_count == turns);
         CHECK(motorLeft.speed == 0 && motorRight.speed == 0);
         /* 离开容差一帧后确认必须重新累计，不能把两次掠过目标合成一次完成。 */
-        s_sample_yaw = target - 11.0f;
+        s_sample_yaw = target - 46.0f;
         tick();
         CHECK(g_mode_fsm.turn_count == turns && motorLeft.speed != 0);
         s_sample_yaw = boundary;
@@ -3210,12 +3382,62 @@ static void test_step12_left_turn(void)
         command = g_mode_fsm.command_id;
         for (i = 0u; i < 1600u; ++i) {
             post_platform_tick();
-            CHECK(g_route.state == ROUTE_CRUISE && g_route.step_index == 11u);
+            CHECK(g_route.state == ROUTE_SONAR_FOLLOW && g_route.step_index == 11u);
             CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.command_id == command);
         }
         CHECK(s_beep_starts == beep + 1u && s_resets == resets);
         CHECK(CLOSE(IMU_TURN_DONE_TOLERANCE, 2.0f));
+        /* 本阶段才触发；小于 40 切固定差速，等于 40 或超时保持，大于 40 退出一次通行。 */
+        Route_ServiceSonar();
+        s_sonar_result.status = SR04_OK;
+        s_sonar_result.distance_cm = 40.0f;
+        Route_ServiceSonar();
+        tick();
+        CHECK(g_route.state == ROUTE_SONAR_FOLLOW && g_mode_fsm.mode == MODE_TRACK);
+        Route_ServiceSonar();
+        s_sonar_result.status = SR04_OK;
+        s_sonar_result.distance_cm = 39.0f;
+        Route_ServiceSonar();
+        tick();
+        CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP && g_mode_fsm.mode == MODE_OPEN_LOOP);
+        CHECK(motorLeft.speed == 330 && motorRight.speed == 280);
+        {
+            unsigned imu_reads = s_imu_reads;
+            unsigned pid_calls = s_track_pid_calls;
+            unsigned triggers;
+            s_sample_ok = 0u;
+            set_sensors(0xFFu);
+            ticks(5u);
+            CHECK(g_mode_fsm.status == CAR_RUNNING && motorLeft.speed == 330 && motorRight.speed == 280);
+            CHECK(s_imu_reads == imu_reads && s_track_pid_calls == pid_calls);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 40.0f;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            Route_ServiceSonar();
+            s_sonar_result.status = SR04_TIMEOUT;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP);
+            s_sample_ok = 1u;
+            s_sonar_result.status = SR04_OK;
+            s_sonar_result.distance_cm = 41.0f;
+            Route_ServiceSonar();
+            tick();
+            CHECK(g_mode_fsm.mode == MODE_TRACK);
+            CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT > 12u ? ROUTE_FOLLOW : ROUTE_CRUISE));
+            CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT > 12u ? 12u : 11u));
+            triggers = s_sonar_triggers;
+            Route_ServiceSonar();
+            CHECK(s_sonar_triggers == triggers);
+            set_sensors(0x18u);
+            if (scenario == 0u && TEST_ACTIVE_STEP_COUNT > 12u)
+                check_steps13_to20();
+        }
         /* 普通左转在同一场景紧接着启动，必须立即回到原 2°严格容差。 */
+        target = g_route.ideal_yaw; /* 后续路线会更新理想朝向，独立动作使用当前参考。 */
         s_sample_yaw = target - 5.0f;
         Car_TurnLeft90(MODE_TRACK);
         tick();
@@ -3233,13 +3455,13 @@ static void test_step12_left_turn(void)
         tick();
         /* 新接口同样服从邮箱的停车优先级，覆盖值也不能越过 STOP 泄漏。 */
         Car_Stop();
-        Car_TurnLeft90WithTolerance(MODE_TRACK, 10.0f);
+        Car_TurnLeft90WithTolerance(MODE_TRACK, 30.0f);
         s_sample_yaw = target - 5.0f;
         tick();
         check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
         CHECK(!IMUTask_InTurnTolerance());
         /* 同一帧普通右转覆盖局部左转时，容差也必须随最后一个动作一起恢复。 */
-        Car_TurnLeft90WithTolerance(MODE_TRACK, 10.0f);
+        Car_TurnLeft90WithTolerance(MODE_TRACK, 30.0f);
         Car_TurnRight90(MODE_TRACK);
         tick();
         CHECK(g_mode_fsm.imu_state == IMU_TURN_RIGHT && motorLeft.speed != 0);
@@ -3247,7 +3469,7 @@ static void test_step12_left_turn(void)
         Car_Stop();
         tick();
     }
-    puts("PASS step12 left turn: 500ms approach, ten-degree boundary, overshoot/wrap, default tolerance and mailbox priority");
+    puts("PASS step12 left turn: 500ms approach, forty-five-degree boundary, overshoot/wrap, default tolerance and mailbox priority");
 }
 #endif
 
@@ -3262,6 +3484,11 @@ int main(void)
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
 #ifdef TEST_ROUTE_AFTER_PLATFORM_ONLY
     test_route_start_validation();
+    if (ROUTE_START_STEP >= 13u)
+    {
+        post_platform_start("direct start at post-sonar route item");
+        check_steps13_to20();
+    }
     test_platform_table_handoff();
     test_post_platform_track_turn();
     test_step10_11_track_parameters();

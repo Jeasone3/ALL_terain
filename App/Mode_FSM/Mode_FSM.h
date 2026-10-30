@@ -9,10 +9,11 @@
 #include "main.h"
 #include <stdint.h>
 
-/* 两个大模式；停车和故障由运行状态表示，不增加第三个运动模式。 */
+/* 运动模式互斥；停车和故障由独立运行状态表示。 */
 typedef enum {
     MODE_TRACK = 0,                 /* 灰度循迹 PID 控制电机 */
-    MODE_IMU                       /* IMU 角度 PID 控制电机 */
+    MODE_IMU,                      /* IMU 角度 PID 控制电机 */
+    MODE_OPEN_LOOP                 /* 超声波通行：固定两轮 PWM，不读取 IMU 或运行循迹 PID */
 } CarMode;
 
 /* IMU 子状态，用于 MODE_IMU 模式。 */
@@ -86,6 +87,12 @@ void ModeFSM_Tick(void);
  * @note 下一控制帧生效，暂停 IMU 采样与解算；路口去向由 Route 决定。
  */
 void Car_Track(void);
+
+/** @brief 请求第一段超声波通行的固定开环调参，下一控制帧生效。 */
+void Car_OpenLoop(void);
+
+/** @brief 原子提交两轮开环前进 PWM，范围均为 1～1000；下一控制帧生效。 */
+void Car_OpenLoopWithPWM(uint16_t left_pwm, uint16_t right_pwm);
 
 /**
  * @brief 提交 IMU 直行请求，以接受动作时的朝向为零度基准。

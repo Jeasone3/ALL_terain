@@ -32,7 +32,9 @@ typedef enum {
     ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
     ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3.2 秒 */
     ROUTE_FINAL_RIGHT_TURN,        /* 倒车后停车校准、右转 90°，完成接 S1 直行 */
-    ROUTE_S1_IMU                   /* 高台右转后以 PWM500 保持航向直行 3.5 秒，再接普通路线表找十字 */
+    ROUTE_S1_IMU,                  /* 高台右转后保持航向直行，再接普通路线表找十字 */
+    ROUTE_SONAR_FOLLOW,            /* 第 12 项后循迹并测距，等待距离小于 40 cm */
+    ROUTE_SONAR_OPEN_LOOP          /* 固定差速通行，等待距离大于 40 cm */
 } RouteState;
 
 typedef enum {
@@ -59,7 +61,7 @@ typedef enum {
  *       pass_ms 为 0 时只定时循迹；base_pwm 保留非零供参数检查，不控制循迹速度。
  *       第 8 项转后倒退暂时停用，直接入口循迹；具体时间以路线表为准。
  *       非截止段恢复窄线后接下一段；短段调试截止后持续循迹。
- *       final_seq = 1 在通行后接高台及 S1 专用流程；final_seq = 2 在定时循迹结束后停车。
+ *       final_seq = 1 在通行后接高台及 S1；2 在定时循迹结束后停车；3 在定时 IMU 通行结束后停车。
  *       timeout_ms 限制本段每个等待阶段；最终 CRUISE 不设路线超时。
  */
 typedef struct {
@@ -72,10 +74,10 @@ typedef struct {
     RouteJunction trigger_junction; /* 本段唯一接受的路口类型 */
     uint8_t cal_before;             /* 路口动作前对齐保持校准；两类直行动作校准后切回循迹 */
     uint8_t cal_after;              /* 转后、入口或恢复前 align-hold 校准 */
-    uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时接高台；2=ENTRY 定时循迹到时停车 */
+    uint8_t final_seq;              /* 0=普通；1=OBSTACLE 后接高台；2=ENTRY 到时停车；3=OBSTACLE 到时停车 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 12u       /* 当前路线表共 12 项；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 20u       /* 第 17 项后第二段超声波通行，再接第 18～20 项左、右、右转。 */
 
 /* 本次从路线表第几项开始，使用 1 至 ROUTE_STEP_COUNT 的表项序号，不按 project_id 查找。
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
@@ -84,13 +86,15 @@ typedef struct {
 #define ROUTE_START_STEP 10u
 #endif
 
-/* 调试截止表项：12 或 0 均执行到第 12 项左侧路口左转后持续循迹。
+/* 调试截止表项：20 或 0 执行全部路线，第 20 项十字右转、循迹 1 秒、对齐后 IMU 直行 5 秒停车。
+ * 截止为 12 时完成超声波一次通行后持续循迹，不进入第 13 项。
  * 第 9 项的高台及 S1 属于该项自身的后续流程，截止为 9 时仍会执行，随后持续循迹。
- * 当前设为 12：执行全部已编写路线；截止为 10 或 11 时对应右转完成后持续循迹。
+ * 截止为 17 时完成第二段超声波通行后持续循迹，不进入第 18 项。
+ * 当前设为 20：执行全部已编写路线；截止为 10 或 11 时对应右转完成后持续循迹。
  * 启用后续项时，第 10、11 项须先连续两帧确认居中窄线，才接收下一路口。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 12u
+#define ROUTE_DEBUG_STEP_LIMIT 20u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT
@@ -156,5 +160,8 @@ void Route_Enable(uint8_t enabled);
  * @note 仅由 ModeFSM_Tick 调用；普通监测可在手动模式继续，项目内部屏蔽路口。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command);
+
+/** @brief 前台调用；仅在超声波路线阶段触发测距并发布新结果，不输出电机 PWM。 */
+void Route_ServiceSonar(void);
 
 #endif

@@ -32,6 +32,7 @@ $includeDirectories = @(
     (Join-Path $projectRoot 'Int/Int_OLED'),
     (Join-Path $projectRoot 'Int/Int_Motor')
     (Join-Path $projectRoot 'Int/Int_Beep')
+    (Join-Path $projectRoot 'Int/Int_SR04')
 )
 $commonArguments = @('-std=c99', '-Wall', '-Wextra', '-Werror', '-pedantic', '-O2')
 foreach ($includeDirectory in $includeDirectories) {
@@ -70,12 +71,12 @@ if ($RouteAfterPlatformOnly) {
     # 验证两次右转后接第 12 项左转，以及仅本次左转使用 10°容差。
     Invoke-MotionTest -Name 'test_route_after_platform' -Arguments ($motionSources + '-DTEST_ROUTE_AFTER_PLATFORM_ONLY')
     # 单独从两个新表项启动，检查被跳过的高台和前一右转不会影响当前动作。
-    foreach ($startStep in 10..12) {
+    foreach ($startStep in 10..20) {
         Invoke-MotionTest -Name "test_route_after_platform_start$startStep" -Arguments ($motionSources + @(
             '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', "-DROUTE_START_STEP=$($startStep)u"))
     }
     # 0 表示全部 12 项；9、10、11 分别覆盖离台和两处右转后的调试截止。
-    foreach ($limit in @(0, 9, 10, 11)) {
+    foreach ($limit in @(0, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)) {
         Invoke-MotionTest -Name "test_route_after_platform_limit$limit" -Arguments ($motionSources + @(
             '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DROUTE_START_STEP=9u', "-DROUTE_DEBUG_STEP_LIMIT=$($limit)u"))
     }

@@ -52,3 +52,4 @@ all_terain_for_11\main.o: ../Com/Com_IIC/iic.h
 all_terain_for_11\main.o: ../Com/Com_IMU_Config/IMU_Config.h
 all_terain_for_11\main.o: ../Com/Com_Attitude/Attitude.h
 all_terain_for_11\main.o: ../Int/Int_Beep/Int_Beep.h
+all_terain_for_11\main.o: ../Int/Int_SR04/Int_SR04.h

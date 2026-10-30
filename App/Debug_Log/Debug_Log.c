@@ -287,6 +287,8 @@ static const char *route_name(RouteState state)
         case ROUTE_UNCALIBRATED: return "WAIT";
         case ROUTE_ABORTED: return "ABORT";
         case ROUTE_CRUISE:  return "CRUISE";
+        case ROUTE_SONAR_FOLLOW: return "SONAR";
+        case ROUTE_SONAR_OPEN_LOOP: return "SONAR_OPEN";
         case ROUTE_FINAL_TURN: return "END_L";
         case ROUTE_FINAL_FORWARD: return "END_F";
         case ROUTE_FINISHED: return "DONE";
@@ -309,6 +311,7 @@ static const char *status_name(const ModeFSM_t *motion)
     if (motion->status == CAR_STOPPED) {
         return "STOP";
     }
+    if (motion->mode == MODE_OPEN_LOOP) return "OPEN";
     return (motion->mode == MODE_TRACK) ? "TRACK" : "IMU";
 }
 
@@ -320,6 +323,7 @@ static const char *status_name(const ModeFSM_t *motion)
  */
 static const char *action_name(const ModeFSM_t *motion)
 {
+    if (motion->mode == MODE_OPEN_LOOP) return "OPEN";
     if (motion->mode == MODE_TRACK) {
         return "TRK";
     }

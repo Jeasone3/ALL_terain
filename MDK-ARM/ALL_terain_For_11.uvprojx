@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xE</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int/Int_Beep;../Int/Int_Motor;../Int/Int_MPU6050;../Int/Int_OLED;../Int/Int_Track;../Com/Com_Attitude;../Com/Com_Delay_us;../Com/Com_IIC;../Com/Com_IMU_Config;../Com/Com_Limit;../Com/Com_PID;../App/IMU_Task;../App/Mode_FSM;../App/Track_Task;../App/Route;../App/Debug_Log</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../Int/Int_Beep;../Int/Int_Motor;../Int/Int_MPU6050;../Int/Int_OLED;../Int/Int_Track;../Int/Int_SR04;../Com/Com_Attitude;../Com/Com_Delay_us;../Com/Com_IIC;../Com/Com_IMU_Config;../Com/Com_Limit;../Com/Com_PID;../App/IMU_Task;../App/Mode_FSM;../App/Track_Task;../App/Route;../App/Debug_Log</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -875,6 +875,21 @@
               <FileName>Int_Beep.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\Int\Int_Beep\Int_Beep.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Int/SR04</GroupName>
+          <Files>
+            <File>
+              <FileName>Int_SR04.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Int\Int_SR04\Int_SR04.c</FilePath>
+            </File>
+            <File>
+              <FileName>Int_SR04.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\Int\Int_SR04\Int_SR04.h</FilePath>
             </File>
           </Files>
         </Group>

@@ -38,6 +38,7 @@
 #include "Int_MPU6050.h"
 #include "Attitude.h"
 #include "Int_Beep.h"
+#include "Int_SR04.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -129,6 +130,7 @@ int main(void)
   MX_TIM4_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  Int_SR04_Init();  /* 初始化超声波底层；复用 DWT 和 PA4/PA5，测距由调用者按需触发。 */
   /* 软件 IIC 的 SDA/SCL 已在 MX_GPIO_Init() 中释放为高，此处不重复 */
 
   /* OLED 失败只记录状态，后续在主循环重试，不中止控制系统初始化。 */
@@ -213,13 +215,14 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
   uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
   while (1)
   {
+    Route_ServiceSonar(); /* 仅第 12、17 项后的超声波阶段发起测量，其余阶段直接返回。 */
 
 
 
 
 
 /* IMU 仅在 IMU 模式由 TIM4 读取；通信失败后前台每 1s 重试，故障不会自动恢复运动。 */
-    if (g_imu_ready == 0U &&
+    if (g_mode_fsm.mode != MODE_OPEN_LOOP && g_imu_ready == 0U &&
         (uint32_t)(HAL_GetTick() - last_imu_retry_ms) >= 1000U)
     {
       last_imu_retry_ms = HAL_GetTick();
