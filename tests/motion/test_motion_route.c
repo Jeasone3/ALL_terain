@@ -3203,8 +3203,8 @@ static void check_steps13_to20(void)
             post_platform_tick();
         CHECK(budget != 0u && g_route.state == ROUTE_APPROACH);
         CHECK(CLOSE(g_mode_fsm.target_yaw, yaw) && s_resets == resets);
-        /* 第 17 项执行 45 帧前移，其余后续路口仍执行原来的 64 帧。 */
-        for (i = 1u; i < (index == 16u ? 45u : 64u); ++i)
+        /* 第 17 项执行 40 帧前移，其余后续路口仍执行原来的 64 帧。 */
+        for (i = 1u; i < (index == 16u ? 40u : 64u); ++i)
         {
             post_platform_tick();
             CHECK(g_route.state == ROUTE_APPROACH);

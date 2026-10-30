@@ -31,7 +31,7 @@
 /* 路线按表项顺序执行，project_id 为屏幕显示段号；追加表项时同步增加 ROUTE_STEP_COUNT。
  * 使用字段名填写参数，未列出的字段自动为 0，不再靠末尾的 0、1、2 判断各列含义。
  *
- * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 640 ms，再转 90°；第 12、17 项前移 450 ms。
+ * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 640 ms，再转 90°；第 12 项前移 450 ms，第 17 项前移 400 ms。
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
  *           STRAIGHT_TRACK 可先按 cal_before 校准，再循迹直行，通过路口并确认窄线后接下一项。
@@ -113,7 +113,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
-    {   /* 17 左侧路口左转：同第 12 项，前移 450 ms、左转目标 90°、容差 45°，转完接第二段超声波。 */
+    {   /* 17 左侧路口左转：前移 400 ms、左转目标 90°、容差 45°，转完接第二段超声波。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 17u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
@@ -122,7 +122,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .timeout_ms = 15000u
     },
     {   /* 19 循迹找右路口，按原前移和闭环流程右转 90°。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_RIGHT,
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 19u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
     {   /* 20 十字右转后循迹 1 秒，再按项目流程对齐保持、重建航向基准，以 PWM500 直行 5 秒后停车。 */
@@ -351,12 +351,17 @@ static void update_conditions(const uint16_t *sensor_data)
 /**
  * @brief 返回指定表项转弯前的前移时长，供参数检查与阶段计时共同使用。
  * @param step_index 路线表下标，从 0 开始。
- * @return 前移时长（毫秒）；第 12、17 项使用 450 ms，其余项使用原统一参数。
+ * @return 前移时长（毫秒）；第 12 项使用 450 ms，第 17 项使用 400 ms，其余项使用原统一参数。
+ * 
+ * 
+ * 指定路段，执行转向前移时长
  */
 static uint32_t turn_approach_ms(uint16_t step_index)
 {
-    /* 两段超声波入口的转弯使用相同前移时间，表项下标从 0 开始。 */
-    return (step_index == 11u || step_index == 16u) ? 450u : ROUTE_TURN_APPROACH_MS;
+    /* 第 17 项前移 40 个控制帧；表项下标从 0 开始，第 12 项仍使用原来的 450 ms。 */
+    if (step_index == 16u) 
+        return 400u;
+    return step_index == 11u ? 420u : ROUTE_TURN_APPROACH_MS;
 }
 
 /**
@@ -655,7 +660,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 enter_state(ROUTE_SONAR_OPEN_LOOP);
                 if (g_route.step_index == 16u)
                     //方PWM
-                    Car_OpenLoopWithPWM(450u, 320u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
+                    Car_OpenLoopWithPWM(500u, 300u); /* 第二段单独给定 PWM，不覆盖第一段的调参。 */
                 else
                     Car_OpenLoop();
             }

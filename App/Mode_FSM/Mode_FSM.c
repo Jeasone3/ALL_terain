@@ -25,8 +25,8 @@ extern uint16_t g_sensor_data[GRAYSCALE_SENSOR_CHANNELS];
 volatile ModeFSM_t g_mode_fsm;
 extern Motor_Struct motorLeft, motorRight;
 
-#define OPEN_LOOP_LEFT_PWM  450u /* 超声波通行时左轮固定前进 PWM。 */
-#define OPEN_LOOP_RIGHT_PWM 310u /* 超声波通行时右轮固定前进 PWM。 */
+#define OPEN_LOOP_LEFT_PWM  560u /* 超声波通行时左轮固定前进 PWM。 */
+#define OPEN_LOOP_RIGHT_PWM 300u /* 超声波通行时右轮固定前进 PWM。 */
 
 /* 邮箱中的动作类型，与实际执行状态分开保存。 */
 typedef enum
