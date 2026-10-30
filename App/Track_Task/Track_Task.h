@@ -18,6 +18,9 @@
 /* 运行中丢线时整体目标降速系数, 防止冲出赛道 */
 #define LINE_LOST_SCALE  0.6f
 
+/* 普通路段的循迹基础 PWM；ID 10、11 由路线层临时切换为 250。 */
+#define LINE_DEFAULT_BASE_PWM 500
+
 typedef struct {
     /* PID 实例(位置式, 含积分分离/微分滤波), 替代原手搓 kp/ki/kd/integral/last_error */
     pid_type_def pid;
@@ -25,6 +28,7 @@ typedef struct {
     /* 控制参数 (单位: PWM 量纲 0-1000, 无编码器直接驱动占空比) */
     int16_t base_speed;     // 基础速度(直行占空比)
     int16_t max_speed;      // 最大速度(限幅)
+    bool lost_slowdown_enabled; // 是否允许无线时乘以丢线降速系数；不影响偏差计算
 
     /* 传感器位置权重 */
     float sensor_weights[GRAYSCALE_SENSOR_CHANNELS];

@@ -40,6 +40,12 @@ void IMUTask_SetTarget(float target);
  */
 float IMUTask_GetError(void);
 
+/** @brief 设置本次转弯容差（度）；0 使用全局值，新目标会清除覆盖值，不改变全局参数。 */
+void IMUTask_SetTurnTolerance(float tolerance_deg);
+
+/** @brief 返回当前角差是否进入转弯容差；仅判断当前帧，连续确认由状态机执行。 */
+uint8_t IMUTask_InTurnTolerance(void);
+
 /**
  * @brief 运行一帧原地转弯 PID，电机输出为 left=-out、right=+out。
  * @param 无。

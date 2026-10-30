@@ -30,9 +30,9 @@ typedef enum {
     ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
     ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
-    ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3 秒 */
+    ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3.2 秒 */
     ROUTE_FINAL_RIGHT_TURN,        /* 倒车后停车校准、右转 90°，完成接 S1 直行 */
-    ROUTE_S1_IMU                   /* 高台右转后 IMU 直行 5 秒 PWM300，再接普通路线表找十字 */
+    ROUTE_S1_IMU                   /* 高台右转后以 PWM500 保持航向直行 3.5 秒，再接普通路线表找十字 */
 } RouteState;
 
 typedef enum {
@@ -75,22 +75,22 @@ typedef struct {
     uint8_t final_seq;              /* 0=普通；1=该段 OBSTACLE 到时接高台；2=ENTRY 定时循迹到时停车 */
 } RouteStep;
 
-#define ROUTE_STEP_COUNT 16u       /* 当前路线表共 16 项；后续追加表项时同步增加 */
+#define ROUTE_STEP_COUNT 12u       /* 当前路线表共 12 项；后续追加表项时同步增加 */
 
 /* 本次从路线表第几项开始，使用 1 至 ROUTE_STEP_COUNT 的表项序号，不按 project_id 查找。
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
  * 设为 1u 从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 9u
+#define ROUTE_START_STEP 10u
 #endif
 
-/* 调试截止表项：16 或 0 均执行到第 16 项十字右转后持续循迹。
+/* 调试截止表项：12 或 0 均执行到第 12 项左侧路口左转后持续循迹。
  * 第 9 项的高台及 S1 属于该项自身的后续流程，截止为 9 时仍会执行，随后持续循迹。
- * 当前设为 16：执行全部已编写路线；截止为 10 或 15 时项目通行结束后持续循迹。
- * 截止为 11 或 13 时左转后持续循迹；截止为 12 或 14 时直行通过路口并确认窄线后持续循迹。
+ * 当前设为 12：执行全部已编写路线；截止为 10 或 11 时对应右转完成后持续循迹。
+ * 启用后续项时，第 10、11 项须先连续两帧确认居中窄线，才接收下一路口。
  * 允许宿主测试通过编译参数覆盖，实车默认值仍在此处维护。 */
 #ifndef ROUTE_DEBUG_STEP_LIMIT
-#define ROUTE_DEBUG_STEP_LIMIT 16u
+#define ROUTE_DEBUG_STEP_LIMIT 12u
 #endif
 
 #if ROUTE_DEBUG_STEP_LIMIT > ROUTE_STEP_COUNT

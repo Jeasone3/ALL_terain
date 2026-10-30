@@ -1,6 +1,6 @@
 /**
  * @file Route.c
- * @brief 按路线表依次通过路口和项目，第 15 项左转通行项目，第 16 项十字校准右转后持续循迹。
+ * @brief 按路线表依次通过路口和项目，高台后两次右转，再以局部容差左转后持续循迹。
  * @note Route 只安排阶段；TIM4 中的 ModeFSM 执行动作。PWM 和前移距离仍需实车标定。
  */
 #include "Route.h"
@@ -13,12 +13,12 @@
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
 #define ROUTE_PROJECT_BEEP_FRAMES 10u /* 每段指定路口被接受时短鸣 100 ms，独立计时 */
-#define ROUTE_TURN_APPROACH_MS   640u /* 表内路口转弯前保持航向前移 68 帧，按车身对齐位置标定 */
+#define ROUTE_TURN_APPROACH_MS   640u /* 表内路口转弯前保持航向前移 64 帧，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 3200u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3 秒，PWM 与最后直行同 */
-#define ROUTE_S1_IMU_MS        3500u /* 高台右转后 IMU 直行 5 秒 PWM300，再切循迹找十字 */
+#define ROUTE_REVERSE_DRIVE_MS 3200u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3.2 秒，PWM 与最后直行同 */
+#define ROUTE_S1_IMU_MS        3000u /* 高台右转后以 PWM500 保持航向直行 3.5 秒，再切循迹找十字 */
 #define ROUTE_S1_PWM           500u  /* S1 直行基础 PWM（慢速清出高台区域） */
 
 #if ROUTE_DEBUG_STEP_LIMIT == 0u
@@ -30,7 +30,7 @@
 /* 路线按表项顺序执行，project_id 为屏幕显示段号；追加表项时同步增加 ROUTE_STEP_COUNT。
  * 使用字段名填写参数，未列出的字段自动为 0，不再靠末尾的 0、1、2 判断各列含义。
  *
- * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 680 ms，再转 90°。
+ * 路口动作：LEFT / RIGHT / LEFT_TRACK / RIGHT_TRACK 先对齐，以 500 PWM 前移 640 ms，再转 90°；第 12 项前移 500 ms。
  *           LEFT_TRACK / RIGHT_TRACK 转完恢复循迹，省略项目 PWM、入口和通行时间。
  *           FOLLOW_LEFT 全程由灰度循迹 PID 沿左弯行驶，确认居中窄线后接下一项。
  *           STRAIGHT_TRACK 可先按 cal_before 校准，再循迹直行，通过路口并确认窄线后接下一项。
@@ -83,36 +83,18 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .final_seq = 1u
     },
 
-    /* 高台及 S1 之后回到普通路线表：十字直行通行项目，恢复循迹后等左口左转。 */
-    {   /* 10 十字直行：路口先对齐保持校准，循迹 2 秒后再次对齐校准，以 500 PWM 通行 5 秒。 */
-        .action = ROUTE_ACTION_STRAIGHT, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 1500u, .pass_ms = 5000u, .timeout_ms = 10000u,
-        .cal_before = 1u
+    /* 高台及 S1 后复用第 4、5 项流程：快速对齐、前移、右转后循迹，不重建 yaw 基准。 */
+    {   /* 10 十字右转：与第 4 项一致，快速对齐、前移 640 ms、右转 90°后循迹确认窄线。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
+        .timeout_ms = 15000u
     },
-    {   /* 11 左侧路口：沿用原第 12 项的对齐、前移与左转流程，转完恢复循迹。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
+    {   /* 11 右侧路口右转：与第 5 项一致，快速对齐、前移并闭环右转，确认窄线后接第 12 项。 */
+        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
+        .timeout_ms = 15000u
     },
-    {   /* 12 十字直行：路口先停车对齐保持并校准，再循迹直行，确认离开后接下一项。 */
-        .action = ROUTE_ACTION_STRAIGHT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 15000u, .cal_before = 1u
-    },
-    {   /* 13 左侧路口：复用第 11 项的对齐、前移与闭环左转，转完恢复循迹。 */
-        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 13u, .trigger_junction = JUNCTION_LEFT,
-        .timeout_ms = 10000u
-    },
-    {   /* 14 十字直行：与第 12 项一致，先停车对齐保持校准，再循迹通过路口并确认窄线。 */
-        .action = ROUTE_ACTION_STRAIGHT_TRACK, .project_id = 14u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u, .cal_before = 1u
-    },
-    {   /* 15 十字左转：转前校准、前移并左转；循迹 400 ms 后再对齐校准，以 500 PWM 通行 6 秒。 */
-        .action = ROUTE_ACTION_LEFT, .project_id = 15u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 400u, .pass_ms = 5000u,
-        .timeout_ms = 10000u, .cal_before = 1u
-    },
-    {   /* 16 十字右转：停车对齐保持并校准 yaw 基准，再前移、闭环右转 90°，转完持续循迹。 */
-        .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_CROSS,
-        .timeout_ms = 10000u, .cal_before = 1u
+    {   /* 12 左侧路口左转：快速对齐、前移 500 ms 后闭环左转 90°，仅本次转弯容差为 10°，转完持续循迹。 */
+        .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 12u, .trigger_junction = JUNCTION_LEFT,
+        .timeout_ms = 15000u
     }
 };
 
@@ -329,6 +311,16 @@ static void update_conditions(const uint16_t *sensor_data)
 }
 
 /**
+ * @brief 返回指定表项转弯前的前移时长，供参数检查与阶段计时共同使用。
+ * @param step_index 路线表下标，从 0 开始。
+ * @return 前移时长（毫秒）；第 12 项单独使用 500 ms，其余项使用原统一参数。
+ */
+static uint32_t turn_approach_ms(uint16_t step_index)
+{
+    return step_index == 11u ? 500u : ROUTE_TURN_APPROACH_MS;
+}
+
+/**
  * @brief 检查本次启用段，返回第一条无效参数的位置。
  * @param 无。
  * @return 全部有效时返回 ROUTE_ACTIVE_STEP_COUNT，否则返回无效段的下标。
@@ -348,7 +340,7 @@ static uint16_t invalid_step(void)
              step->action != ROUTE_ACTION_STRAIGHT_TRACK) ||
             (step->trigger_junction != JUNCTION_LEFT && step->trigger_junction != JUNCTION_RIGHT &&
              step->trigger_junction != JUNCTION_CROSS) ||
-            step->timeout_ms <= ROUTE_TURN_APPROACH_MS ||
+            step->timeout_ms <= turn_approach_ms(i) ||
             step->project_id == 0u) {
             return i;
         }
@@ -401,14 +393,27 @@ static void enter_state(RouteState state)
 }
 
 /**
- * @brief 进入当前路线段，先循迹等待该段指定类型的路口。
+ * @brief 切换当前路段的循迹速度及丢线降速许可，不重置 PID 或修改 IMU 动作参数。
+ * @param slow_track 非零表示第 10、11 项的慢速循迹；零表示恢复普通循迹配置。
+ * @return 无。
+ * @note 第 10 项恢复循迹及第 11 项转后持续循迹均保留本配置，中止、结束或重新初始化时恢复默认。
+ */
+static void set_track_parameters(uint8_t slow_track)
+{
+    g_line_controller.base_speed = slow_track ? 250 : LINE_DEFAULT_BASE_PWM;
+    g_line_controller.lost_slowdown_enabled = !slow_track;
+}
+
+/**
+ * @brief 进入当前路线段，设置本段循迹参数并等待指定类型的路口。
  * @param 无。
  * @return 无。
- * @note 每次表项只调用一次；不会在 while(1) 重复重置 PID 或航向。
+ * @note 每次表项只调用一次；不会重复重置 PID 或航向。
  */
 static void begin_step(void)
 {
     const RouteStep *step = &g_route_plan[g_route.step_index];
+    set_track_parameters((uint8_t)(g_route.step_index == 9u || g_route.step_index == 10u));
     g_route.project_id = step->project_id;
     reset_junction();
     enter_state(ROUTE_FOLLOW);
@@ -476,6 +481,7 @@ void Route_Init(void)
     Route_t initial = {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f};
     update_route_beep(1u); /* 重新初始化前，关闭上一轮尚未结束的短鸣或倒车提示音。 */
     g_route = initial;
+    set_track_parameters(0u);
     s_line_candidate = s_line_frames = s_narrow_frames = s_active = 0u;
     s_turn_count_before = 0u;
     reset_junction();
@@ -549,7 +555,7 @@ void Route_Enable(uint8_t enabled)
  * @note 每帧代表 10 ms，阶段切换只提交一次动作，不直接写电机或等待。
  *       每段指定路口被接受时短鸣一次，蜂鸣计时独立于前移、转弯和项目阶段。
  *       RIGHT_TRACK 转完后保留 FSM 已接入的循迹；有后续段则先恢复窄线，截止段直接 CRUISE。
- *       第 15 项左转后循迹并校准进入项目，通行结束恢复窄线；第 16 项十字校准右转后持续循迹。
+ *       第 10、11 项右转后确认窄线接下一项；第 12 项左转使用局部 10°容差，转完持续循迹。
  *       外部接管保留其动作；超时通过请求邮箱交给运动层故障停车。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
@@ -573,6 +579,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
            g_mode_fsm.align_count != s_align_count_before))) {
         s_active = g_route.enabled = 0u;
         g_route.state = ROUTE_ABORTED;
+        set_track_parameters(0u);
         return;
     }
     //灰度线检测校验
@@ -713,14 +720,17 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         break;
     case ROUTE_APPROACH: //转向前移
-        if (elapsed_ms >= ROUTE_TURN_APPROACH_MS) { //到达前移时间
+        if (elapsed_ms >= turn_approach_ms(g_route.step_index)) { // 到达当前表项的前移时间
             s_turn_count_before = g_mode_fsm.turn_count;
             enter_state(ROUTE_TURN);
             /* 提交转弯前更新理想朝向，FSM 取此绝对值作为转弯目标，转完即对齐。 */
             g_route.ideal_yaw += route_action_yaw_delta(step->action);
-            if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK)
-                Car_TurnLeft90(MODE_TRACK);
-            else
+            if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK) {
+                if (g_route.step_index == 11u)
+                    Car_TurnLeft90WithTolerance(MODE_TRACK, 10.0f); /* 仅第 12 项覆盖到位容差 */
+                else
+                    Car_TurnLeft90(MODE_TRACK);
+            } else
                 Car_TurnRight90(MODE_TRACK);
             return;
         }
@@ -789,6 +799,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                  * 先关闭本轮调度，避免下一帧把正常停车当作外部接管而改写 FINISHED。 */
                 s_active = g_route.enabled = 0u;
                 enter_state(ROUTE_FINISHED);
+                set_track_parameters(0u);
                 Car_Stop();
                 DebugLog_Write(LOG_INFO, "ROUTE_DONE");
             } else if (step->pass_ms == 0u)
@@ -845,7 +856,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
 
-    case ROUTE_REVERSE_DRIVE: //高台倒车：保持 ideal_yaw 倒退 3 秒，再停车对齐校准
+    case ROUTE_REVERSE_DRIVE: //高台倒车：保持 ideal_yaw 倒退 3.2 秒，再停车对齐校准
         if (elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
             Int_Beep_Off(); /* 倒车计时结束即关闭，后续停车校准和右转期间不再鸣叫。 */
             s_align_count_before = g_mode_fsm.align_count;
@@ -858,14 +869,14 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
 
     case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成接 S1 直行
         if (g_mode_fsm.turn_count != s_turn_count_before) {
-            /* 右转完成不停车，进 S1：IMU 直行 5 秒 PWM300，再切循迹找十字路口。 */
+            /* 右转完成不停车，进 S1：以 PWM500 保持航向直行 3.5 秒，再切循迹找十字路口。 */
             enter_state(ROUTE_S1_IMU);
             Car_ImuForward(ROUTE_S1_PWM);
             DebugLog_Write(LOG_INFO, "S1_FWD");
         }
         return;
 
-    case ROUTE_S1_IMU: //高台右转后 IMU 直行 5 秒 PWM300
+    case ROUTE_S1_IMU: //高台右转后以 PWM500 保持航向直行 3.5 秒
         if (elapsed_ms >= ROUTE_S1_IMU_MS) {
             if (g_route.step_index + 1u >= ROUTE_ACTIVE_STEP_COUNT) {
                 /* 截止在第 9 项时仍完整执行离台动作，到此持续循迹，不进入下一表项。 */
@@ -904,5 +915,6 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         s_active = g_route.enabled = 0u;
         update_route_beep(1u);
         Car_RouteTimeout();
+        set_track_parameters(0u);
     }
 }

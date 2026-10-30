@@ -13,7 +13,6 @@
 #include "Debug_Log.h"
 #include <math.h>
 
-#define TURN_DONE_TOLERANCE IMU_TURN_DONE_TOLERANCE /* 与转弯控制共用到位容差，单位：度 */
 #define TURN_DONE_FRAMES 2u      /* 误差连续两帧在容差内才算完成 */
 #define ALIGN_DONE_FRAMES 10u   /* 对齐要求连续 10 帧(100ms)在容差内才完成，避免过冲振荡时偶然判完成 */
 #define ALIGN_HOLD_FRAMES 80u   /* 进项目对齐到位后原地保持 80 帧(800ms) 再切 IMU 直行，等待角度稳定对齐项目 */
@@ -48,6 +47,7 @@ typedef struct
     CarMode next_mode;  // 转弯完成后的模式
     uint16_t base_pwm;  /* IMU 直行基础占空比，与 command 在同一临界区复制 */
     uint32_t duration_ms; /* 单项目测试限时，普通动作不使用 */
+    float turn_tolerance; /* 本次转弯的局部容差；0 使用全局值，与动作一起提交 */
     uint8_t pending;    // 请求标志
 } CarRequest;
 
@@ -65,11 +65,12 @@ static uint32_t s_forward_limit_frames; /* 单项目测试最多执行帧数；0
  * @param next_mode 转弯完成后的模式；非转弯动作不使用此参数。
  * @param base_pwm 直行 PWM；转弯后接 IMU 时使用普通直行值 500。
  * @param duration_ms 单项目测试时长，普通动作传 0。
+ * @param turn_tolerance 本次转弯容差，0 沿用全局值；非转弯动作传 0。
  * @return 无。
  * @note 可从主循环或 Route 调用；短暂屏蔽中断，待处理停车不会被运动请求覆盖。
  */
 static void submit_request(CarCommand command, CarMode next_mode, uint16_t base_pwm,
-                           uint32_t duration_ms)
+                           uint32_t duration_ms, float turn_tolerance)
 {
     uint32_t saved_primask = __get_PRIMASK();
     __disable_irq();
@@ -81,6 +82,7 @@ static void submit_request(CarCommand command, CarMode next_mode, uint16_t base_
         s_request.next_mode = next_mode;
         s_request.base_pwm = base_pwm;
         s_request.duration_ms = duration_ms;
+        s_request.turn_tolerance = turn_tolerance;
         s_request.pending = 1u; // 产生请求
     }
 
@@ -167,7 +169,9 @@ static void apply_request(const CarRequest *request)
     }
 
     /* 先校验，非法请求保留故障现场，不解除日志冻结。 */
-    if ((is_turn && request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU) ||
+    if ((is_turn && (request->next_mode != MODE_TRACK && request->next_mode != MODE_IMU)) ||
+        (is_turn && (!isfinite(request->turn_tolerance) || request->turn_tolerance < 0.0f ||
+                     request->turn_tolerance >= 90.0f)) ||
         ((request->command == COMMAND_IMU_FORWARD || request->command == COMMAND_IMU_TIMED ||
           request->command == COMMAND_REVERSE) &&
          (request->base_pwm == 0u || request->base_pwm > 1000u)) ||
@@ -262,6 +266,8 @@ static void apply_request(const CarRequest *request)
     }
 
     reset_controllers(g_mode_fsm.target_yaw); // 清除控制器历史
+    if (is_turn)
+        IMUTask_SetTurnTolerance(request->turn_tolerance);
     
     if (command_text != 0)
     {
@@ -379,9 +385,7 @@ static void update_imu(void)
         return;
     }
     
-    error = IMUTask_GetError();
-
-    if (fabsf(error) < TURN_DONE_TOLERANCE) //转弯完成 ，记录完成帧数
+    if (IMUTask_InTurnTolerance()) // 控制输出与完成确认共用本次动作的容差
     {
         s_turn_done_frames++;
     }
@@ -542,7 +546,7 @@ void ModeFSM_Tick(void)
  */
 void Car_Track(void)
 {
-    submit_request(COMMAND_TRACK, MODE_TRACK, 0u, 0u);
+    submit_request(COMMAND_TRACK, MODE_TRACK, 0u, 0u, 0.0f);
 }
 
 /**
@@ -553,7 +557,7 @@ void Car_Track(void)
  */
 void Car_ImuForward(uint16_t base_pwm)
 {
-    submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u);
+    submit_request(COMMAND_IMU_FORWARD, MODE_IMU, base_pwm, 0u, 0.0f);
 }
 
 /**
@@ -564,7 +568,7 @@ void Car_ImuForward(uint16_t base_pwm)
  */
 void Car_Reverse(uint16_t base_pwm)
 {
-    submit_request(COMMAND_REVERSE, MODE_IMU, base_pwm, 0u);
+    submit_request(COMMAND_REVERSE, MODE_IMU, base_pwm, 0u, 0.0f);
 }
 
 /**
@@ -575,7 +579,7 @@ void Car_Reverse(uint16_t base_pwm)
  */
 void Car_ImuForwardTimed(uint16_t base_pwm, uint32_t duration_ms)
 {
-    submit_request(COMMAND_IMU_TIMED, MODE_IMU, base_pwm, duration_ms);
+    submit_request(COMMAND_IMU_TIMED, MODE_IMU, base_pwm, duration_ms, 0.0f);
 }
 
 /**
@@ -586,7 +590,7 @@ void Car_ImuForwardTimed(uint16_t base_pwm, uint32_t duration_ms)
  */
 void Car_RouteTimeout(void)
 {
-    submit_request(COMMAND_ROUTE_TIMEOUT, MODE_TRACK, 0u, 0u);
+    submit_request(COMMAND_ROUTE_TIMEOUT, MODE_TRACK, 0u, 0u, 0.0f);
 }
 
 /**
@@ -597,7 +601,18 @@ void Car_RouteTimeout(void)
  */
 void Car_TurnLeft90(CarMode next_mode)
 {
-    submit_request(COMMAND_LEFT, next_mode, 500u, 0u);
+    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, 0.0f);
+}
+
+/**
+ * @brief 提交带局部容差的左转 90°请求，仅影响本次动作。
+ * @param next_mode 转完后的运动模式，与普通左转接口一致。
+ * @param tolerance_deg 本次到位角差（度，含边界），0 使用原全局容差。
+ * @return 无；容差与动作在同一临界区提交，停车或下一动作自动清除覆盖值。
+ */
+void Car_TurnLeft90WithTolerance(CarMode next_mode, float tolerance_deg)
+{
+    submit_request(COMMAND_LEFT, next_mode, 500u, 0u, tolerance_deg);
 }
 
 /**
@@ -608,7 +623,7 @@ void Car_TurnLeft90(CarMode next_mode)
  */
 void Car_TurnRight90(CarMode next_mode)
 {
-    submit_request(COMMAND_RIGHT, next_mode, 500u, 0u);
+    submit_request(COMMAND_RIGHT, next_mode, 500u, 0u, 0.0f);
 }
 
 /**
@@ -620,7 +635,7 @@ void Car_TurnRight90(CarMode next_mode)
  */
 void Car_AlignTo(void)
 {
-    submit_request(COMMAND_ALIGN, MODE_IMU, 0u, 0u);
+    submit_request(COMMAND_ALIGN, MODE_IMU, 0u, 0u, 0.0f);
 }
 
 /**
@@ -632,7 +647,7 @@ void Car_AlignTo(void)
  */
 void Car_AlignToHold(void)
 {
-    submit_request(COMMAND_ALIGN_HOLD, MODE_IMU, 0u, 0u);
+    submit_request(COMMAND_ALIGN_HOLD, MODE_IMU, 0u, 0u, 0.0f);
 }
 
 /**
@@ -644,7 +659,7 @@ void Car_AlignToHold(void)
  */
 void Car_Stop(void)
 {
-    submit_request(COMMAND_STOP, MODE_TRACK, 0u, 0u);
+    submit_request(COMMAND_STOP, MODE_TRACK, 0u, 0u, 0.0f);
 }
 
 /**

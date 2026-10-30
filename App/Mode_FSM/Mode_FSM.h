@@ -129,6 +129,14 @@ void Car_RouteTimeout(void);
 void Car_TurnLeft90(CarMode next_mode);
 
 /**
+ * @brief 提交带局部容差的闭环左转 90°，不修改全局转弯参数。
+ * @param next_mode 转完后的模式，与 Car_TurnLeft90 相同。
+ * @param tolerance_deg 本次容差，单位度，含边界；0 使用全局值，有效范围为 [0, 90)。
+ * @return 无；动作与容差一起提交，下一动作自动恢复默认判据。
+ */
+void Car_TurnLeft90WithTolerance(CarMode next_mode, float tolerance_deg);
+
+/**
  * @brief 提交相对动作起点右转 90°的请求，同时选择转后模式。
  * @param next_mode MODE_TRACK：转后循迹；MODE_IMU：保持转弯目标直行。
  * @return 无。

@@ -35,8 +35,9 @@ void line_following_init(line_following_t *controller)
     PID_set_deriv_filter(&controller->pid, 0.7f);          /* 微分低通, 抗噪 */
 
     /* 单位: PWM 量纲 0-1000(无编码器, 直接驱动占空比) */
-    controller->base_speed = 500;
+    controller->base_speed = LINE_DEFAULT_BASE_PWM;
     controller->max_speed  = 1000;
+    controller->lost_slowdown_enabled = true; // 默认保留普通路段的丢线降速
 
     for (uint8_t i = 0; i < GRAYSCALE_SENSOR_CHANNELS; i++) {
         controller->sensor_weights[i] = k_default_weights[i];
@@ -99,8 +100,8 @@ void follow_line(line_following_t* controller, uint16_t* sensor_values,
     left  = Com_Limit(left,  -maxv, maxv);
     right = Com_Limit(right, -maxv, maxv);
 
-    /* 丢线时整体降速, 防冲出 */
-    if (controller->line_lost) {
+    /* 普通路段无线时降速；ID 10、11 关闭此项，仍由 calculate_error 沿用上次偏差纠偏。 */
+    if (controller->line_lost && controller->lost_slowdown_enabled) {
         left  *= LINE_LOST_SCALE;
         right *= LINE_LOST_SCALE;
     }

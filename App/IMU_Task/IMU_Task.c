@@ -26,6 +26,8 @@ static pid_type_def s_fwd_pid;
 
 /* 当前目标 yaw(度), 由 IMUTask_SetTarget 设定 */
 static float s_target_yaw = 0.0f;
+/* 仅当前动作的容差覆盖值；0 使用原全局容差，每次设置新目标时清除。 */
+static float s_turn_tolerance = 0.0f;
 
 /* 电机 PWM 量程(浮点, 与 Com_Limit 的 float 输入类型一致) */
 #define MOTOR_MAX_SPEED   1000.0f
@@ -83,6 +85,7 @@ void IMUTask_Init(void)
     PID_set_deriv_filter(&s_fwd_pid, 0.7f);
 
     s_target_yaw = 0.0f;
+    s_turn_tolerance = 0.0f;
 }
 
 /**
@@ -95,6 +98,7 @@ void IMUTask_Init(void)
 void IMUTask_SetTarget(float target)
 {
     s_target_yaw = target;
+    s_turn_tolerance = 0.0f;
     PID_clear(&s_turn_pid);
     PID_clear(&s_fwd_pid);
 }
@@ -108,6 +112,30 @@ void IMUTask_SetTarget(float target)
 float IMUTask_GetError(void)
 {
     return imu_angle_error(s_target_yaw, g_euler.yaw);
+}
+
+/**
+ * @brief 设置本次转弯的局部到位容差，不修改全局容差或 PID 参数。
+ * @param tolerance_deg 0 沿用原全局判据；正值表示本次允许的最大角差（含边界）。
+ * @return 无；参数由运动状态机接受请求时校验。
+ */
+void IMUTask_SetTurnTolerance(float tolerance_deg)
+{
+    s_turn_tolerance = tolerance_deg;
+}
+
+/**
+ * @brief 统一转弯控制与状态机的到位判据，避免确认期间电机仍继续转动。
+ * @param 无。
+ * @return 非零表示当前角差已进入本次容差；连续帧确认仍由状态机执行。
+ * @note 默认保留原严格小于全局容差的行为；局部覆盖按不大于指定容差判断。
+ */
+uint8_t IMUTask_InTurnTolerance(void)
+{
+    float error = fabsf(IMUTask_GetError());
+    if (s_turn_tolerance > 0.0f)
+        return (uint8_t)(error <= s_turn_tolerance);
+    return (uint8_t)(error < IMU_TURN_DONE_TOLERANCE);
 }
 
 /**
@@ -131,7 +159,7 @@ void IMUTask_TurnTick(void)
     /* 例如还差 6.8°时，原比例项只有约 54 PWM，积分上限也只有 50 PWM。
      * 此时继续等待不一定能克服静摩擦；仅补足小输出，不改变原 PID 增益与最大限幅。
      * 进入容差后先停转，避免最低 PWM 在完成确认期间继续把车身推过目标。 */
-    if (fabsf(error) < IMU_TURN_DONE_TOLERANCE) {
+    if (IMUTask_InTurnTolerance()) {
         out = 0.0f;
     }else if(fabsf(out) < TURN_MIN_OUT) { //如果输出小于最低PWM，则补足最低PWM
         if (error > 0.0f) 
