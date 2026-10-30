@@ -113,11 +113,11 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 16u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
-    {   /* 17 慢速循迹找左侧路口：前移 400 ms、左转目标 90°、容差 45°，转完接第二段超声波。 */
+    {   /* 17 左侧路口左转：前移 400 ms、左转目标 90°、容差 45°，转完接第二段超声波。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 17u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
-    {   /* 18 第二段超声波通行结束后，循迹找左路口并闭环左转 90°。 */
+    {   /* 18 第二段超声波通行结束后，慢速循迹找左路口并闭环左转 90°。 */
         .action = ROUTE_ACTION_LEFT_TRACK, .project_id = 18u, .trigger_junction = JUNCTION_LEFT,
         .timeout_ms = 15000u
     },
@@ -438,7 +438,7 @@ static void enter_state(RouteState state)
 
 /**
  * @brief 切换当前路段的循迹速度及丢线降速许可，不重置 PID 或修改 IMU 动作参数。
- * @param slow_track 非零表示第 10、11、15、16、17、19、20 项的慢速循迹；零表示恢复普通循迹配置。
+ * @param slow_track 非零表示第 10、11、15、16、18、19、20 项的慢速循迹；零表示恢复普通循迹配置。
  * @return 无。
  * @note 第 10 项恢复循迹及第 11 项转后持续循迹均保留本配置，中止、结束或重新初始化时恢复默认。
  */
@@ -459,8 +459,8 @@ static void begin_step(void)
     const RouteStep *step = &g_route_plan[g_route.step_index];
     set_track_parameters((uint8_t)(g_route.step_index == 9u || g_route.step_index == 10u ||
                                    g_route.step_index == 14u || g_route.step_index == 15u ||
-                                   g_route.step_index == 16u || g_route.step_index == 18u ||
-                                   g_route.step_index == 19u)); /* 第 15、16、17、19、20 项复用第 10 项的 PWM250 循迹配置。 */
+                                   g_route.step_index == 17u || g_route.step_index == 18u ||
+                                   g_route.step_index == 19u)); /* 第 15、16、18、19、20 项复用第 10 项的 PWM250 循迹配置。 */
     g_route.project_id = step->project_id;
     reset_junction();
     enter_state(ROUTE_FOLLOW);

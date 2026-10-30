@@ -52,10 +52,10 @@ typedef struct {
     CarMode after_turn_mode;        /* 开始转弯时指定的后续模式 */
     float target_yaw;               /* 相对动作起点的目标角度，单位：度 */
 
-    uint32_t state_frames;          /* 当前动作已执行帧数，每帧 10 ms */
+    uint32_t state_frames;          /* 当前动作经过帧数，包含采样失败暂停帧，每帧 10 ms */
     uint32_t turn_count;            /* 已完成转弯总数，上层比较前后值获取完成事件 */
     uint32_t command_id;            /* 已接受指令序号，用于调试动作切换 */
-    uint8_t imu_valid;              /* 1：本帧角度有效；0：循迹、停车或读取失败 */
+    uint8_t imu_valid;              /* 本帧成功采样且 yaw 有限时为 1；接循迹切换帧可撤销 */
     uint16_t base_pwm;              /* 当前 IMU 前进或倒退的基础 PWM 幅度，与动作一起接受，不代表实测车速 */
     uint32_t align_count;           /* 已完成对齐总数，Route 比较前后值获取对齐完成事件，仿 turn_count */
 } ModeFSM_t;

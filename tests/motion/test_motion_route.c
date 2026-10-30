@@ -3170,8 +3170,8 @@ static void check_steps13_to20(void)
               left ? ROUTE_ACTION_LEFT_TRACK : ROUTE_ACTION_RIGHT_TRACK));
         CHECK(g_route_plan[index].trigger_junction == (junction_pattern == 0xFFu ? JUNCTION_CROSS :
               junction_pattern == 0xF0u ? JUNCTION_RIGHT : JUNCTION_LEFT));
-        CHECK(g_line_controller.base_speed == ((index == 14u || index == 15u || index == 16u || index == 18u || index == 19u) ? 250 : LINE_DEFAULT_BASE_PWM));
-        CHECK(g_line_controller.lost_slowdown_enabled == !(index == 14u || index == 15u || index == 16u || index == 18u || index == 19u));
+        CHECK(g_line_controller.base_speed == ((index == 14u || index == 15u || index == 17u || index == 18u || index == 19u) ? 250 : LINE_DEFAULT_BASE_PWM));
+        CHECK(g_line_controller.lost_slowdown_enabled == !(index == 14u || index == 15u || index == 17u || index == 18u || index == 19u));
         set_sensors(0x18u);
         ticks(2u);
         set_sensors(junction_pattern == 0x0Fu ? 0xF0u : 0x0Fu); /* 错误方向的路口不能触发本项。 */
@@ -3607,28 +3607,46 @@ static void test_step12_left_turn(void)
  */
 static void test_imu_retry_policy(void)
 {
-    unsigned mode, before;
+    unsigned mode, before, pid_before;
+    const float invalid_yaws[] = {NAN, INFINITY, -INFINITY};
     uint32_t frames;
-    for (mode = 0u; mode < 5u; ++mode) {
+    for (mode = 0u; mode < 6u; ++mode) {
         begin_case("transient IMU failure pauses each motion mode", 0u);
         if (mode == 1u) Car_ImuForward(500u);
         if (mode == 2u) Car_OpenLoopWithPWM(450u, 310u);
         if (mode == 3u) Car_Reverse(400u);
-        if (mode == 4u) Car_TurnLeft90(MODE_TRACK);
+        if (mode == 4u) {
+            g_route.ideal_yaw = 90.0f;
+            Car_TurnLeft90(MODE_TRACK);
+        }
+        if (mode == 5u) {
+            g_route.ideal_yaw = 30.0f;
+            Car_AlignTo();
+        }
         tick();
         frames = g_mode_fsm.state_frames;
         before = s_attitude_ticks;
+        pid_before = s_pid_calls;
         s_sample_ok = 0u;
         tick();
         check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
         CHECK(g_imu_ready && !g_mode_fsm.imu_valid);
         CHECK(s_attitude_ticks == before && g_mode_fsm.state_frames == frames + 1u);
+        CHECK(s_pid_calls == pid_before);
         CHECK(DebugLog_Display() == OLED_OK && !log_has("IMU_ERR"));
         s_sample_ok = 1u;
         tick();
         CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.imu_valid);
         CHECK(motorLeft.speed != 0 || motorRight.speed != 0);
         /* 成功帧清连续计数，随后两帧失败仍允许恢复。 */
+        s_sample_ok = 0u;
+        ticks(2u);
+        check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+        CHECK(g_imu_ready);
+        /* 两帧失败后成功也必须清零，不能把之后的失败累加为第三帧。 */
+        s_sample_ok = 1u;
+        tick();
+        CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.imu_valid);
         s_sample_ok = 0u;
         ticks(2u);
         check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
@@ -3646,6 +3664,7 @@ static void test_imu_retry_policy(void)
     }
 
     begin_case("failed frame breaks consecutive turn confirmation", 0u);
+    g_route.ideal_yaw = 90.0f;
     Car_TurnLeft90(MODE_TRACK);
     tick();
     s_sample_yaw = g_mode_fsm.target_yaw;
@@ -3660,6 +3679,7 @@ static void test_imu_retry_policy(void)
     CHECK(g_mode_fsm.turn_count == 1u);
 
     begin_case("failed frame cannot extend turn timeout", 0u);
+    g_route.ideal_yaw = 90.0f;
     Car_TurnLeft90(MODE_TRACK);
     ticks(499u);
     s_sample_ok = 0u;
@@ -3667,12 +3687,73 @@ static void test_imu_retry_policy(void)
     check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
     CHECK(g_mode_fsm.state_frames == 500u);
 
-    begin_case("invalid yaw faults immediately with separate log", 0u);
-    Car_ImuForward(500u);
-    s_sample_yaw = NAN;
+    begin_case("failed frame restarts alignment confirmation", 0u);
+    Car_AlignTo();
+    ticks(9u);
+    CHECK(g_mode_fsm.align_count == 0u);
+    s_sample_ok = 0u;
     tick();
-    check_stopped(CAR_FAULT, CAR_FAULT_IMU_DATA);
-    CHECK(DebugLog_Display() == OLED_OK && log_has("YAW_ERR") && !log_has("IMU_ERR"));
+    check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+    s_sample_ok = 1u;
+    ticks(9u);
+    CHECK(g_mode_fsm.align_count == 0u);
+    tick();
+    CHECK(g_mode_fsm.align_count == 1u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+
+    begin_case("failed frame restarts alignment hold", 0u);
+    Car_AlignToHold();
+    ticks(49u); /* 10 帧确认后处于 80 帧保持的中途。 */
+    CHECK(g_mode_fsm.align_count == 0u);
+    s_sample_ok = 0u;
+    tick();
+    check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+    s_sample_ok = 1u;
+    ticks(88u); /* 第 10 个有效帧同时是新的第 1 个保持帧。 */
+    CHECK(g_mode_fsm.align_count == 0u);
+    tick();
+    CHECK(g_mode_fsm.align_count == 1u);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+
+    begin_case("failed frame cannot extend alignment timeout", 0u);
+    g_route.ideal_yaw = 30.0f;
+    Car_AlignTo();
+    ticks(499u);
+    s_sample_ok = 0u;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_TURN_TIMEOUT);
+    CHECK(g_mode_fsm.state_frames == 500u);
+
+    begin_case("transient failure preserves route and its timeout", 0u);
+    Car_Stop();
+    tick();
+    CHECK(Route_Start()); /* 使用当前合法路线表，避免旧短时标定替身改变纯循迹表项。 */
+    tick();
+    CHECK(g_route.state == ROUTE_FOLLOW && g_route.enabled);
+    frames = g_route.state_frames;
+    s_sample_ok = 0u;
+    ticks(2u);
+    check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+    CHECK(g_route.enabled && g_route.state_frames == frames + 2u);
+    s_sample_ok = 1u;
+    tick();
+    CHECK(g_route.enabled && g_mode_fsm.imu_valid);
+    g_route.state_frames = (g_route_plan[g_route.step_index].timeout_ms + 9u) / 10u - 1u;
+    s_sample_ok = 0u;
+    tick();
+    check_stopped(CAR_FAULT, CAR_FAULT_ROUTE_TIMEOUT);
+
+    for (mode = 0u; mode < sizeof(invalid_yaws) / sizeof(invalid_yaws[0]); ++mode) {
+        begin_case("invalid yaw faults immediately with separate log", 0u);
+        Car_ImuForward(500u);
+        s_sample_yaw = invalid_yaws[mode];
+        before = s_attitude_ticks;
+        pid_before = s_pid_calls;
+        tick();
+        CHECK(s_attitude_ticks == before + 1u && s_pid_calls == pid_before);
+        check_stopped(CAR_FAULT, CAR_FAULT_IMU_DATA);
+        CHECK(DebugLog_Display() == OLED_OK && log_has("YAW_ERR") && !log_has("IMU_ERR"));
+    }
     puts("PASS IMU transient pause, recovery, three-frame latch, confirmation and timeout");
 }
 

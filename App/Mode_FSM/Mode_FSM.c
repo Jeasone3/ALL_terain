@@ -519,7 +519,7 @@ void ModeFSM_Tick(void)
             set_fault(CAR_FAULT_IMU);
     }
 
-    /* 限时依据已实际执行的控制帧；先结束测试，再决定是否还需读取 IMU。 */
+    /* 限时依据动作经过的 10 ms 帧数，包含暂停输出的失败帧。 */
     if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU &&
         g_mode_fsm.imu_state == IMU_FORWARD && s_forward_limit_frames != 0u &&
         g_mode_fsm.state_frames >= s_forward_limit_frames)

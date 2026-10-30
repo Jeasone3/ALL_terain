@@ -281,7 +281,7 @@ void IMUTask_ReverseTick(uint16_t base_pwm)
  * @brief 把两轮 PWM 设为零，供正常停车及故障停车统一调用。
  * @param 无。
  * @return 无。
- * @note 不改目标和 PID 历史，也不关闭传感器；恢复动作时由状态机重设目标并清历史。
+ * @note 不改目标和 PID 历史，也不关闭传感器；暂态恢复沿用当前动作，新动作才清历史。
  *       仅在当前控制入口调用，避免与另一控制器同时写电机。
  */
 void IMUTask_Stop(void)

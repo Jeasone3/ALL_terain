@@ -54,7 +54,10 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(TR_GPIO_Port, TR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, BEEP_Pin|MPU_SDA_Pin|MPU_SCL_Pin|BIN1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, BEEP_Pin|BIN1_Pin, GPIO_PIN_RESET);
+
+  /* Release the open-drain IMU bus before enabling the output drivers. */
+  HAL_GPIO_WritePin(GPIOB, MPU_SDA_Pin|MPU_SCL_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, AIN1_Pin|AIN2_Pin, GPIO_PIN_RESET);

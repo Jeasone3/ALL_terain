@@ -8,7 +8,7 @@
 Gyro_Accel_Struct g_imu_data = {0};
 //通信状态
 /**
- * @brief IMU 通信状态 0 不能通讯，1=正常
+ * @brief 设备初始化标志；1 允许尝试通信，不代表本帧采样成功。
  * 
  */
 uint8_t g_imu_ready = 0; 
@@ -138,7 +138,7 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     uint16_t still = 0;                                     //静止计数
     uint32_t t0 = HAL_GetTick();                            //计时
 
-    if (!g_imu_ready) return 0;                             //初始化失败 or 通信失败
+    if (!g_imu_ready) return 0;                             //设备尚未初始化
 
     /* 1) 静止判据：连续 100 帧前后帧加速度差均小于阈值 */
     if (!MPU6050_Read_Regs(MPU_ACCEL_XOUTH_REG, frame, MPU6050_FRAME_LENGTH)) return 0;

@@ -122,6 +122,7 @@ static void check_read_retry(void)
         CHECK(Int_MPU6050_Tick() == 1u);
         CHECK(s_ack_count == phase + 3u && s_stops == 2u);
         CHECK(s_starts == (phase == 3u ? 4u : 3u));
+        CHECK(s_read_index == 14u);
         CHECK(g_imu_ready == 1u);
     }
     s_fail_ack = 0u;
@@ -131,7 +132,11 @@ static void check_read_retry(void)
     CHECK(Int_MPU6050_Tick() == 0u);
     CHECK(s_ack_count == 2u && s_starts == 2u && s_stops == 2u);
     CHECK(g_imu_ready == 1u);
+    CHECK(g_imu_data.accel.accel_x == saved.accel.accel_x);
+    CHECK(g_imu_data.accel.accel_y == saved.accel.accel_y);
     CHECK(g_imu_data.accel.accel_z == saved.accel.accel_z);
+    CHECK(g_imu_data.gyro.gyro_x == saved.gyro.gyro_x);
+    CHECK(g_imu_data.gyro.gyro_y == saved.gyro.gyro_y);
     CHECK(g_imu_data.gyro.gyro_z == saved.gyro.gyro_z);
     s_ack = ACK;
     CHECK(Int_MPU6050_Tick() == 1u);

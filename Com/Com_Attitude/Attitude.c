@@ -154,7 +154,7 @@ static void mahony_update(float gx, float gy, float gz,
  * @param 无。
  * @return 无。
  * @note 在同一 10 ms 控制入口中紧跟成功的 Int_MPU6050_Tick 调用；ready=0 时不更新。
- *       循迹模式可暂停本函数；不能用旧的 ready 值代替上层对本周期采样成功的检查。
+ *       各运动模式均持续更新；不能用 ready 值代替上层对本周期采样成功的检查。
  *       传感器 Y 为前、X 为右、Z 为上；输入统一为前、左、上的右手车体系。
  */
 void Attitude_Tick(void)

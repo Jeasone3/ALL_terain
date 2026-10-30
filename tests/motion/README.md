@@ -1,5 +1,16 @@
 # 运动、分段路线和 OLED 日志验证
 
+2026-10-31 软件 IIC 容错验证：运行 `./tests/motion/run_tests.ps1 -ImuRetryOnly`。
+单帧最多完整读取两次，寻址 NACK 后 STOP 再重读 14 字节；失败不覆盖六轴数据。
+失败帧不执行姿态解算或运动 PID，所有运动模式输出零 PWM；一次成功清连续失败计数，
+连续三帧失败锁存 IMU_ERR，重新初始化不会自动恢复运动。NaN、正负无穷 yaw 立即锁存 YAW_ERR。
+专项覆盖两帧失败后恢复、转弯/对齐/保持重新确认，以及失败帧期间动作和路线超时继续生效。
+PB3/PB4 上电初始电平已在 GPIO 源码和 CubeMX 配置中同步设为高，释放开漏总线。
+本次专项测试通过；Keil ARMCC 5.06 update 7 生成 HEX，0 Error(s)、2 Warning(s)，
+警告为既有 Attitude.c 的 ez、ezInt 未使用，零警告检查脚本因此返回失败。
+未运行全量路线测试，未烧录或实车验证。固定 10 ms 积分不补算缺测航向，ACK 成功不保证数据正确。
+实车仍需测量控制帧最坏耗时、总线空闲电平，并验证偶发 NACK 恢复和持续断线停车。
+
 在工程根目录运行：
 
     ./tests/motion/run_tests.ps1 -RouteAfterPlatformOnly
