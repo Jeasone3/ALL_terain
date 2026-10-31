@@ -31,7 +31,7 @@ typedef enum {
     ROUTE_FINAL_FORWARD,           /* 保持左转后的目标航向，以 500 PWM 直行 3 秒 */
     ROUTE_FINISHED,                /* 完整路线执行完毕，已提交停车且关闭本轮调度 */
     ROUTE_REVERSE,                 /* 大台阶转后保持航向倒退 2 秒，再进入入口循迹 */
-    ROUTE_REVERSE_DRIVE,           /* 高台停车校准后保持 ideal_yaw 倒退 3.2 秒 */
+    ROUTE_REVERSE_DRIVE,           /* 高台保持 ideal_yaw 倒退，俯仰确认下台或最长 3.2 秒后结束 */
     ROUTE_FINAL_RIGHT_TURN,        /* 倒车后停车校准、右转 90°，完成接 S1 直行 */
     ROUTE_S1_IMU,                  /* 高台右转后保持航向直行，再接普通路线表找十字 */
     ROUTE_SONAR_FOLLOW,            /* 第 12 项后循迹并测距，等待距离小于 40 cm */
@@ -84,7 +84,7 @@ typedef struct {
  * 例如设为 9u：从窄桥触发路口前循迹出发，完成高台及 S1 后继续执行后面的表项。
  * 设为 1u 从头运行；修改后重新编译烧录，并将车辆放在所选项目的触发路口前。 */
 #ifndef ROUTE_START_STEP
-#define ROUTE_START_STEP 1u
+#define ROUTE_START_STEP 12u
 #endif
 
 /* 调试截止表项：20 或 0 执行全部路线，第 20 项十字右转、循迹 1 秒、对齐后 IMU 直行 5 秒停车。
@@ -161,6 +161,16 @@ void Route_Enable(uint8_t enabled);
  * @note 仅由 ModeFSM_Tick 调用；普通监测可在手动模式继续，项目内部屏蔽路口。
  */
 void Route_Tick(const uint16_t *sensor_data, uint8_t external_command);
+
+/**
+ * @brief 用每帧新姿态更新高台倒车的下台检测，其他路线状态不进行检测。
+ * @param pitch 本帧解算得到的俯仰角，单位为度。
+ * @param imu_valid 本帧采样与姿态有效时为非零；无效或非有限 pitch 打断连续回稳计时。
+ * @return 无。
+ * @note 起始 pitch 与当前 pitch 分别向零截断成整数，再用整数差判断倾斜和回稳。
+ *       仅由 ModeFSM_Tick 在每帧 IMU 更新后调用一次；只记录，下一次 Route_Tick 再提交动作。
+ */
+void Route_UpdatePitch(float pitch, uint8_t imu_valid);
 
 /** @brief 前台调用；仅在超声波路线阶段触发测距并发布新结果，不输出电机 PWM。 */
 void Route_ServiceSonar(void);

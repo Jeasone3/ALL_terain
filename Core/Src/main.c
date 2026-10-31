@@ -51,9 +51,9 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
-#define IMU_STRAIGHT_TEST_PWM     400u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
-#define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
+#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：启动 IMU 直行测试，方向由 PWM 正负决定；两个开关均 0 时启动路线 */
+#define IMU_STRAIGHT_TEST_PWM     -400    /* 正数前进，负数倒车，零停车；幅度范围 1～1000，负数不要加 u 后缀 */
+#define IMU_STRAIGHT_TEST_MS      20000u  /* 仅对前进生效；接受请求后计时，到时 TEST_DONE 停车，倒车不使用此限时 */
 
 /* USER CODE END PD */
 
@@ -193,10 +193,16 @@ int main(void)
   #elif IMU_STRAIGHT_TEST_ENABLE
   if (imu_calibrated != 0u && g_imu_ready != 0u)
   {
-    /* 只提交一次：接受请求时将当前朝向归零，TIM4 每 10 ms 采样 yaw 并执行角度 PID 差速纠偏。
-     * 基础 PWM 和持续时间由上方宏配置；到时停车，IMU 读取失败也会故障停车。 */
+    /* 根据基础 PWM 的符号只提交一次动作，TIM4 持续执行 IMU 航向闭环。
+     * 前进沿用原有限时接口；倒车接口接收正值幅度，由内部取负，持续到停车请求或故障。 */
+    #if IMU_STRAIGHT_TEST_PWM > 0
     Car_ImuForwardTimed(IMU_STRAIGHT_TEST_PWM, IMU_STRAIGHT_TEST_MS);
-    DebugLog_Write(LOG_INFO, "IMU_TEST"); /* 限时从接受请求开始，与主循环刷新耗时无关。 */
+    #elif IMU_STRAIGHT_TEST_PWM < 0
+    Car_Reverse(-IMU_STRAIGHT_TEST_PWM);
+    #else
+    Car_Stop();                   /* PWM 为零时明确停车，不提交非法的零幅度运动请求。 */
+    #endif
+    DebugLog_Write(LOG_INFO, "IMU_TEST");
   }
   else
   {
@@ -230,7 +236,7 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
   /* USER CODE BEGIN WHILE */
   uint32_t last_imu_retry_ms = HAL_GetTick();
   uint32_t last_oled_retry_ms = HAL_GetTick();
-  uint32_t last_print_ms = HAL_GetTick();  /* 开启下面的串口调试块时一并启用。 */
+  uint32_t last_print_ms = HAL_GetTick();  /* 欧拉角串口输出计时，每 100 ms 打印一次。 */
   while (1)
   {
     Route_ServiceSonar(); /* 仅第 12、17 项后的超声波阶段发起测量，其余阶段直接返回。 */
@@ -264,9 +270,9 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
       if (imu_valid != 0u)
       {
         printf("Yaw:%.2f,%.2f,%.2f\r\n",
-               (double)euler_snapshot.yaw,
-               (double)euler_snapshot.pitch,
-               (double)euler_snapshot.roll);
+              euler_snapshot.yaw,
+              euler_snapshot.pitch,
+              euler_snapshot.roll);
       }
       else
       {

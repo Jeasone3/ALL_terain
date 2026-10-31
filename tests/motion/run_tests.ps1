@@ -2,6 +2,7 @@
     [string]$Gcc = 'D:/CoderSpcace/IDE/mingw64/bin/gcc.exe',
     [string]$BuildDirectory = (Join-Path $env:TEMP 'all-terrain-motion-tests'),
     [switch]$ImuRetryOnly,
+    [switch]$PlatformPitchOnly,
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
     [switch]$RouteStartOnly,
@@ -68,6 +69,19 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($PlatformPitchOnly) {
+    # 使用真实第 9 项到达高台，分别检查默认时长、可调时长和非整周期向上取整。
+    foreach ($stableMs in @(100, 200, 105)) {
+        Invoke-MotionTest -Name "test_platform_pitch_$stableMs" -Arguments ($motionSources + @(
+            '-DTEST_PLATFORM_PITCH_ONLY', '-DROUTE_START_STEP=9u',
+            "-DROUTE_REVERSE_DRIVE_STABLE_MS=$($stableMs)u", "-DTEST_PLATFORM_STABLE_MS=$($stableMs)u"))
+    }
+    # 截止在第 9 项时仍完整离台，但不能越过截止项进入第 10 项。
+    Invoke-MotionTest -Name 'test_platform_pitch_limit9' -Arguments ($motionSources + @(
+        '-DTEST_PLATFORM_PITCH_ONLY', '-DROUTE_START_STEP=9u', '-DROUTE_DEBUG_STEP_LIMIT=9u'))
+    return
+}
 
 if ($SonarDiagnosticsOnly) {
     # 单独验证测距拒绝、超时保留和 OLED 距离，不受旧路线 PWM 断言影响。

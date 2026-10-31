@@ -10,6 +10,7 @@
 #include "Track_Task.h"
 #include "Int_Beep.h"
 #include "Int_SR04.h"
+#include <math.h>
 
 #define ROUTE_CONFIRM_FRAMES 2u
 #define ROUTE_FRAME_MS       10u
@@ -17,8 +18,13 @@
 #define ROUTE_TURN_APPROACH_MS   640u /* 表内路口转弯前保持航向前移 64 帧，按车身对齐位置标定 */
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
-#define ROUTE_REVERSE_MS       2000u /* 大台阶入口：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 3200u /* 高台倒车：停车校准后保持 ideal_yaw 倒退 3.2 秒，PWM 与最后直行同 */
+#define ROUTE_REVERSE_MS       2000u /* 大台阶入口（倒车）：从左转完成的倒退首帧起计时 2 秒 */
+#define ROUTE_REVERSE_DRIVE_MS 5000u /* 高台倒车最长 3.2 秒；未由俯仰确认下台时，按原定时流程继续。 */
+#define ROUTE_REVERSE_DRIVE_TILT_DEG  15 /* 当前与起始 pitch 分别舍掉小数，整数差达到此值即记录倾斜。 */
+#define ROUTE_REVERSE_DRIVE_LEVEL_DEG  5 /* 倾斜后整数差回到正负此范围内，才累计回稳时间。 */
+#ifndef ROUTE_REVERSE_DRIVE_STABLE_MS
+#define ROUTE_REVERSE_DRIVE_STABLE_MS 900u /* 回稳持续时间，单位 ms；例如改为 200u 即连续 200 ms，按 10 ms 向上取整。 */
+#endif
 #define ROUTE_S1_IMU_MS        3000u /* 高台右转后以 PWM500 保持航向直行 3.5 秒，再切循迹找十字 */
 #define ROUTE_S1_PWM           500u  /* S1 直行基础 PWM（慢速清出高台区域） */
 
@@ -138,7 +144,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 20 慢速循迹找十字，左转后循迹 800 ms，再对齐保持、重建航向基准，以 PWM500 直行 5 秒后停车。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 600u, .entry_ms = 800u, .pass_ms = 9000u, .timeout_ms = 15000u,
+        .base_pwm = 600u, .entry_ms = 800u, .pass_ms = 9000u, .timeout_ms = 20000u,
         .final_seq = 3u
     }
 };
@@ -161,6 +167,71 @@ static uint32_t s_align_count_before;      /* 本次对齐开始前的完成总�
 static RouteState s_align_next_state;      /* 对齐完成后要进入的阶段（OBSTACLE 或 APPROACH） */
 static uint8_t s_align_cal_flag;           /* 本次对齐是否跟 Attitude_SetYawOffset 校准：cal_before/cal_after 时置 1 */
 static uint8_t s_project_beep_frames;      /* 项目提示音剩余帧数，独立于路线阶段计时 */
+static int32_t s_reverse_pitch_start;     /* 本轮第一帧有效 pitch 向零截断后的整数角度，单位为度。 */
+static uint8_t s_reverse_pitch_valid;     /* 已取得本轮起始 pitch，不能把姿态重置产生的零值直接当作采样。 */
+static uint8_t s_reverse_tilt_seen;       /* 已出现相对起点达到 15 度的正向整数差，回稳被打断时仍保留。 */
+static uint32_t s_reverse_stable_ms;      /* 倾斜后连续有效且位于回稳范围内的累计时间，单位 ms。 */
+static uint8_t s_reverse_landed;          /* 本帧采样已确认下台，下一次 Route_Tick 消费后只衔接一次。 */
+
+/**
+ * @brief 清除本轮高台倒车的起始姿态、倾斜与回稳记录。
+ * @param 无。
+ * @return 无。
+ * @note 在进入、退出、中止和初始化时调用，上一轮记录不能用于下一轮下台判断。
+ */
+static void reset_reverse_pitch(void)
+{
+    s_reverse_pitch_start = 0;
+    s_reverse_pitch_valid = 0u;
+    s_reverse_tilt_seen = 0u;
+    s_reverse_stable_ms = 0u;
+    s_reverse_landed = 0u;
+}
+
+/**
+ * @brief 用本控制帧的新姿态观察高台倒车的倾斜和回稳，不直接切换运动动作。
+ * @param pitch 本帧解算得到的俯仰角，单位为度。
+ * @param imu_valid 本帧 IMU 采样与姿态有效时为非零；失败帧不得使用保留的旧角度。
+ * @return 无。
+ * @note 每 10 ms 在 IMU 更新后调用一次；有效 pitch 向零截断一次，再做整数差比较。
+ *       例如 3.8 度取 3、-3.8 度取 -3；完成标记由下一次路线决策消费。
+ */
+void Route_UpdatePitch(float pitch, uint8_t imu_valid)
+{
+    int32_t pitch_deg; /* 本帧有效 pitch 舍掉小数后的整数角度。 */
+    int32_t delta;     /* 当前整数角度减去起始整数角度，不是先求浮点差再取整。 */
+
+    if (!s_active || !g_route.enabled || g_route.state != ROUTE_REVERSE_DRIVE ||
+        g_mode_fsm.status != CAR_RUNNING) {
+        reset_reverse_pitch();
+        return;
+    }
+    if (imu_valid == 0u || !isfinite(pitch)) {
+        s_reverse_stable_ms = 0u; /* 无效帧打断连续回稳，但不撤销已经发生过的有效倾斜。 */
+        return;
+    }
+    pitch_deg = (int32_t)pitch; /* 必须先检查有效性，避免将 NaN/Inf 转成整数。 */
+    if (s_reverse_pitch_valid == 0u) {
+        s_reverse_pitch_start = pitch_deg;
+        s_reverse_pitch_valid = 1u;
+        return;
+    }
+
+    delta = pitch_deg - s_reverse_pitch_start;
+    if (s_reverse_tilt_seen == 0u) {
+        if (delta >= ROUTE_REVERSE_DRIVE_TILT_DEG)
+            s_reverse_tilt_seen = 1u;
+        return; /* 必须先看到明显倾斜，不能把刚开始倒车时的水平姿态认作已经下台。 */
+    }
+    if (delta < -ROUTE_REVERSE_DRIVE_LEVEL_DEG || delta > ROUTE_REVERSE_DRIVE_LEVEL_DEG) {
+        s_reverse_stable_ms = 0u;
+        return;
+    }
+
+    s_reverse_stable_ms += ROUTE_FRAME_MS;
+    if (s_reverse_stable_ms >= ROUTE_REVERSE_DRIVE_STABLE_MS)
+        s_reverse_landed = 1u;
+}
 
 /**
  * @brief 每个控制帧维护路口、超声波开环短鸣和高台倒车持续鸣叫，到时或取消时关闭蜂鸣器。
@@ -374,7 +445,7 @@ static uint32_t turn_approach_ms(uint16_t step_index)
     //方形转向前移
     if (step_index == 16u) 
         return 400u;
-    return step_index == 11u ? 380u : ROUTE_TURN_APPROACH_MS;
+    return step_index == 11u ? 0u : ROUTE_TURN_APPROACH_MS;
 }
 
 /**
@@ -444,6 +515,8 @@ static float route_action_yaw_delta(RouteAction action)
 
 static void enter_state(RouteState state)
 {
+    if (g_route.state == ROUTE_REVERSE_DRIVE || state == ROUTE_REVERSE_DRIVE)
+        reset_reverse_pitch();
     g_route.state = state;
     g_route.state_frames = 0u;
     s_narrow_frames = 0u;
@@ -540,6 +613,7 @@ void Route_Init(void)
 {
     Route_t initial = {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f};
     update_route_beep(1u); /* 重新初始化前，关闭上一轮尚未结束的短鸣或倒车提示音。 */
+    reset_reverse_pitch();
     g_route = initial;
     s_sonar_pending = s_sonar_valid = 0u;
     s_sonar_diagnostics.trigger_count = 0u;
@@ -644,6 +718,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
            g_mode_fsm.align_count != s_align_count_before))) {
         s_active = g_route.enabled = 0u;
         g_route.state = ROUTE_ABORTED;
+        reset_reverse_pitch();
         set_track_parameters(0u);
         return;
     }
@@ -785,7 +860,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 /* 平台停车校准后倒车：重建 yaw 基准到 ideal_yaw，倒车起步 error=0 真正直着倒。 */
                 Attitude_SetYawOffset(g_route.ideal_yaw);
                 enter_state(ROUTE_REVERSE_DRIVE);
-                Car_Reverse(500u);
+                Car_Reverse(400u);
                 Int_Beep_On(); /* 与倒车请求同帧开启，整个高台倒车阶段持续鸣叫。 */
                 DebugLog_Write(LOG_INFO, "PLATFORM_REV");
             }
@@ -834,7 +909,8 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             g_route.ideal_yaw += route_action_yaw_delta(step->action);
             if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK) {
                 if (g_route.step_index == 11u || g_route.step_index == 16u)
-                    Car_TurnLeft90WithTolerance(MODE_TRACK, 45.0f); /* 仅第 12、17 项使用 45°到位容差 */
+                    //11 ， 16转向容差
+                    Car_TurnLeft90WithTolerance(MODE_TRACK, 60.0f); /* 仅第 12、17 项使用 45°到位容差 */
                 else
                     Car_TurnLeft90(MODE_TRACK);
             } else
@@ -982,9 +1058,11 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
 
-    case ROUTE_REVERSE_DRIVE: //高台倒车：保持 ideal_yaw 倒退 3.2 秒，再停车对齐校准
-        if (elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
-            Int_Beep_Off(); /* 倒车计时结束即关闭，后续停车校准和右转期间不再鸣叫。 */
+    case ROUTE_REVERSE_DRIVE: //高台倒车：俯仰确认下台或最长 3.2 秒后，停车对齐校准
+        if (s_reverse_landed || elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
+            /* 同时满足时优先报告俯仰确认；进入 ALIGN 会清记录，因此先保存结束原因日志。 */
+            DebugLog_Write(LOG_INFO, s_reverse_landed ? "REV_PITCH" : "REV_TIMER");
+            Int_Beep_Off(); /* 两种结束原因共用原衔接，停车校准和右转期间不再鸣叫。 */
             s_align_count_before = g_mode_fsm.align_count;
             s_align_next_state = ROUTE_FINAL_RIGHT_TURN;
             enter_state(ROUTE_ALIGN);

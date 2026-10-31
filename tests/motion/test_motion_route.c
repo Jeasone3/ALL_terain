@@ -71,6 +71,7 @@ void Int_SR04_GetResult(SR04_Result *result)
 }
 static uint16_t s_sensor_input[GRAYSCALE_SENSOR_CHANNELS];
 static float s_sample_yaw;
+static float s_sample_pitch;           /* 本帧俯仰反馈，用于验证高台下台判据与失败帧不能复用旧值。 */
 static uint8_t s_sample_ok;
 static uint32_t s_irq_mask;
 static unsigned s_frame;
@@ -257,6 +258,7 @@ void Attitude_Tick(void)
     s_attitude_frame = s_frame;
     s_attitude_order = ++s_order;
     g_euler.yaw = s_sample_yaw;
+    g_euler.pitch = s_sample_pitch;
 }
 
 /**
@@ -368,6 +370,7 @@ static void begin_case(const char *name, uint8_t automatic_route)
     memset(&g_euler, 0, sizeof(g_euler));
     s_sample_yaw = 0.0f;
     s_sample_ok = g_imu_ready = 1u;
+    s_sample_pitch = 0.0f;
     s_irq_mask = s_frame = 0u;
     s_sensor_reads = s_imu_reads = s_attitude_ticks = s_resets = 0u;
     s_pid_calls = s_track_pid_calls = s_left_writes = s_right_writes = 0u;
@@ -2908,7 +2911,7 @@ static void test_post_platform_track_turn(void)
     unsigned index, scenario;
     for (index = 9u; index <= 10u; ++index) {
         unsigned scenarios = index == 9u ? 3u : 1u;
-        if (index < ROUTE_START_STEP - 1u || index >= TEST_ACTIVE_STEP_COUNT) continue;
+        if (index + 1u < ROUTE_START_STEP || index >= TEST_ACTIVE_STEP_COUNT) continue;
         for (scenario = 0u; scenario < scenarios; ++scenario) {
             unsigned i, frame, beep, resets, stopped_index;
             uint32_t command, turns, aligns;
@@ -3057,7 +3060,7 @@ static void test_post_platform_interrupts(void)
     };
     unsigned i, action;
     for (i = 0u; i < sizeof(stages) / sizeof(stages[0]); ++i) {
-        if (stages[i].index < ROUTE_START_STEP - 1u || stages[i].index >= TEST_ACTIVE_STEP_COUNT ||
+        if (stages[i].index + 1u < ROUTE_START_STEP || stages[i].index >= TEST_ACTIVE_STEP_COUNT ||
             (stages[i].index + 1u == TEST_ACTIVE_STEP_COUNT && stages[i].state == ROUTE_RECOVER)) continue;
         for (action = 0u; action < 5u; ++action) {
             uint32_t command;
@@ -3104,7 +3107,7 @@ static void test_step10_11_track_parameters(void)
 {
     unsigned index, phase;
     for (index = 8u; index <= 10u; ++index) {
-        if (index < ROUTE_START_STEP - 1u || index >= TEST_ACTIVE_STEP_COUNT) continue;
+        if (index + 1u < ROUTE_START_STEP || index >= TEST_ACTIVE_STEP_COUNT) continue;
         for (phase = 0u; phase < (index >= 9u ? 2u : 1u); ++phase) {
             unsigned budget = 2000u;
             int base = index >= 9u ? 250 : LINE_DEFAULT_BASE_PWM;
@@ -3767,9 +3770,338 @@ static void test_imu_retry_policy(void)
     puts("PASS IMU transient pause, recovery, three-frame latch, confirmation and timeout");
 }
 
+#ifdef TEST_PLATFORM_PITCH_ONLY
+#ifndef TEST_PLATFORM_STABLE_MS
+#define TEST_PLATFORM_STABLE_MS 100u
+#endif
+
+/**
+ * @brief 提供一帧新的俯仰反馈，并让模拟航向跟随当前真实控制目标。
+ * @param pitch 本帧俯仰角，单位为度；允许 NaN/Inf 用于检查无效输入。
+ * @return 无。
+ */
+static void platform_pitch_sample(float pitch)
+{
+    s_sample_pitch = pitch;
+    s_sample_yaw = g_mode_fsm.target_yaw;
+    tick();
+}
+
+/**
+ * @brief 从已启动的第 9 项沿真实生产路线运行到高台倒车，不直接篡改路线状态。
+ * @param pitch 倒车进入帧发布的俯仰角，用于检查姿态重置后的基准采样。
+ * @return 无；故障、阶段不可达或 PWM 被意外改变时立即失败。
+ */
+static void platform_pitch_reach_reverse(float pitch)
+{
+    unsigned budget = 3000u;
+    while (g_route.state != ROUTE_REVERSE_DRIVE && budget != 0u) {
+        --budget;
+        set_sensors(g_route.state == ROUTE_FOLLOW ? 0xFFu : 0x18u);
+        platform_pitch_sample(pitch);
+        CHECK(g_mode_fsm.status != CAR_FAULT);
+    }
+    CHECK(budget != 0u && g_route.step_index == 8u);
+    CHECK(g_mode_fsm.imu_state == IMU_REVERSE && g_mode_fsm.base_pwm == 400u);
+    CHECK(g_route.state_frames == 0u && s_beep_on);
+}
+
+/**
+ * @brief 初始化并从第 9 项开始一轮高台检测场景，保留全部生产路线时间与 PWM。
+ * @param name 场景名称，供断言定位。
+ * @param pitch 起始采样俯仰角；非零值用于验证相对变化而非绝对角度。
+ * @return 无。
+ */
+static void platform_pitch_start(const char *name, float pitch)
+{
+    begin_case(name, 0u);
+    Car_Stop();
+    tick();
+    CHECK(Route_Start());
+    platform_pitch_reach_reverse(pitch);
+}
+
+/**
+ * @brief 验证整数差达到 15 度触发、正负 5 度边界、配置时长与后续完整衔接。
+ * @param 无。
+ * @return 无；计数边界必须由实际 Route/FSM 行为证明，不能只检查内部完成标记。
+ */
+static void test_platform_pitch_detection(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    const float start_pitch = 7.5f;
+    unsigned i, budget, s1_frame;
+    uint32_t command, turns;
+
+    platform_pitch_start("platform relative pitch thresholds and configurable stable duration", start_pitch);
+    command = g_mode_fsm.command_id;
+    platform_pitch_sample(21.9f); /* 起点 7.5 取 7，当前 21.9 取 21，整数差 14 不能触发。 */
+    platform_pitch_sample(start_pitch);
+    ticks(stable_frames + 1u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE && g_mode_fsm.command_id == command);
+    platform_pitch_sample(start_pitch - 20.0f); /* 仅正向抬头触发，负向大幅变化不触发。 */
+    platform_pitch_sample(start_pitch);
+    ticks(stable_frames + 1u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE);
+
+    platform_pitch_sample(22.0f); /* 整数差恰好 15，即使浮点差只有 14.5 也应触发。 */
+    for (i = 0u; i < stable_frames; ++i) {
+        platform_pitch_sample(start_pitch + (i % 2u == 0u ? 5.0f : -5.0f));
+        CHECK(g_route.state == ROUTE_REVERSE_DRIVE && g_mode_fsm.command_id == command);
+        CHECK(s_beep_on);
+    }
+    platform_pitch_sample(start_pitch); /* 完成标记只在下一次路线决策消费。 */
+    CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.imu_state == IMU_ALIGN);
+    CHECK(g_mode_fsm.command_id == command + 1u && !s_beep_on);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH") && !log_has("REV_TIMER"));
+    ticks(8u);
+    CHECK(g_mode_fsm.command_id == command + 1u); /* 不能连续提交停车对齐。 */
+
+    turns = g_mode_fsm.turn_count;
+    budget = 500u;
+    while (g_route.state != ROUTE_S1_IMU && budget != 0u) {
+        --budget;
+        platform_pitch_sample(start_pitch);
+        CHECK(g_mode_fsm.status != CAR_FAULT && !s_beep_on);
+    }
+    CHECK(budget != 0u && g_mode_fsm.turn_count == turns + 1u);
+    CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.base_pwm == 500u);
+    s1_frame = s_frame;
+    budget = 400u;
+    while (g_route.state == ROUTE_S1_IMU && budget != 0u) {
+        --budget;
+        platform_pitch_sample(start_pitch);
+    }
+    CHECK(budget != 0u && s_frame - s1_frame == 300u);
+    CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT == 9u ? ROUTE_CRUISE : ROUTE_FOLLOW));
+    CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT == 9u ? 8u : 9u));
+    puts("PASS platform pitch thresholds, configured stable frames and original right-turn/S1 handoff");
+}
+
+/**
+ * @brief 验证越界、读失败及非有限俯仰角都会打断连续回稳，但保留已发生的倾斜。
+ * @param 无。
+ * @return 无；无效采样期间保留的旧角度不能推进回稳计时。
+ */
+static void test_platform_pitch_interrupted_stability(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    const float interruptions[] = {6.0f, -6.0f, NAN, INFINITY, -INFINITY, 0.0f};
+    unsigned kind, i;
+    for (kind = 0u; kind < sizeof(interruptions) / sizeof(interruptions[0]); ++kind) {
+        platform_pitch_start("platform stability restarts after out-of-range or invalid sample", 0.0f);
+        platform_pitch_sample(16.0f);
+        platform_pitch_sample(0.0f);
+        ticks(stable_frames - 2u);
+        s_sample_ok = (uint8_t)(kind != 5u);
+        platform_pitch_sample(interruptions[kind]);
+        if (kind == 5u) {
+            check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+            CHECK(!g_mode_fsm.imu_valid && CLOSE(g_euler.pitch, 0.0f));
+        }
+        s_sample_ok = 1u;
+        for (i = 0u; i < stable_frames; ++i) {
+            platform_pitch_sample(0.0f);
+            CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
+        }
+        platform_pitch_sample(0.0f);
+        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+        CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH"));
+    }
+
+    platform_pitch_start("platform baseline waits for the first finite sample after reset", NAN);
+    platform_pitch_sample(7.5f);
+    platform_pitch_sample(21.9f);
+    platform_pitch_sample(7.5f);
+    ticks(stable_frames + 1u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE);
+    platform_pitch_sample(23.5f);
+    platform_pitch_sample(7.5f);
+    ticks(stable_frames);
+    CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+    puts("PASS platform invalid baseline, out-of-range reset, NaN/Inf and stale-pitch rejection");
+}
+
+/**
+ * @brief 验证正负小数均向零截断，并且起始值和当前值分别取整后再相减。
+ * @param 无。
+ * @return 无；覆盖先求浮点差再取整、负数向下取整等错误实现。
+ */
+static void test_platform_pitch_integer_truncation(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    const float starts[] = {7.9f, -7.9f, -0.9f};
+    const float below_threshold[] = {21.9f, 7.9f, 14.9f}; /* 分别取整后的差均为 14。 */
+    const float at_threshold[] = {22.1f, 8.1f, 15.1f};   /* 分别取整后的差均为 15。 */
+    const float upper_level[] = {12.9f, -2.9f, 5.9f};   /* 分别取整后的差均为 +5。 */
+    const float lower_level[] = {2.1f, -12.9f, -5.9f};  /* 分别取整后的差均为 -5。 */
+    unsigned kind, i;
+
+    for (kind = 0u; kind < sizeof(starts) / sizeof(starts[0]); ++kind) {
+        platform_pitch_start("platform signed fractions truncate independently toward zero", starts[kind]);
+        platform_pitch_sample(below_threshold[kind]);
+        platform_pitch_sample(starts[kind]);
+        ticks(stable_frames + 1u);
+        CHECK(g_route.state == ROUTE_REVERSE_DRIVE);
+
+        platform_pitch_sample(at_threshold[kind]);
+        for (i = 0u; i < stable_frames; ++i) {
+            platform_pitch_sample(i % 2u == 0u ? upper_level[kind] : lower_level[kind]);
+            CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
+        }
+        platform_pitch_sample(starts[kind]);
+        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+        CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH"));
+    }
+    puts("PASS independent integer conversion, signed fractional baselines and inclusive 15/5-degree limits");
+}
+
+/**
+ * @brief 验证未倾斜、未回稳和无有效基准时仍按 3.2 秒兜底，同帧完成时优先记录俯仰。
+ * @param 无。
+ * @return 无。
+ */
+static void test_platform_pitch_timeout(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    unsigned kind;
+    uint32_t command;
+    for (kind = 0u; kind < 3u; ++kind) {
+        float pitch = kind == 0u ? 0.0f : kind == 1u ? 16.0f : NAN;
+        platform_pitch_start("platform timer fallback without completed pitch detection", kind == 2u ? NAN : 0.0f);
+        command = g_mode_fsm.command_id;
+        while (g_route.state_frames < 319u) {
+            platform_pitch_sample(pitch);
+            CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
+        }
+        platform_pitch_sample(pitch);
+        CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.command_id == command + 1u && !s_beep_on);
+        CHECK(DebugLog_Display() == OLED_OK && log_has("REV_TIMER") && !log_has("REV_PITCH"));
+        ticks(8u);
+        CHECK(g_mode_fsm.command_id == command + 1u);
+    }
+
+    platform_pitch_start("platform pitch completion wins over timer on the same decision frame", 0.0f);
+    platform_pitch_sample(16.0f);
+    while (g_route.state_frames < 319u - stable_frames)
+        platform_pitch_sample(16.0f);
+    platform_pitch_sample(0.0f);
+    ticks(stable_frames - 1u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE && g_route.state_frames == 319u);
+    platform_pitch_sample(0.0f);
+    CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+    CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH") && !log_has("REV_TIMER"));
+    puts("PASS platform exact 320-frame fallback, single handoff and pitch-first completion reason");
+}
+
+/**
+ * @brief 验证独立运动及高台前的姿态波动不触发下台，也不能带入高台状态。
+ * @param 无。
+ * @return 无。
+ */
+static void test_platform_pitch_state_isolation(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    unsigned kind;
+    uint32_t command;
+    for (kind = 0u; kind < 2u; ++kind) {
+        begin_case("standalone IMU forward/reverse ignores platform pitch detection", 0u);
+        if (kind == 0u) Car_Reverse(400u); else Car_ImuForward(400u);
+        platform_pitch_sample(0.0f);
+        command = g_mode_fsm.command_id;
+        platform_pitch_sample(16.0f);
+        platform_pitch_sample(0.0f);
+        ticks(stable_frames + 2u);
+        CHECK(g_mode_fsm.command_id == command && g_mode_fsm.status == CAR_RUNNING);
+        CHECK(g_mode_fsm.imu_state == (kind == 0u ? IMU_REVERSE : IMU_FORWARD));
+        CHECK(!g_route.enabled && !s_beep_on);
+    }
+
+    begin_case("pre-platform tilt cannot arm the later reverse state", 0u);
+    Car_Stop();
+    tick();
+    CHECK(Route_Start());
+    set_sensors(0x18u);
+    platform_pitch_sample(0.0f);
+    platform_pitch_sample(16.0f);
+    platform_pitch_sample(0.0f);
+    ticks(stable_frames + 1u);
+    CHECK(g_route.state == ROUTE_FOLLOW);
+    platform_pitch_reach_reverse(0.0f);
+    ticks(stable_frames + 2u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
+    puts("PASS platform-only pitch observation and no pre-entry detection carryover");
+}
+
+/**
+ * @brief 验证停车、接管、禁用、姿态故障、通信故障与初始化清理检测记录。
+ * @param 无。
+ * @return 无；前三种接管及初始化在已有完成标记时发生，必须优先于路线衔接。
+ */
+static void test_platform_pitch_cancel_and_restart(void)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    unsigned action;
+    for (action = 0u; action < 6u; ++action) {
+        platform_pitch_start("platform cancellation discards completed and partial detection", 0.0f);
+        platform_pitch_sample(16.0f);
+        platform_pitch_sample(0.0f);
+        ticks(stable_frames - 2u);
+        if (action != 3u && action != 4u)
+            platform_pitch_sample(0.0f); /* 标记已完成，但路线尚未消费。 */
+        CHECK(g_route.state == ROUTE_REVERSE_DRIVE);
+        switch (action) {
+        case 0u: Car_Stop(); tick(); break;
+        case 1u: Car_Track(); tick(); break;
+        case 2u: Route_Enable(0u); tick(); break;
+        case 3u:
+            s_sample_yaw = NAN;
+            tick();
+            check_stopped(CAR_FAULT, CAR_FAULT_IMU_DATA);
+            s_sample_yaw = g_mode_fsm.target_yaw;
+            tick();
+            break;
+        case 4u:
+            s_sample_ok = 0u;
+            ticks(3u);
+            check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+            tick();
+            break;
+        default: Route_Init(); tick(); break;
+        }
+        CHECK(g_route.state == (action == 5u ? ROUTE_FOLLOW : ROUTE_ABORTED));
+        CHECK(!g_route.enabled && !s_beep_on);
+
+        g_imu_ready = s_sample_ok = 1u; /* 模拟前台已恢复 IMU；路线仍须显式重新启动。 */
+        s_sample_yaw = 0.0f;
+        Car_Stop();
+        tick();
+        CHECK(Route_Start());
+        platform_pitch_reach_reverse(7.5f);
+        ticks(stable_frames + 2u);
+        CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
+        platform_pitch_sample(23.5f);
+        platform_pitch_sample(7.5f);
+        ticks(stable_frames);
+        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+    }
+    puts("PASS platform stop/takeover/disable/fault/init cleanup and explicit restart");
+}
+#endif
+
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_PLATFORM_PITCH_ONLY
+    test_platform_pitch_detection();
+    test_platform_pitch_integer_truncation();
+    test_platform_pitch_interrupted_stability();
+    test_platform_pitch_timeout();
+    test_platform_pitch_state_isolation();
+    test_platform_pitch_cancel_and_restart();
+    puts("All platform pitch detection scenarios passed.");
+    return EXIT_SUCCESS;
+#endif
 #ifdef TEST_SONAR_DIAGNOSTICS_ONLY
     {
         RouteSonarDiagnostics diagnostics;

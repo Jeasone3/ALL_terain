@@ -460,7 +460,7 @@ void ModeFSM_Init(void)
  * @return 无。
  * @note 外部请求优先于 Route；灰度在 IMU 模式中仅用于条件观察，不能调用循迹 PID。
  *       每帧先撤销角度有效标记，只有本帧成功采样并解算有限 yaw 后才能恢复。
- *       顺序：采样灰度 → 接受外部请求 → Route 决策 → 接受本帧请求 → IMU 更新 → 控制输出。
+ *       顺序：采样灰度 → 接受外部请求 → Route 决策 → 接受本帧请求 → IMU 更新及俯仰观察 → 控制输出。
  */
 void ModeFSM_Tick(void)
 {
@@ -519,6 +519,10 @@ void ModeFSM_Tick(void)
         if (g_mode_fsm.status == CAR_RUNNING && g_imu_ready == 0u)
             set_fault(CAR_FAULT_IMU);
     }
+
+    /* 每帧仅发布一次新姿态；采样失败也调用，用于打断高台倒车的连续回稳计时。
+     * 此处只更新路线的检测记录，不取样、不提交动作，衔接仍由下一次 Route_Tick 决定。 */
+    Route_UpdatePitch(g_euler.pitch, g_mode_fsm.imu_valid);
 
     /* 限时依据动作经过的 10 ms 帧数，包含暂停输出的失败帧。 */
     if (g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.mode == MODE_IMU &&
