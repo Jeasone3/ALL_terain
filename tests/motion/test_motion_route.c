@@ -3623,7 +3623,7 @@ static void test_imu_retry_policy(void)
     unsigned mode, before, pid_before;
     const float invalid_yaws[] = {NAN, INFINITY, -INFINITY};
     uint32_t frames;
-    for (mode = 0u; mode < 6u; ++mode) {
+    for (mode = 0u; mode < 7u; ++mode) {
         begin_case("transient IMU failure pauses each motion mode", 0u);
         if (mode == 1u) Car_ImuForward(500u);
         if (mode == 2u) Car_OpenLoopWithPWM(450u, 310u);
@@ -3636,6 +3636,7 @@ static void test_imu_retry_policy(void)
             g_route.ideal_yaw = 30.0f;
             Car_AlignTo();
         }
+        if (mode == 6u) Car_Hold();
         tick();
         frames = g_mode_fsm.state_frames;
         before = s_attitude_ticks;
@@ -3650,7 +3651,10 @@ static void test_imu_retry_policy(void)
         s_sample_ok = 1u;
         tick();
         CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.imu_valid);
-        CHECK(motorLeft.speed != 0 || motorRight.speed != 0);
+        if (mode == 6u)
+            CHECK(motorLeft.speed == 0 && motorRight.speed == 0);
+        else
+            CHECK(motorLeft.speed != 0 || motorRight.speed != 0);
         /* 成功帧清连续计数，随后两帧失败仍允许恢复。 */
         s_sample_ok = 0u;
         ticks(2u);
@@ -3772,8 +3776,10 @@ static void test_imu_retry_policy(void)
 
 #ifdef TEST_PLATFORM_PITCH_ONLY
 #ifndef TEST_PLATFORM_STABLE_MS
-#define TEST_PLATFORM_STABLE_MS 100u
+#define TEST_PLATFORM_STABLE_MS 900u
 #endif
+#define TEST_PLATFORM_REVERSE_FRAMES 500u /* 当前 5000 ms 倒车兜底，独立于回稳确认。 */
+#define TEST_PLATFORM_SETTLE_FRAMES   50u /* 倒车结束后固定 500 ms 零 PWM 静置。 */
 
 /**
  * @brief 提供一帧新的俯仰反馈，并让模拟航向跟随当前真实控制目标。
@@ -3822,6 +3828,48 @@ static void platform_pitch_start(const char *name, float pitch)
 }
 
 /**
+ * @brief 验证完整 500 ms 静置后才开始对齐，期间持续采样但不调用运动 PID。
+ * @param yaw 静置期间及首次对齐帧提供的航向；偏离目标可验证静置不提前纠偏。
+ * @return 无；检查双轮零输出、路口屏蔽、动作只提交一次和姿态基准未提前重建。
+ */
+static void platform_settle_to_align(float yaw)
+{
+    unsigned i;
+    unsigned pid_before = s_pid_calls;
+    unsigned imu_before = s_imu_reads;
+    unsigned attitude_before = s_attitude_ticks;
+    unsigned resets = s_resets;
+    uint32_t command = g_mode_fsm.command_id;
+    uint32_t aligns = g_mode_fsm.align_count;
+    float ideal_yaw = g_route.ideal_yaw;
+
+    CHECK(g_route.state == ROUTE_REVERSE_SETTLE && g_route.state_frames == 0u);
+    CHECK(g_mode_fsm.mode == MODE_OPEN_LOOP && g_mode_fsm.base_pwm == 0u);
+    check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+    CHECK(!s_beep_on);
+    set_sensors(0xFFu); /* 静置期间持续出现十字，也不能触发路口或推进表项。 */
+    s_sample_yaw = yaw;
+    for (i = 1u; i < TEST_PLATFORM_SETTLE_FRAMES; ++i) {
+        tick();
+        CHECK(g_route.state == ROUTE_REVERSE_SETTLE && g_route.state_frames == i);
+        CHECK(g_route.step_index == 8u && g_route.junction == JUNCTION_NONE);
+        CHECK(g_mode_fsm.mode == MODE_OPEN_LOOP && g_mode_fsm.command_id == command);
+        CHECK(s_pid_calls == pid_before && s_imu_reads == imu_before + i);
+        CHECK(s_attitude_ticks == attitude_before + i && g_mode_fsm.imu_valid);
+        CHECK(s_resets == resets && g_mode_fsm.align_count == aligns);
+        CHECK(CLOSE(g_route.ideal_yaw, ideal_yaw) && !s_beep_on);
+        check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+    }
+    tick(); /* 已完成 50 个零输出周期，当前决策才提交对齐请求。 */
+    CHECK(g_route.state == ROUTE_ALIGN && g_route.state_frames == 0u);
+    CHECK(g_mode_fsm.mode == MODE_IMU && g_mode_fsm.imu_state == IMU_ALIGN);
+    CHECK(g_mode_fsm.command_id == command + 1u && CLOSE(g_mode_fsm.target_yaw, ideal_yaw));
+    CHECK(s_imu_reads == imu_before + TEST_PLATFORM_SETTLE_FRAMES);
+    CHECK(s_attitude_ticks == attitude_before + TEST_PLATFORM_SETTLE_FRAMES);
+    CHECK(s_resets == resets && g_mode_fsm.align_count == aligns && !s_beep_on);
+}
+
+/**
  * @brief 验证整数差达到 15 度触发、正负 5 度边界、配置时长与后续完整衔接。
  * @param 无。
  * @return 无；计数边界必须由实际 Route/FSM 行为证明，不能只检查内部完成标记。
@@ -3831,7 +3879,9 @@ static void test_platform_pitch_detection(void)
     const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
     const float start_pitch = 7.5f;
     unsigned i, budget, s1_frame;
-    uint32_t command, turns;
+    uint32_t command, turns, aligns;
+    unsigned resets;
+    float yaw;
 
     platform_pitch_start("platform relative pitch thresholds and configurable stable duration", start_pitch);
     command = g_mode_fsm.command_id;
@@ -3851,13 +3901,33 @@ static void test_platform_pitch_detection(void)
         CHECK(s_beep_on);
     }
     platform_pitch_sample(start_pitch); /* 完成标记只在下一次路线决策消费。 */
-    CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.imu_state == IMU_ALIGN);
+    CHECK(g_route.state == ROUTE_REVERSE_SETTLE && g_mode_fsm.mode == MODE_OPEN_LOOP);
     CHECK(g_mode_fsm.command_id == command + 1u && !s_beep_on);
+    check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
     CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH") && !log_has("REV_TIMER"));
-    ticks(8u);
-    CHECK(g_mode_fsm.command_id == command + 1u); /* 不能连续提交停车对齐。 */
-
+    CHECK(log_has("REV_SETTLE") && strstr(s_oled_rows[0], "SETTLE") != NULL);
+    yaw = g_route.ideal_yaw;
+    aligns = g_mode_fsm.align_count;
+    resets = s_resets;
     turns = g_mode_fsm.turn_count;
+    platform_settle_to_align(yaw + 12.0f); /* 偏航时静置不纠偏，到时才启动原地对齐。 */
+    CHECK(motorLeft.speed != 0 && motorRight.speed != 0);
+    ticks(12u); /* 仍在容差外，不能重建基准或提前右转。 */
+    CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.align_count == aligns);
+    CHECK(g_mode_fsm.command_id == command + 2u && s_resets == resets);
+    CHECK(CLOSE(g_route.ideal_yaw, yaw) && g_mode_fsm.turn_count == turns);
+    s_sample_yaw = yaw;
+    ticks(88u); /* 现有 10 帧到位确认和 80 帧保持共需 89 个连续有效帧。 */
+    CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.align_count == aligns);
+    CHECK(s_resets == resets && g_mode_fsm.status == CAR_RUNNING);
+    CHECK(motorLeft.speed == 0 && motorRight.speed == 0);
+    tick();
+    CHECK(g_mode_fsm.align_count == aligns + 1u && s_resets == resets);
+    check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+    tick(); /* 仅消费对齐完成事件时重建一次基准，然后更新右转目标。 */
+    CHECK(g_route.state == ROUTE_FINAL_RIGHT_TURN && g_mode_fsm.imu_state == IMU_TURN_RIGHT);
+    CHECK(g_mode_fsm.command_id == command + 3u && s_resets == resets + 1u);
+    CHECK(CLOSE(g_route.ideal_yaw, yaw - 90.0f) && CLOSE(g_mode_fsm.target_yaw, yaw - 90.0f));
     budget = 500u;
     while (g_route.state != ROUTE_S1_IMU && budget != 0u) {
         --budget;
@@ -3865,6 +3935,7 @@ static void test_platform_pitch_detection(void)
         CHECK(g_mode_fsm.status != CAR_FAULT && !s_beep_on);
     }
     CHECK(budget != 0u && g_mode_fsm.turn_count == turns + 1u);
+    CHECK(s_resets == resets + 1u && g_mode_fsm.align_count == aligns + 1u);
     CHECK(g_mode_fsm.imu_state == IMU_FORWARD && g_mode_fsm.base_pwm == 500u);
     s1_frame = s_frame;
     budget = 400u;
@@ -3875,7 +3946,7 @@ static void test_platform_pitch_detection(void)
     CHECK(budget != 0u && s_frame - s1_frame == 300u);
     CHECK(g_route.state == (TEST_ACTIVE_STEP_COUNT == 9u ? ROUTE_CRUISE : ROUTE_FOLLOW));
     CHECK(g_route.step_index == (TEST_ACTIVE_STEP_COUNT == 9u ? 8u : 9u));
-    puts("PASS platform pitch thresholds, configured stable frames and original right-turn/S1 handoff");
+    puts("PASS platform pitch, exact 500ms zero-PWM settle, alignment/hold/rebase and right-turn/S1 handoff");
 }
 
 /**
@@ -3905,7 +3976,7 @@ static void test_platform_pitch_interrupted_stability(void)
             CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
         }
         platform_pitch_sample(0.0f);
-        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+        CHECK(g_route.state == ROUTE_REVERSE_SETTLE && !s_beep_on);
         CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH"));
     }
 
@@ -3918,7 +3989,7 @@ static void test_platform_pitch_interrupted_stability(void)
     platform_pitch_sample(23.5f);
     platform_pitch_sample(7.5f);
     ticks(stable_frames);
-    CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+    CHECK(g_route.state == ROUTE_REVERSE_SETTLE && !s_beep_on);
     puts("PASS platform invalid baseline, out-of-range reset, NaN/Inf and stale-pitch rejection");
 }
 
@@ -3950,14 +4021,14 @@ static void test_platform_pitch_integer_truncation(void)
             CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
         }
         platform_pitch_sample(starts[kind]);
-        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+        CHECK(g_route.state == ROUTE_REVERSE_SETTLE && !s_beep_on);
         CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH"));
     }
     puts("PASS independent integer conversion, signed fractional baselines and inclusive 15/5-degree limits");
 }
 
 /**
- * @brief 验证未倾斜、未回稳和无有效基准时仍按 3.2 秒兜底，同帧完成时优先记录俯仰。
+ * @brief 验证未倾斜、未回稳和无有效基准时仍按 5 秒兜底，同帧完成时优先记录俯仰。
  * @param 无。
  * @return 无。
  */
@@ -3970,28 +4041,29 @@ static void test_platform_pitch_timeout(void)
         float pitch = kind == 0u ? 0.0f : kind == 1u ? 16.0f : NAN;
         platform_pitch_start("platform timer fallback without completed pitch detection", kind == 2u ? NAN : 0.0f);
         command = g_mode_fsm.command_id;
-        while (g_route.state_frames < 319u) {
+        while (g_route.state_frames < TEST_PLATFORM_REVERSE_FRAMES - 1u) {
             platform_pitch_sample(pitch);
             CHECK(g_route.state == ROUTE_REVERSE_DRIVE && s_beep_on);
         }
         platform_pitch_sample(pitch);
-        CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.command_id == command + 1u && !s_beep_on);
+        CHECK(g_route.state == ROUTE_REVERSE_SETTLE && g_mode_fsm.command_id == command + 1u && !s_beep_on);
         CHECK(DebugLog_Display() == OLED_OK && log_has("REV_TIMER") && !log_has("REV_PITCH"));
+        platform_settle_to_align(g_route.ideal_yaw); /* 定时兜底也必须完整静置后才能对齐。 */
         ticks(8u);
-        CHECK(g_mode_fsm.command_id == command + 1u);
+        CHECK(g_mode_fsm.command_id == command + 2u);
     }
 
     platform_pitch_start("platform pitch completion wins over timer on the same decision frame", 0.0f);
     platform_pitch_sample(16.0f);
-    while (g_route.state_frames < 319u - stable_frames)
+    while (g_route.state_frames < TEST_PLATFORM_REVERSE_FRAMES - 1u - stable_frames)
         platform_pitch_sample(16.0f);
     platform_pitch_sample(0.0f);
     ticks(stable_frames - 1u);
-    CHECK(g_route.state == ROUTE_REVERSE_DRIVE && g_route.state_frames == 319u);
+    CHECK(g_route.state == ROUTE_REVERSE_DRIVE && g_route.state_frames == TEST_PLATFORM_REVERSE_FRAMES - 1u);
     platform_pitch_sample(0.0f);
-    CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+    CHECK(g_route.state == ROUTE_REVERSE_SETTLE && !s_beep_on);
     CHECK(DebugLog_Display() == OLED_OK && log_has("REV_PITCH") && !log_has("REV_TIMER"));
-    puts("PASS platform exact 320-frame fallback, single handoff and pitch-first completion reason");
+    puts("PASS platform exact 500-frame fallback, shared settle and pitch-first completion reason");
 }
 
 /**
@@ -4083,9 +4155,147 @@ static void test_platform_pitch_cancel_and_restart(void)
         platform_pitch_sample(23.5f);
         platform_pitch_sample(7.5f);
         ticks(stable_frames);
-        CHECK(g_route.state == ROUTE_ALIGN && !s_beep_on);
+        CHECK(g_route.state == ROUTE_REVERSE_SETTLE && !s_beep_on);
     }
     puts("PASS platform stop/takeover/disable/fault/init cleanup and explicit restart");
+}
+
+/**
+ * @brief 用真实俯仰变化完成下台检测，运行到新增静置阶段的进入帧。
+ * @param name 当前场景名称，供断言定位。
+ * @return 无；保留生产参数，避免直接篡改路线状态掩盖动作衔接问题。
+ */
+static void platform_reach_settle(const char *name)
+{
+    const unsigned stable_frames = (TEST_PLATFORM_STABLE_MS + 9u) / 10u;
+    platform_pitch_start(name, 0.0f);
+    platform_pitch_sample(16.0f);
+    platform_pitch_sample(0.0f);
+    ticks(stable_frames);
+    CHECK(g_route.state == ROUTE_REVERSE_SETTLE && g_route.state_frames == 0u);
+    CHECK(g_mode_fsm.mode == MODE_OPEN_LOOP && g_mode_fsm.status == CAR_RUNNING);
+    CHECK(motorLeft.speed == 0 && motorRight.speed == 0 && !s_beep_on);
+}
+
+/**
+ * @brief 验证静置中和静置结束边界的两帧读失败不延长计时，恢复后仍需完成原对齐。
+ * @param 无。
+ * @return 无；失败帧不得执行姿态解算或 PID，也不能提前重建基准。
+ */
+static void test_platform_settle_transient_failure(void)
+{
+    unsigned boundary;
+    for (boundary = 0u; boundary < 2u; ++boundary) {
+        unsigned attitude_before, pid_before, resets;
+        uint32_t aligns, command;
+        platform_reach_settle("platform settle transient failure and exact handoff boundary");
+        ticks(boundary ? TEST_PLATFORM_SETTLE_FRAMES - 2u : 20u);
+        attitude_before = s_attitude_ticks;
+        pid_before = s_pid_calls;
+        resets = s_resets;
+        aligns = g_mode_fsm.align_count;
+        command = g_mode_fsm.command_id;
+        s_sample_ok = 0u;
+        ticks(2u);
+        check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+        CHECK(g_imu_ready && !g_mode_fsm.imu_valid);
+        CHECK(s_attitude_ticks == attitude_before && s_pid_calls == pid_before);
+        CHECK(g_route.state == (boundary ? ROUTE_ALIGN : ROUTE_REVERSE_SETTLE));
+        CHECK(g_mode_fsm.command_id == command + boundary);
+        CHECK(s_resets == resets && g_mode_fsm.align_count == aligns);
+        s_sample_ok = 1u;
+        if (!boundary) {
+            while (g_route.state_frames < TEST_PLATFORM_SETTLE_FRAMES - 1u) {
+                platform_pitch_sample(0.0f);
+                CHECK(g_route.state == ROUTE_REVERSE_SETTLE);
+                check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+            }
+        }
+        platform_pitch_sample(0.0f);
+        CHECK(g_route.state == ROUTE_ALIGN && g_mode_fsm.imu_valid);
+        CHECK(g_mode_fsm.command_id == command + 1u);
+        CHECK(s_resets == resets && g_mode_fsm.align_count == aligns);
+    }
+    puts("PASS settle transient IMU failure, unchanged 500ms deadline and fresh alignment recovery");
+}
+
+/**
+ * @brief 验证静置中及结束边界的外部停车、接管、禁用、IMU 故障与初始化均能取消衔接。
+ * @param 无。
+ * @return 无；清除故障或重新 Enable 后也不得自动对齐、重建基准或右转。
+ */
+static void test_platform_settle_interrupts(void)
+{
+    unsigned boundary, action;
+    uint32_t command;
+
+    begin_case("STOP mailbox priority over hold in both submission orders", 0u);
+    for (action = 0u; action < 2u; ++action) {
+        command = g_mode_fsm.command_id;
+        if (action == 0u) {
+            Car_Stop();
+            Car_Hold();
+        } else {
+            Car_Hold();
+            Car_Stop();
+        }
+        tick();
+        check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+        CHECK(g_mode_fsm.command_id == command + 1u);
+    }
+
+    for (boundary = 0u; boundary < 2u; ++boundary) {
+        for (action = 0u; action < 6u; ++action) {
+            unsigned resets;
+            uint32_t aligns, turns;
+            platform_reach_settle("platform settle interruption before or at the alignment boundary");
+            if (boundary) {
+                /* 通信故障需连续三帧失败，提前两帧开始，保证第三次失败恰好发生在 500 ms 边界。 */
+                ticks(TEST_PLATFORM_SETTLE_FRAMES - (action == 4u ? 3u : 1u));
+            } else {
+                ticks(10u);
+            }
+            resets = s_resets;
+            aligns = g_mode_fsm.align_count;
+            turns = g_mode_fsm.turn_count;
+            switch (action) {
+            case 0u: Car_Stop(); tick(); break;
+            case 1u: Car_ImuForward(450u); tick(); break;
+            case 2u: Route_Enable(0u); tick(); break;
+            case 3u:
+                s_sample_yaw = NAN;
+                tick();
+                check_stopped(CAR_FAULT, CAR_FAULT_IMU_DATA);
+                tick(); /* Route 下一帧观察到锁存故障并中止。 */
+                break;
+            case 4u:
+                s_sample_ok = 0u;
+                ticks(3u);
+                check_stopped(CAR_FAULT, CAR_FAULT_IMU);
+                tick();
+                break;
+            default: Route_Init(); tick(); break;
+            }
+            CHECK(g_route.state == (action == 5u ? ROUTE_FOLLOW : ROUTE_ABORTED));
+            CHECK(!g_route.enabled && !s_beep_on);
+            CHECK(s_resets == resets && g_mode_fsm.align_count == aligns);
+            CHECK(g_mode_fsm.turn_count == turns);
+            if (action == 0u) check_stopped(CAR_STOPPED, CAR_FAULT_NONE);
+            if (action == 1u)
+                CHECK(g_mode_fsm.status == CAR_RUNNING && g_mode_fsm.base_pwm == 450u);
+            if (action == 2u || action == 5u) check_stopped(CAR_RUNNING, CAR_FAULT_NONE);
+            command = g_mode_fsm.command_id;
+            g_imu_ready = s_sample_ok = 1u;
+            s_sample_yaw = g_mode_fsm.target_yaw;
+            Route_Enable(1u);
+            ticks(TEST_PLATFORM_SETTLE_FRAMES + 100u);
+            CHECK(g_mode_fsm.command_id == command && !s_beep_on);
+            CHECK(g_route.state == (action == 5u ? ROUTE_FOLLOW : ROUTE_ABORTED));
+            CHECK(s_resets == resets && g_mode_fsm.align_count == aligns);
+            CHECK(g_mode_fsm.turn_count == turns);
+        }
+    }
+    puts("PASS settle STOP priority, takeover/disable/fault/init boundaries and no automatic restart");
 }
 #endif
 
@@ -4099,6 +4309,8 @@ int main(void)
     test_platform_pitch_timeout();
     test_platform_pitch_state_isolation();
     test_platform_pitch_cancel_and_restart();
+    test_platform_settle_transient_failure();
+    test_platform_settle_interrupts();
     puts("All platform pitch detection scenarios passed.");
     return EXIT_SUCCESS;
 #endif

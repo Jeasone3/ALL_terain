@@ -44,7 +44,8 @@ typedef enum
     COMMAND_ROUTE_TIMEOUT,       //路线超时停车
     COMMAND_ALIGN,              //功能切换时原地对齐到 ideal_yaw
     COMMAND_ALIGN_HOLD,         //进项目对齐：到位后原地保持 800ms 再切 IMU 直行
-    COMMAND_REVERSE             //IMU 倒退：保持目标航向 ideal_yaw，两轮 PWM 不大于零
+    COMMAND_REVERSE,            //IMU 倒退：保持目标航向 ideal_yaw，两轮 PWM 不大于零
+    COMMAND_HOLD                /* 双轮零 PWM 静置，保留 CAR_RUNNING 和每帧 IMU 采样。 */
 } CarCommand;
 
 
@@ -216,7 +217,7 @@ static void apply_request(const CarRequest *request)
     /* 切换动作时保留姿态基准；循迹与开环期间也持续采样，避免漏记实际偏航。
      * update_imu 只处理 IMU 动作的完成条件；IMU 段目标统一取 g_route.ideal_yaw。 */
     if (request->command != COMMAND_STOP && request->command != COMMAND_TRACK &&
-        request->command != COMMAND_OPEN_LOOP) //IMU 动作
+        request->command != COMMAND_OPEN_LOOP && request->command != COMMAND_HOLD) //IMU 动作
     {
         g_mode_fsm.mode = MODE_IMU;
     }
@@ -230,6 +231,15 @@ static void apply_request(const CarRequest *request)
         s_open_left_pwm = request->base_pwm;
         s_open_right_pwm = request->right_pwm;
         command_text = "OPEN_LOOP";
+        break;
+    case COMMAND_HOLD:
+        /* 复用固定 PWM 输出通道；零输出不等于外部 STOP，路线仍可按时衔接后续对齐。
+         * 保留原 ideal_yaw 供显示和下一动作使用，静置期间不执行任何航向纠偏。 */
+        g_mode_fsm.mode = MODE_OPEN_LOOP;
+        g_mode_fsm.base_pwm = 0u;
+        g_mode_fsm.target_yaw = g_route.ideal_yaw;
+        s_open_left_pwm = s_open_right_pwm = 0u;
+        command_text = "HOLD";
         break;
     case COMMAND_TRACK:
         g_mode_fsm.mode = MODE_TRACK;
@@ -568,7 +578,7 @@ void ModeFSM_Tick(void)
 
     if (g_mode_fsm.mode == MODE_OPEN_LOOP)
     {
-        /* 唯一运动出口直接给定前进 PWM，IMU 和灰度都不参与修正。 */
+        /* 唯一运动出口直接给定固定 PWM；静置时两轮均为零，IMU 和灰度不参与修正。 */
         Motor_SetSpeed(&motorLeft, s_open_left_pwm);
         Motor_SetSpeed(&motorRight, s_open_right_pwm);
     }
@@ -614,6 +624,18 @@ void Car_OpenLoop(void)
 void Car_OpenLoopWithPWM(uint16_t left_pwm, uint16_t right_pwm)
 {
     submit_request(COMMAND_OPEN_LOOP, MODE_OPEN_LOOP, left_pwm, 0u, 0.0f, right_pwm);
+}
+
+/**
+ * @brief 请求双轮零 PWM 静置，不结束自动路线，也不进行运动纠偏。
+ * @param 无。
+ * @return 无。
+ * @note 仅提交一次固定零输出请求；接受后仍采样 IMU，持续到下一动作或故障。
+ *       同帧等待处理的 STOP 仍由请求邮箱优先保留，静置不会覆盖停车。
+ */
+void Car_Hold(void)
+{
+    submit_request(COMMAND_HOLD, MODE_OPEN_LOOP, 0u, 0u, 0.0f, 0u);
 }
 
 /**

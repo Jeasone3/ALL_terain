@@ -71,8 +71,8 @@ $motionSources = @(
 )
 
 if ($PlatformPitchOnly) {
-    # 使用真实第 9 项到达高台，分别检查默认时长、可调时长和非整周期向上取整。
-    foreach ($stableMs in @(100, 200, 105)) {
+    # 使用真实第 9 项到达高台，检查当前 900 ms 回稳、可调时长、向上取整及独立 500 ms 静置。
+    foreach ($stableMs in @(900, 100, 200, 105)) {
         Invoke-MotionTest -Name "test_platform_pitch_$stableMs" -Arguments ($motionSources + @(
             '-DTEST_PLATFORM_PITCH_ONLY', '-DROUTE_START_STEP=9u',
             "-DROUTE_REVERSE_DRIVE_STABLE_MS=$($stableMs)u", "-DTEST_PLATFORM_STABLE_MS=$($stableMs)u"))

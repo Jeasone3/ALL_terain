@@ -19,7 +19,8 @@
 #define ROUTE_TURN_APPROACH_PWM  500u /* 前移使用原普通 IMU 直行基础 PWM */
 #define ROUTE_FINAL_FORWARD_MS 3000u /* 完整路线收尾：从左转实际完成时起直行 3 秒 */
 #define ROUTE_REVERSE_MS       2000u /* 大台阶入口（倒车）：从左转完成的倒退首帧起计时 2 秒 */
-#define ROUTE_REVERSE_DRIVE_MS 5000u /* 高台倒车最长 3.2 秒；未由俯仰确认下台时，按原定时流程继续。 */
+#define ROUTE_REVERSE_DRIVE_MS 5000u /* 高台倒车最长 5 秒；未由俯仰确认下台时，按原定时流程继续。 */
+#define ROUTE_REVERSE_SETTLE_MS 500u /* 倒车结束后双轮零 PWM 静置，再开始原航向对齐；与回稳和对齐保持分别计时。 */
 #define ROUTE_REVERSE_DRIVE_TILT_DEG  15 /* 当前与起始 pitch 分别舍掉小数，整数差达到此值即记录倾斜。 */
 #define ROUTE_REVERSE_DRIVE_LEVEL_DEG  5 /* 倾斜后整数差回到正负此范围内，才累计回稳时间。 */
 #ifndef ROUTE_REVERSE_DRIVE_STABLE_MS
@@ -93,11 +94,11 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     
     {   /* 08 大台阶：十字左转，循迹 200 ms，再以 400 PWM 通行 11 秒；倒退仍停用。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 8u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 400u, .entry_ms = 200u, .pass_ms = 9000u, .timeout_ms = 15000u
+        .base_pwm = 400u, .entry_ms = 200u, .pass_ms = 9800u, .timeout_ms = 15000u
     },
     {   /* 09 窄桥：十字左转，循迹 400 ms，再 IMU 通行 4 秒，随后接高台及 S1。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 9u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 600u, .entry_ms = 400u, .pass_ms = 3500u, .timeout_ms = 10000u,
+        .base_pwm = 600u, .entry_ms = 400u, .pass_ms = 4000u, .timeout_ms = 10000u,
         .final_seq = 1u
     },
 
@@ -412,7 +413,8 @@ static void update_conditions(const uint16_t *sensor_data)
         g_route.state == ROUTE_CRUISE || g_route.state == ROUTE_FINAL_TURN ||
         g_route.state == ROUTE_FINAL_FORWARD || g_route.state == ROUTE_FINISHED ||
         g_route.state == ROUTE_REVERSE ||
-        g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_FINAL_RIGHT_TURN ||
+        g_route.state == ROUTE_REVERSE_DRIVE || g_route.state == ROUTE_REVERSE_SETTLE ||
+        g_route.state == ROUTE_FINAL_RIGHT_TURN ||
         g_route.state == ROUTE_S1_IMU || g_route.state == ROUTE_SONAR_FOLLOW ||
         g_route.state == ROUTE_SONAR_OPEN_LOOP) {
         reset_junction();
@@ -1060,18 +1062,26 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
         }
         return; /* 固定 3 秒由本阶段计时结束，不再套用项目通行的超时参数。 */
 
-    case ROUTE_REVERSE_DRIVE: //高台倒车：俯仰确认下台或最长 3.2 秒后，停车对齐校准
+    case ROUTE_REVERSE_DRIVE: //高台倒车：俯仰确认下台或最长 5 秒后，先停车静置
         if (s_reverse_landed || elapsed_ms >= ROUTE_REVERSE_DRIVE_MS) {
-            /* 同时满足时优先报告俯仰确认；进入 ALIGN 会清记录，因此先保存结束原因日志。 */
+            /* 同时满足时优先报告俯仰确认；退出倒车会清记录，因此先保存结束原因日志。 */
             DebugLog_Write(LOG_INFO, s_reverse_landed ? "REV_PITCH" : "REV_TIMER");
-            Int_Beep_Off(); /* 两种结束原因共用原衔接，停车校准和右转期间不再鸣叫。 */
+            Int_Beep_Off(); /* 两种结束原因共用静置、对齐和右转，离开倒车当帧关闭提示音。 */
+            enter_state(ROUTE_REVERSE_SETTLE);
+            Car_Hold(); /* 保持路线运行状态，以零 PWM 静置；不在静置期间执行航向纠偏。 */
+            DebugLog_Write(LOG_INFO, "REV_SETTLE");
+        }
+        return; /* 跳过 step->timeout_ms 检查，仿 ROUTE_FINAL_FORWARD */
+
+    case ROUTE_REVERSE_SETTLE: //零 PWM 静置满 500 ms 后，才提交一次对齐保持请求
+        if (elapsed_ms >= ROUTE_REVERSE_SETTLE_MS) {
             s_align_count_before = g_mode_fsm.align_count;
             s_align_next_state = ROUTE_FINAL_RIGHT_TURN;
             enter_state(ROUTE_ALIGN);
-            Car_AlignToHold(); /* 倒车后停车保持 800ms+对齐 ideal_yaw+校准，仿进项目 */
+            Car_AlignToHold(); /* 对齐 ideal_yaw 到位后保持约 800 ms，再由原 ALIGN 分支重建基准并右转。 */
             DebugLog_Write(LOG_INFO, "REV_STOP");
         }
-        return; /* 跳过 step->timeout_ms 检查，仿 ROUTE_FINAL_FORWARD */
+        return; /* 独立静置计时，不占用后续对齐阶段的计时，也不套用项目通行超时。 */
 
     case ROUTE_FINAL_RIGHT_TURN: //倒车后右转 90°，完成接 S1 直行
         if (g_mode_fsm.turn_count != s_turn_count_before) {

@@ -13,7 +13,7 @@
 typedef enum {
     MODE_TRACK = 0,                 /* 灰度循迹 PID 控制电机 */
     MODE_IMU,                      /* IMU 角度 PID 控制电机 */
-    MODE_OPEN_LOOP                 /* 超声波通行：固定两轮 PWM，IMU 仅记录姿态，不运行运动 PID */
+    MODE_OPEN_LOOP                 /* 固定两轮 PWM：用于超声波通行或零输出静置，不运行运动 PID */
 } CarMode;
 
 /* IMU 子状态，用于 MODE_IMU 模式。 */
@@ -94,6 +94,15 @@ void Car_OpenLoop(void);
 
 /** @brief 原子提交两轮开环前进 PWM，范围均为 1～1000；下一控制帧生效。 */
 void Car_OpenLoopWithPWM(uint16_t left_pwm, uint16_t right_pwm);
+
+/**
+ * @brief 提交双轮零 PWM 静置请求，保留自动路线的运行状态。
+ * @param 无。
+ * @return 无。
+ * @note 接受后保持 CAR_RUNNING，持续采样 IMU 但不执行运动 PID；由 Route 决定静置时长。
+ *       外部 STOP、接管和 IMU 故障仍按原优先级处理；本接口不重建姿态基准。
+ */
+void Car_Hold(void);
 
 /**
  * @brief 提交 IMU 直行请求，以接受动作时的朝向为零度基准。

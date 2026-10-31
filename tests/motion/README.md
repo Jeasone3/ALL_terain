@@ -1,6 +1,23 @@
 # 运动、分段路线和 OLED 日志验证
 
-2026-10-31 高台倒车俯仰检测：运行 `./tests/motion/run_tests.ps1 -PlatformPitchOnly`。
+2026-11-01 高台倒车后新增独立静置（当前行为）：俯仰确认下台或倒车达到 5000 ms 后，当帧关闭蜂鸣器并提交 `Car_Hold()`，
+两轮 PWM 置零、保持 `CAR_RUNNING`，持续采样 IMU 但不执行运动 PID。进入 `ROUTE_REVERSE_SETTLE` 后独立计时 500 ms，
+到时只提交一次原有 `Car_AlignToHold()`；对齐原 `ideal_yaw`、到位保持约 800 ms 后，复用原有一次基准重建、右转 90°和 S1 通行。
+回稳判据保持为：当前与起始 pitch 分别向零取整，正向整数差达到 15°，再回到 ±5°内连续 900 ms；回稳确认期间仍在倒车。
+两种倒车结束原因共用静置流程，同帧满足时仍优先记录 `REV_PITCH`。新增 `REV_SETTLE` 日志与 OLED 的 `SETTLE` 阶段显示。
+
+`./tests/motion/run_tests.ps1 -PlatformPitchOnly` 的五组配置全部通过：900、100、200、105 ms（按 110 ms 执行），以及生产默认 900 ms 截止第 9 项。
+覆盖精确 500 ms 双轮零输出、静置中持续采样且无 PID、宽路口屏蔽、偏航时静置不提前纠偏、对齐确认与保持、基准及右转仅执行一次、原 S1 300 帧，
+以及 5000 ms 兜底、结束原因优先级、静置中和结束边界的暂态失败、STOP、接管、禁用、两类 IMU 故障、初始化和禁止自动续跑。
+`./tests/motion/run_tests.ps1 -ImuRetryOnly` 通过，暂态失败、恢复和三帧故障锁存的模式覆盖已包括新增零输出静置。
+GCC 在沙箱内出现系统 DLL 重定位错误，宿主专项在沙箱外运行；Keil 在沙箱内无法创建 ARMCC 进程，改用同一脚本在沙箱外完整重编译。
+Keil ARMCC 5.06 update 7 生成 AXF/HEX，0 Error(s)、2 Warning(s)，仍为未修改的 `Attitude.c` 中 `ez`、`ezInt` 未使用；零警告检查脚本因此返回失败。
+产物仅写 TEMP：`C:/Users/33901/AppData/Local/Temp/all-terrain-motion-keil-f8f874c8de4f4c4fa85139520a8ee5f5`。
+未运行全量路线测试，未烧录、未实车验证；仍需实车确认 500 ms 静置的消振效果和右转位置。
+
+以下为历史验证记录，时间参数以顶部当前说明和源码为准。
+
+2026-10-31 高台倒车俯仰检测（当时默认回稳 100 ms、倒车兜底 3200 ms）：运行 `./tests/motion/run_tests.ps1 -PlatformPitchOnly`。
 仅在 `ROUTE_REVERSE_DRIVE` 观察本帧有效 pitch，以姿态重置后第一帧有效值为基准；
 起始值与当前值分别向零截断为整数，整数差达到 15 度后，回到整数差正负 5 度内连续保持指定时间，下一路线帧结束倒车。
 `Route.c` 顶部的 `ROUTE_REVERSE_DRIVE_STABLE_MS` 默认 100 ms，可自行修改后重新编译；

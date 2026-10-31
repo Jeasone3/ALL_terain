@@ -297,6 +297,7 @@ static const char *route_name(RouteState state)
         case ROUTE_FINAL_FORWARD: return "END_F";
         case ROUTE_FINISHED: return "DONE";
         case ROUTE_REVERSE:  return "REV";
+        case ROUTE_REVERSE_SETTLE: return "SETTLE";
         default:            return "?";
     }
 }
