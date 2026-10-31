@@ -33,6 +33,7 @@ all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal
 all_terain_for_11\debug_log.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
 all_terain_for_11\debug_log.o: ../Int/Int_OLED/Int_OLED.h
 all_terain_for_11\debug_log.o: ../App/Route/Route.h
+all_terain_for_11\debug_log.o: ../Int/Int_SR04/Int_SR04.h
 all_terain_for_11\debug_log.o: ../App/Track_Task/Track_Task.h
 all_terain_for_11\debug_log.o: ../Int/Int_Track/Int_Track.h
 all_terain_for_11\debug_log.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h

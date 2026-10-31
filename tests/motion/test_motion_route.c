@@ -46,10 +46,20 @@ static int log_has(const char *message);
 static const char *s_case_name;
 static SR04_Result s_sonar_result;
 static unsigned s_sonar_triggers;
+static GPIO_PinState s_echo_level; /* 模拟 Echo 高电平导致触发请求被拒绝。 */
+
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin)
+{
+    (void)port;
+    (void)pin;
+    return s_echo_level;
+}
 
 /* 路线集成测试只替代超声波采集；底层脉宽与触发间隔由 tests/sr04 单独验证。 */
 uint8_t Int_SR04_Trigger(void)
 {
+    if (s_echo_level == GPIO_PIN_SET)
+        return 0u;
     ++s_sonar_triggers;
     s_sonar_result.status = SR04_BUSY;
     return 1u;
@@ -3760,6 +3770,53 @@ static void test_imu_retry_policy(void)
 int main(void)
 {
     memcpy(s_original_plan, g_route_plan, sizeof(s_original_plan));
+#ifdef TEST_SONAR_DIAGNOSTICS_ONLY
+    {
+        RouteSonarDiagnostics diagnostics;
+        unsigned beep_before;
+        post_platform_start("sonar diagnostics and OLED result retention");
+        post_platform_reach(11u, ROUTE_SONAR_FOLLOW);
+        beep_before = s_beep_starts;
+        /* Echo 卡高时没有脉冲；屏幕应显示尚未测量，而不是伪造零距离。 */
+        s_echo_level = GPIO_PIN_SET;
+        Route_ServiceSonar();
+        Route_GetSonarDiagnostics(&diagnostics);
+        CHECK(diagnostics.trigger_count == 0u && diagnostics.echo_high == 1u);
+        CHECK(DebugLog_Display() == OLED_OK);
+        CHECK(strstr(s_oled_rows[1], "U:IDLE D:--") != NULL);
+        CHECK(strstr(s_oled_rows[4], "T:0 E:1") != NULL);
+        s_echo_level = GPIO_PIN_RESET;
+        Route_ServiceSonar();
+        Route_GetSonarDiagnostics(&diagnostics);
+        CHECK(diagnostics.trigger_count == 1u && diagnostics.status == SR04_BUSY);
+        /* 超时后立即重发也必须保留 TO，让较慢的显示刷新能读到失败结果。 */
+        s_sonar_result.status = SR04_TIMEOUT;
+        Route_ServiceSonar();
+        Route_GetSonarDiagnostics(&diagnostics);
+        CHECK(diagnostics.status == SR04_TIMEOUT && diagnostics.trigger_count == 2u);
+        CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[1], "U:TO D:--") != NULL);
+        CHECK(s_beep_starts == beep_before && g_route.state == ROUTE_SONAR_FOLLOW);
+        s_sonar_result.status = SR04_OK;
+        s_sonar_result.distance_cm = 55.0f;
+        Route_ServiceSonar();
+        tick();
+        CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[1], "U:OK D:55.0cm") != NULL);
+        CHECK(g_route.state == ROUTE_SONAR_FOLLOW && s_beep_starts == beep_before);
+        Route_ServiceSonar();
+        s_sonar_result.status = SR04_OK;
+        s_sonar_result.distance_cm = 39.0f;
+        Route_ServiceSonar();
+        tick();
+        CHECK(g_route.state == ROUTE_SONAR_OPEN_LOOP && s_beep_starts == beep_before + 1u);
+        CHECK(DebugLog_Display() == OLED_OK && strstr(s_oled_rows[1], "U:OK D:39.0cm") != NULL);
+        CHECK(strstr(s_oled_rows[3], "G:") != NULL);
+        Route_Init();
+        Route_GetSonarDiagnostics(&diagnostics);
+        CHECK(diagnostics.trigger_count == 0u && diagnostics.status == SR04_IDLE);
+        puts("PASS sonar rejected trigger, timeout retention, distance display and threshold beep");
+        return EXIT_SUCCESS;
+    }
+#endif
     test_imu_retry_policy();
 #ifdef TEST_IMU_RETRY_ONLY
     return EXIT_SUCCESS;

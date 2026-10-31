@@ -25,6 +25,8 @@ static unsigned int s_frame_count;
 /* 注入一次事务的指定 ACK 阶段失败，并记录事务边界，检查完整重试。 */
 static unsigned int s_ack_count, s_fail_ack, s_starts, s_stops;
 static uint32_t s_time_ms, s_primask;
+/* 模拟相邻帧的加速度变化，验证放宽后的静止阈值和超时后的再次校准。 */
+static int16_t s_accel_step;
 
 /**
  * @brief 把带符号 ADC 值放入传感器使用的高字节在前的数据帧。
@@ -63,7 +65,7 @@ void I2C_SendByte(uint8_t byte)
     if (s_sent == 0u && byte == MPU6050_ADDR_READ) {
         int16_t high = (int16_t)(s_force_high != 0u || (++s_frame_count & 1u) != 0u);
         s_read_index = 0u;
-        put_sample(0u, 0);
+        put_sample(0u, (s_frame_count & 1u) != 0u ? s_accel_step : 0);
         put_sample(2u, 0);
         put_sample(4u, 16384);
         put_sample(8u, (int16_t)(s_sensor_bias[0] + high));
@@ -152,6 +154,25 @@ int main(void)
     Gyro_Accel_Struct sample;
     g_imu_ready = 1u;
     check_read_retry();
+    /* 399 LSB 可连续通过；等于 400 时不满足严格小于判据，约 3 秒后失败。
+     * 超时后立即改为可接受的波动再调用，应在约 2 秒内完成，无需重新初始化。 */
+    s_accel_step = 399;
+    CHECK(Int_MPU6050_Calibrate(100u) == 1u);
+    CHECK(Int_MPU6050_CalibrationTimedOut() == 0u);
+    s_accel_step = 400;
+    {
+        uint32_t started = s_time_ms;
+        CHECK(Int_MPU6050_Calibrate(100u) == 0u);
+        CHECK(Int_MPU6050_CalibrationTimedOut() == 1u);
+        CHECK(s_time_ms - started > 3000u && s_time_ms - started <= 3010u);
+        s_accel_step = 300;
+        started = s_time_ms;
+        CHECK(Int_MPU6050_Calibrate(100u) == 1u);
+        CHECK(Int_MPU6050_CalibrationTimedOut() == 0u);
+        CHECK(s_time_ms - started == 2000u);
+    }
+    s_accel_step = 0;
+    puts("PASS 400 LSB stillness boundary, 3s timeout and immediate recalibration");
     CHECK(Int_MPU6050_Calibrate(100u) != 0u);
     check_stationary_bias();
 
@@ -171,6 +192,7 @@ int main(void)
     /* 校准通信失败必须保留旧零偏，恢复总线后仍能正确扣偏。 */
     s_ack = NACK;
     CHECK(Int_MPU6050_Calibrate(100u) == 0u);
+    CHECK(Int_MPU6050_CalibrationTimedOut() == 0u);
     s_ack = ACK;
     check_stationary_bias();
     puts("PASS fractional gyro bias, slow-rate preservation, recalibration and failed calibration");

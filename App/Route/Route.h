@@ -6,6 +6,7 @@
 #define __ROUTE_H__
 
 #include <stdint.h>
+#include "Int_SR04.h"
 
 typedef enum {
     JUNCTION_NONE = 0,             /* 未发现宽路口图案 */
@@ -163,5 +164,16 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command);
 
 /** @brief 前台调用；仅在超声波路线阶段触发测距并发布新结果，不输出电机 PWM。 */
 void Route_ServiceSonar(void);
+
+/** 超声波阶段的只读诊断；终态保留到下一次测量完成，避免 OLED 漏掉超时。 */
+typedef struct {
+    uint32_t trigger_count;       /* 本段实际发出 Trig 脉冲的次数，拒绝请求不累计。 */
+    SR04_Status status;           /* 首次等待时为 BUSY，之后保存最近一次 OK 或 TIMEOUT。 */
+    float distance_cm;           /* 仅 status 为 OK 时有效，超时清零。 */
+    uint8_t echo_high;           /* 最近一次前台服务采样的 Echo 电平，1 表示高。 */
+} RouteSonarDiagnostics;
+
+/** @brief 在短临界区复制测距诊断；调用者传入有效指针，不触发测量。 */
+void Route_GetSonarDiagnostics(RouteSonarDiagnostics *diagnostics);
 
 #endif

@@ -39,6 +39,9 @@ uint8_t Int_MPU6050_Get_Data(Gyro_Accel_Struct *data);
    samples=0 取默认 100 帧(每帧间隔10ms≈1s)。成功返回 1 */
 uint8_t Int_MPU6050_Calibrate(uint16_t samples);
 
+/* 最近一轮校准因静止超时失败返回 1，其余情况返回 0；不读取传感器或改变零偏。 */
+uint8_t Int_MPU6050_CalibrationTimedOut(void);
+
 /* 10 ms 周期采样，失败完整重试一次；返回本帧是否成功，不用 ready 代替采样结果。 */
 uint8_t Int_MPU6050_Tick(void);
 

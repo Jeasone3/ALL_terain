@@ -43,6 +43,7 @@ all_terain_for_11\main.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\inclu
 all_terain_for_11\main.o: ../Com/Com_PID/Com_pid.h
 all_terain_for_11\main.o: ../App/Mode_FSM/Mode_FSM.h
 all_terain_for_11\main.o: ../App/Route/Route.h
+all_terain_for_11\main.o: ../Int/Int_SR04/Int_SR04.h
 all_terain_for_11\main.o: ../App/IMU_Task/IMU_Task.h
 all_terain_for_11\main.o: ../Int/Int_OLED/Int_OLED.h
 all_terain_for_11\main.o: ../App/Debug_Log/Debug_Log.h
@@ -52,4 +53,3 @@ all_terain_for_11\main.o: ../Com/Com_IIC/iic.h
 all_terain_for_11\main.o: ../Com/Com_IMU_Config/IMU_Config.h
 all_terain_for_11\main.o: ../Com/Com_Attitude/Attitude.h
 all_terain_for_11\main.o: ../Int/Int_Beep/Int_Beep.h
-all_terain_for_11\main.o: ../Int/Int_SR04/Int_SR04.h

@@ -1,7 +1,7 @@
 all_terain_for_11\route.o: ..\App\Route\Route.c
 all_terain_for_11\route.o: ..\App\Route\Route.h
 all_terain_for_11\route.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
-all_terain_for_11\route.o: ../App/Mode_FSM/Mode_FSM.h
+all_terain_for_11\route.o: ../Int/Int_SR04/Int_SR04.h
 all_terain_for_11\route.o: ../Core/Inc/main.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\route.o: ../Core/Inc/stm32f1xx_hal_conf.h
@@ -31,6 +31,7 @@ all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
+all_terain_for_11\route.o: ../App/Mode_FSM/Mode_FSM.h
 all_terain_for_11\route.o: ../Com/Com_Attitude/Attitude.h
 all_terain_for_11\route.o: ../Com/Com_IMU_Config/IMU_Config.h
 all_terain_for_11\route.o: ../App/Debug_Log/Debug_Log.h
@@ -45,4 +46,3 @@ all_terain_for_11\route.o: ../Int/Int_Motor/motor.h
 all_terain_for_11\route.o: ../Core/Inc/tim.h
 all_terain_for_11\route.o: ../Core/Inc/gpio.h
 all_terain_for_11\route.o: ../Int/Int_Beep/Int_Beep.h
-all_terain_for_11\route.o: ../Int/Int_SR04/Int_SR04.h

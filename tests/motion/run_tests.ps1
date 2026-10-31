@@ -5,7 +5,8 @@
     [switch]$RouteFinishOnly,
     [switch]$RouteReverseOnly,
     [switch]$RouteStartOnly,
-    [switch]$RouteAfterPlatformOnly
+    [switch]$RouteAfterPlatformOnly,
+    [switch]$SonarDiagnosticsOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,6 +68,13 @@ $motionSources = @(
     (Join-Path $projectRoot 'Com/Com_Limit/Com_Limit.c'),
     '-Wl,--wrap=PID_calc'
 )
+
+if ($SonarDiagnosticsOnly) {
+    # 单独验证测距拒绝、超时保留和 OLED 距离，不受旧路线 PWM 断言影响。
+    Invoke-MotionTest -Name 'test_sonar_diagnostics' -Arguments ($motionSources + @(
+        '-DTEST_ROUTE_AFTER_PLATFORM_ONLY', '-DTEST_SONAR_DIAGNOSTICS_ONLY', '-DROUTE_START_STEP=12u'))
+    return
+}
 
 if ($ImuRetryOnly) {
     # 链接真实 MPU6050 驱动验证总线重试，再链接真实状态机验证暂停和故障边界。

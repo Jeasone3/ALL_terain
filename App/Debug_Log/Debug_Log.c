@@ -40,6 +40,7 @@ typedef struct {
      * 定位后连同下方显示改动一起移除。 */
     float gz_dps;
     float accel_norm_dev;
+    RouteSonarDiagnostics sonar;     /* 与路线一起保存，故障冻结后也不混入新的测距结果。 */
 } DebugLog_Snapshot;
 
 typedef struct {
@@ -67,6 +68,7 @@ static void capture_state_locked(DebugLog_Snapshot *snapshot)
 
     snapshot->motion = g_mode_fsm;
     snapshot->route = g_route;
+    Route_GetSonarDiagnostics(&snapshot->sonar);
     snapshot->yaw = g_euler.yaw;
     snapshot->imu_ready = g_imu_ready;
     snapshot->left_pwm = motorLeft.speed;
@@ -123,7 +125,8 @@ void DebugLog_Init(void)
         {MODE_TRACK, IMU_FORWARD, CAR_STOPPED, CAR_FAULT_NONE,
          MODE_TRACK, 0.0f, 0u, 0u, 0u, 0u, 500u, 0u}, /* 对齐完成计数从零开始 */
         {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f}, /* 理想航向归零 */
-        0.0f, 0u, 0u, 0, 0, 0.0f, 0.0f /* 包括现有 gz 与加速度诊断字段，一并显式初始化 */
+        0.0f, 0u, 0u, 0, 0, 0.0f, 0.0f, /* 包括现有 gz 与加速度诊断字段，一并显式初始化 */
+        {0u, SR04_IDLE, 0.0f, 0u}
     };
     uint32_t saved_primask = __get_PRIMASK();
 
@@ -426,9 +429,29 @@ OLED_Status DebugLog_Display(void)
     }
     line_text[GRAYSCALE_SENSOR_CHANNELS] = '\0';
 
-    OLED_PrintLine(0u, "%s %s R:%s", status_name(&display.state.motion),
-                   action_name(&display.state.motion), route_name(display.state.route.state));
-    OLED_PrintLine(1u, "Y:%s T:%s", yaw_text, target_text);
+    /* 开环时原格式重复显示 OPEN，SONAR_OPEN 会超出 21 列；省去重复动作名。 */
+    if (display.state.motion.mode == MODE_OPEN_LOOP)
+        OLED_PrintLine(0u, "%s R:%s", status_name(&display.state.motion),
+                       route_name(display.state.route.state));
+    else
+        OLED_PrintLine(0u, "%s %s R:%s", status_name(&display.state.motion),
+                       action_name(&display.state.motion), route_name(display.state.route.state));
+    if (display.state.route.state == ROUTE_SONAR_FOLLOW ||
+        display.state.route.state == ROUTE_SONAR_OPEN_LOOP) {
+        /* 显示最近终态；只有成功结果显示距离，避免把超时的零值误认作近距离。 */
+        const char *sonar_status = display.state.sonar.status == SR04_OK ? "OK" :
+                                  (display.state.sonar.status == SR04_TIMEOUT ? "TO" :
+                                   (display.state.sonar.status == SR04_BUSY ? "BUSY" : "IDLE"));
+        if (display.state.sonar.status == SR04_OK)
+            OLED_PrintLine(1u, "U:%s D:%.1fcm", sonar_status, (double)display.state.sonar.distance_cm);
+        else
+            OLED_PrintLine(1u, "U:%s D:--", sonar_status);
+        OLED_PrintLine(4u, "T:%lu E:%u", (unsigned long)display.state.sonar.trigger_count,
+                       (unsigned int)display.state.sonar.echo_high);
+    } else {
+        OLED_PrintLine(1u, "Y:%s T:%s", yaw_text, target_text);
+        OLED_PrintLine(4u, "L:%+d R:%+d", (int)display.state.left_pwm, (int)display.state.right_pwm);
+    }
     if (display.state.route.enabled || display.state.route.project_id != 0u ||
         display.state.route.step_index != 0u || display.state.route.state >= ROUTE_READY) {
         /* N 是当前路线阶段已完成帧数，乘 10 即毫秒；最大值仍不超过 21 字符。 */
@@ -443,7 +466,6 @@ OLED_Status DebugLog_Display(void)
     /* 八位从左到右对应 IN1 至 IN8，1 表示检测到线，0 表示未检测到线。
      * 使用本次显示快照，保持与同屏路线、姿态和电机状态一致。 */
     OLED_PrintLine(3u, "G:%s I:%u", line_text, (unsigned int)display.state.imu_ready);
-    OLED_PrintLine(4u, "L:%+d R:%+d", (int)display.state.left_pwm, (int)display.state.right_pwm);
     first_log_row = (uint8_t)(DEBUG_LOG_CAPACITY - display.count);
     for (row = 0u; row < DEBUG_LOG_CAPACITY; row++) {
         /* 不满三条时顶部留空，使最新日志始终位于屏幕最后一行。 */

@@ -18,6 +18,12 @@ typedef struct {
 
 #define TIM4 ((void *)(uintptr_t)4u)
 
+/* 超声波诊断只读取 Echo 电平，不在宿主测试中操作真实 GPIO。 */
+typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET } GPIO_PinState;
+#define EC_GPIO_Port ((GPIO_TypeDef *)(uintptr_t)1u)
+#define EC_Pin ((uint16_t)0x0010u)
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin);
+
 /**
  * @brief 读取测试维护的中断屏蔽位。
  * @param 无。

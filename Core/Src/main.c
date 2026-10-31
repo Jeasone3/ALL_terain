@@ -51,7 +51,7 @@
 
 /* 启动优先级：纯循迹测试 > IMU 直行测试 > 默认自动路线。 */
 #define TRACK_ONLY_TEST_ENABLE    0u     /* 1：测普通道路和 U 型隧道；0：按下面的开关启动 */
-#define IMU_STRAIGHT_TEST_ENABLE  0u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
+#define IMU_STRAIGHT_TEST_ENABLE  1u     /* 1：以启动朝向为目标运行 IMU 角度 PID，限时后停车；两个开关均 0 时启动路线 */
 #define IMU_STRAIGHT_TEST_PWM     400u   /* 台阶和斜坡首轮 700；其他直通项目可改为 500 */
 #define IMU_STRAIGHT_TEST_MS      20000u  /* 仅用于限时测试；接受请求后计时，到时 TEST_DONE 停车 */
 
@@ -159,7 +159,25 @@ int main(void)
   {
     HAL_Delay(50);                /* 等传感器输出稳定 */
     imu_calibrated = Int_MPU6050_Calibrate(100);
-    if (imu_calibrated != 0u) {   /* 校准成功才响；失败(超时)不响=提醒重试 */
+    #if !TRACK_ONLY_TEST_ENABLE
+    /* 控制定时器尚未启动，电机保持停车。静止超时后立即开始新一轮，
+     * 每轮重新累计连续 100 帧并采样；通信失败则等待 50ms，避免快速重复访问总线。
+     * 纯循迹测试仍只尝试一次，不因 IMU 校准失败阻止其启动。 */
+    while (imu_calibrated == 0u)
+    {
+        if (Int_MPU6050_CalibrationTimedOut() != 0u)
+        {
+            DebugLog_Write(LOG_WARN, "CAL_RETRY");
+        }
+        else
+        {
+            DebugLog_Write(LOG_ERROR, "CAL_I2C");
+            HAL_Delay(50);
+        }
+        imu_calibrated = Int_MPU6050_Calibrate(100);
+    }
+    #endif
+    if (imu_calibrated != 0u) {   /* 校准成功才响，随后只启动一次原有行驶流程。 */
         Int_Beep_On();
         HAL_Delay(200);
         Int_Beep_Off();

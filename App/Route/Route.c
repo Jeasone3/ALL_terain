@@ -100,7 +100,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 10u, .trigger_junction = JUNCTION_CROSS,
         .timeout_ms = 15000u
     },
-    {   /* 11 右侧路口右转：与第 5 项一致，快速对齐、前移并闭环右转，确认窄线后接第 12 项。 */
+    {   /* 11 （U型隧道）右侧路口右转：与第 5 项一致，快速对齐、前移并闭环右转，确认窄线后接第 12 项。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 11u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
@@ -138,7 +138,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 20 慢速循迹找十字，左转后循迹 800 ms，再对齐保持、重建航向基准，以 PWM500 直行 5 秒后停车。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 20u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 9000u, .timeout_ms = 15000u,
+        .base_pwm = 600u, .entry_ms = 800u, .pass_ms = 9000u, .timeout_ms = 15000u,
         .final_seq = 3u
     }
 };
@@ -155,6 +155,7 @@ static uint8_t s_active;                   /* 真正启动的路线，不等同�
 static uint8_t s_sonar_pending;            /* 前台已接受一次测距，尚未取出终态。 */
 static volatile uint8_t s_sonar_valid;     /* 新的成功结果，10 ms 路线帧消费后清零。 */
 static volatile float s_sonar_distance;   /* 与有效标记一起在短临界区内发布，单位 cm。 */
+static volatile RouteSonarDiagnostics s_sonar_diagnostics;
 static uint32_t s_turn_count_before;       /* 本次转弯开始前的完成总数 */
 static uint32_t s_align_count_before;      /* 本次对齐开始前的完成总数，仿 turn_count 轮询 */
 static RouteState s_align_next_state;      /* 对齐完成后要进入的阶段（OBSTACLE 或 APPROACH） */
@@ -370,9 +371,10 @@ static void update_conditions(const uint16_t *sensor_data)
 static uint32_t turn_approach_ms(uint16_t step_index)
 {
     /* 第 17 项前移 40 个控制帧；表项下标从 0 开始，第 12 项仍使用原来的 450 ms。 */
+    //方形转向前移
     if (step_index == 16u) 
         return 400u;
-    return step_index == 11u ? 420u : ROUTE_TURN_APPROACH_MS;
+    return step_index == 11u ? 380u : ROUTE_TURN_APPROACH_MS;
 }
 
 /**
@@ -539,6 +541,11 @@ void Route_Init(void)
     Route_t initial = {ROUTE_FOLLOW, JUNCTION_NONE, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0.0f};
     update_route_beep(1u); /* 重新初始化前，关闭上一轮尚未结束的短鸣或倒车提示音。 */
     g_route = initial;
+    s_sonar_pending = s_sonar_valid = 0u;
+    s_sonar_diagnostics.trigger_count = 0u;
+    s_sonar_diagnostics.status = SR04_IDLE;
+    s_sonar_diagnostics.distance_cm = 0.0f;
+    s_sonar_diagnostics.echo_high = 0u;
     set_track_parameters(0u);
     s_line_candidate = s_line_frames = s_narrow_frames = s_active = 0u;
     s_turn_count_before = 0u;
@@ -856,6 +863,11 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
                 } else if (g_route.step_index == 11u || g_route.step_index == 16u) {
                     /* 第 12、17 项转后先执行对应超声波通行，再衔接第 13、18 项。 */
                     s_sonar_pending = s_sonar_valid = 0u;
+                    /* 每段单独计数，第二段不能沿用第一段的成功结果或超时状态。 */
+                    s_sonar_diagnostics.trigger_count = 0u;
+                    s_sonar_diagnostics.status = SR04_IDLE;
+                    s_sonar_diagnostics.distance_cm = 0.0f;
+                    s_sonar_diagnostics.echo_high = 0u;
                     enter_state(ROUTE_SONAR_FOLLOW);
                     reset_junction();
                     DebugLog_Write(LOG_INFO, "SONAR_BEGIN");
@@ -1051,12 +1063,15 @@ void Route_ServiceSonar(void)
         __set_PRIMASK(saved_primask);
         return;
     }
+    s_sonar_diagnostics.echo_high = (uint8_t)(HAL_GPIO_ReadPin(EC_GPIO_Port, EC_Pin) == GPIO_PIN_SET);
     if (s_sonar_pending != 0u)
     {
         Int_SR04_GetResult(&result);
         if (result.status == SR04_OK || result.status == SR04_TIMEOUT)
         {
             s_sonar_pending = 0u;
+            s_sonar_diagnostics.status = result.status;
+            s_sonar_diagnostics.distance_cm = result.status == SR04_OK ? result.distance_cm : 0.0f;
             if (result.status == SR04_OK)
             {
                 s_sonar_distance = result.distance_cm;
@@ -1064,7 +1079,22 @@ void Route_ServiceSonar(void)
             }
         }
     }
-    if (s_sonar_pending == 0u && s_sonar_valid == 0u)
+    if (s_sonar_pending == 0u && s_sonar_valid == 0u) {
         s_sonar_pending = Int_SR04_Trigger();
+        if (s_sonar_pending != 0u) {
+            ++s_sonar_diagnostics.trigger_count;
+            /* 不用新请求的 BUSY 覆盖最近终态，否则快速轮询会遮住超时诊断。 */
+            if (s_sonar_diagnostics.status == SR04_IDLE)
+                s_sonar_diagnostics.status = SR04_BUSY;
+        }
+    }
+    __set_PRIMASK(saved_primask);
+}
+
+void Route_GetSonarDiagnostics(RouteSonarDiagnostics *diagnostics)
+{
+    uint32_t saved_primask = __get_PRIMASK();
+    __disable_irq();
+    *diagnostics = s_sonar_diagnostics;
     __set_PRIMASK(saved_primask);
 }

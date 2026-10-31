@@ -18,6 +18,8 @@ uint8_t g_imu_ready = 0;
    均值和扣偏结果都保留小数；当前量程一个计数约为 0.061°/s，不能截成整数。
    初值为零表示尚未校准，不额外改变传感器输出。 */
 static float s_bias_gx = 0.0f, s_bias_gy = 0.0f, s_bias_gz = 0.0f;
+/* 只标记最近一轮是否因静止超时失败，供上电流程选择立即重试或通信退让。 */
+static uint8_t s_calibration_timed_out = 0u;
 
 
 
@@ -111,9 +113,9 @@ static int16_t MPU6050_Sample(uint8_t higth, uint8_t low)
 }
 
 /* 校准：静止时取均值，减去零偏 */
-/* 静止判据阈值：前后帧加速度差 < 200 LSB（≈0.012g）视为静止；
+/* 静止判据阈值：前后帧加速度差 < 400 LSB（≈0.024g）视为静止；
    超时 3s 仍抖动则放弃校准，避免死等 */
-#define IMU_STILL_THR        200
+#define IMU_STILL_THR        400
 #define IMU_CALI_TIMEOUT_MS  3000U
 
 /* 静止判据通过后，采 samples 帧陀螺取均值作为零偏。
@@ -138,6 +140,7 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     uint16_t still = 0;                                     //静止计数
     uint32_t t0 = HAL_GetTick();                            //计时
 
+    s_calibration_timed_out = 0u;                           //每轮清除上一轮的超时原因
     if (!g_imu_ready) return 0;                             //设备尚未初始化
 
     /* 1) 静止判据：连续 100 帧前后帧加速度差均小于阈值 */
@@ -150,7 +153,10 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     // 静止判断
     while (still < 100U) {
         //设置超时等待
-        if ((uint32_t)(HAL_GetTick() - t0) > IMU_CALI_TIMEOUT_MS) return 0;
+        if ((uint32_t)(HAL_GetTick() - t0) > IMU_CALI_TIMEOUT_MS) {
+            s_calibration_timed_out = 1u;
+            return 0;
+        }
         HAL_Delay(10);
         if (!MPU6050_Read_Regs(MPU_ACCEL_XOUTH_REG, frame, MPU6050_FRAME_LENGTH))
             return 0;
@@ -184,6 +190,16 @@ uint8_t Int_MPU6050_Calibrate(uint16_t samples)
     s_bias_gz = (float)sz / (float)n;
     __enable_irq();
     return 1;       //校准成功
+}
+
+/**
+ * @brief 查询最近一轮校准是否因未凑够连续静止帧而超时。
+ * @return 1 表示静止超时；0 表示成功、通信失败、未初始化或尚未校准。
+ * @note 保留 Calibrate 的成功/失败返回约定；调用者仅在校准失败后据此区分重试方式。
+ */
+uint8_t Int_MPU6050_CalibrationTimedOut(void)
+{
+    return s_calibration_timed_out;
 }
 
 

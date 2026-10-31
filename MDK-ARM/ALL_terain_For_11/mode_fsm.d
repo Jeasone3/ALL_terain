@@ -31,6 +31,7 @@ all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_
 all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
 all_terain_for_11\mode_fsm.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
 all_terain_for_11\mode_fsm.o: ../App/Route/Route.h
+all_terain_for_11\mode_fsm.o: ../Int/Int_SR04/Int_SR04.h
 all_terain_for_11\mode_fsm.o: ../App/Track_Task/Track_Task.h
 all_terain_for_11\mode_fsm.o: ../Int/Int_Track/Int_Track.h
 all_terain_for_11\mode_fsm.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
