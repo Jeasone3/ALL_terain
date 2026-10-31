@@ -444,7 +444,9 @@ static uint32_t turn_approach_ms(uint16_t step_index)
     /* 第 17 项前移 40 个控制帧；表项下标从 0 开始，第 12 项仍使用原来的 450 ms。 */
     //方形转向前移
     if (step_index == 16u) 
-        return 400u;
+        return 0u;
+    if(step_index == 18u)
+        return 580u;
     return step_index == 11u ? 0u : ROUTE_TURN_APPROACH_MS;
 }
 
@@ -910,7 +912,7 @@ void Route_Tick(const uint16_t *sensor_data, uint8_t external_command)
             if (step->action == ROUTE_ACTION_LEFT || step->action == ROUTE_ACTION_LEFT_TRACK) {
                 if (g_route.step_index == 11u || g_route.step_index == 16u)
                     //11 ， 16转向容差
-                    Car_TurnLeft90WithTolerance(MODE_TRACK, 60.0f); /* 仅第 12、17 项使用 45°到位容差 */
+                    Car_TurnLeft90WithTolerance(MODE_TRACK, 60.0f); /* 仅第 12、17 项使用 60°到位容差 */
                 else
                     Car_TurnLeft90(MODE_TRACK);
             } else
