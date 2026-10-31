@@ -1,6 +1,6 @@
 all_terain_for_11\route.o: ..\App\Route\Route.c
 all_terain_for_11\route.o: ..\App\Route\Route.h
-all_terain_for_11\route.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+all_terain_for_11\route.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdint.h
 all_terain_for_11\route.o: ../App/Mode_FSM/Mode_FSM.h
 all_terain_for_11\route.o: ../Core/Inc/main.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
@@ -16,7 +16,7 @@ all_terain_for_11\route.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
 all_terain_for_11\route.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h
-all_terain_for_11\route.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+all_terain_for_11\route.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stddef.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc_ex.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio.h
 all_terain_for_11\route.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio_ex.h
@@ -37,8 +37,8 @@ all_terain_for_11\route.o: ../App/Debug_Log/Debug_Log.h
 all_terain_for_11\route.o: ../Int/Int_OLED/Int_OLED.h
 all_terain_for_11\route.o: ../App/Track_Task/Track_Task.h
 all_terain_for_11\route.o: ../Int/Int_Track/Int_Track.h
-all_terain_for_11\route.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
-all_terain_for_11\route.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+all_terain_for_11\route.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\stdbool.h
+all_terain_for_11\route.o: E:\Embedded_Development\KeilMDK\ARM\ARMCC\Bin\..\include\math.h
 all_terain_for_11\route.o: ../Com/Com_Limit/Com_Limit.h
 all_terain_for_11\route.o: ../Com/Com_PID/Com_pid.h
 all_terain_for_11\route.o: ../Int/Int_Motor/motor.h

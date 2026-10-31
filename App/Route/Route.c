@@ -48,7 +48,7 @@
 RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     {   /* 01 栅格：右侧路口直行，循迹 3 秒，再 IMU 通行 4.5 秒。 */
         .action = ROUTE_ACTION_STRAIGHT, .project_id = 1u, .trigger_junction = JUNCTION_RIGHT,
-        .base_pwm = 500u, .entry_ms = 2500u, .pass_ms = 4500u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 2400u, .pass_ms = 4500u, .timeout_ms = 10000u
     },
     {   /* 02 防滑带：十字右转，循迹 2 秒，再 IMU 通行 4.3 秒。 */
         .action = ROUTE_ACTION_RIGHT, .project_id = 2u, .trigger_junction = JUNCTION_CROSS,
@@ -66,14 +66,25 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 5u, .trigger_junction = JUNCTION_RIGHT,
         .timeout_ms = 15000u
     },
+
+
+
+
+
     {   /* 06 减速带：十字右转，循迹 1 秒，再 IMU 通行 5 秒。 */
         .action = ROUTE_ACTION_RIGHT, .project_id = 6u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 1000u, .pass_ms = 5500u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 5000u, .timeout_ms = 10000u
     },
+
+
+
     {   /* 07 草坪：十字直行，循迹 2 秒，再 IMU 通行 4 秒。 */
         .action = ROUTE_ACTION_STRAIGHT, .project_id = 7u, .trigger_junction = JUNCTION_CROSS,
         .base_pwm = 500u, .entry_ms = 2000u, .pass_ms = 4000u, .timeout_ms = 10000u
     },
+
+
+    
     {   /* 08 大台阶：十字左转，循迹 200 ms，再以 400 PWM 通行 11 秒；倒退仍停用。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 8u, .trigger_junction = JUNCTION_CROSS,
         .base_pwm = 400u, .entry_ms = 200u, .pass_ms = 9000u, .timeout_ms = 15000u
