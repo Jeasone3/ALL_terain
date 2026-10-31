@@ -62,7 +62,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 03 小台阶：十字直行，循迹 2 秒，再 IMU 通行 6.5 秒。 */
         .action = ROUTE_ACTION_STRAIGHT, .project_id = 3u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 1500u, .pass_ms = 5000u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 1500u, .pass_ms = 5700u, .timeout_ms = 10000u
     },
     {   /* 04 十字右转后循迹。 */
         .action = ROUTE_ACTION_RIGHT_TRACK, .project_id = 4u, .trigger_junction = JUNCTION_CROSS,
@@ -86,7 +86,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
 
     {   /* 07 草坪：十字直行，循迹 2 秒，再 IMU 通行 4 秒。 */
         .action = ROUTE_ACTION_STRAIGHT, .project_id = 7u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 2000u, .pass_ms = 4000u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 2000u, .pass_ms = 5000u, .timeout_ms = 10000u
     },
 
 
