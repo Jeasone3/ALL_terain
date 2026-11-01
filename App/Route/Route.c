@@ -24,7 +24,7 @@
 #define ROUTE_REVERSE_DRIVE_TILT_DEG  15 /* 当前与起始 pitch 分别舍掉小数，整数差达到此值即记录倾斜。 */
 #define ROUTE_REVERSE_DRIVE_LEVEL_DEG  5 /* 倾斜后整数差回到正负此范围内，才累计回稳时间。 */
 #ifndef ROUTE_REVERSE_DRIVE_STABLE_MS
-#define ROUTE_REVERSE_DRIVE_STABLE_MS 900u /* 回稳持续时间，单位 ms；例如改为 200u 即连续 200 ms，按 10 ms 向上取整。 */
+#define ROUTE_REVERSE_DRIVE_STABLE_MS 780u /* 回稳持续时间，单位 ms；例如改为 200u 即连续 200 ms，按 10 ms 向上取整。 */
 #endif
 #define ROUTE_S1_IMU_MS        3000u /* 高台右转后以 PWM500 保持航向直行 3.5 秒，再切循迹找十字 */
 #define ROUTE_S1_PWM           500u  /* S1 直行基础 PWM（慢速清出高台区域） */
@@ -80,7 +80,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
 
     {   /* 06 减速带：十字右转，循迹 1 秒，再 IMU 通行 5 秒。 */
         .action = ROUTE_ACTION_RIGHT, .project_id = 6u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 5000u, .timeout_ms = 10000u
+        .base_pwm = 500u, .entry_ms = 800u, .pass_ms = 5500u, .timeout_ms = 10000u
     },
 
 
@@ -98,7 +98,7 @@ RouteStep g_route_plan[ROUTE_STEP_COUNT] = {
     },
     {   /* 09 窄桥：十字左转，循迹 400 ms，再 IMU 通行 4 秒，随后接高台及 S1。 */
         .action = ROUTE_ACTION_LEFT, .project_id = 9u, .trigger_junction = JUNCTION_CROSS,
-        .base_pwm = 600u, .entry_ms = 400u, .pass_ms = 4000u, .timeout_ms = 10000u,
+        .base_pwm = 610u, .entry_ms = 400u, .pass_ms = 3650u, .timeout_ms = 10000u,
         .final_seq = 1u
     },
 

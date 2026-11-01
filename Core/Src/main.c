@@ -267,18 +267,18 @@ HAL_TIM_Base_Start_IT(&htim4);   /* 启动唯一的 10 ms ModeFSM_Tick 控制入
       imu_valid = g_mode_fsm.imu_valid;
       __set_PRIMASK(saved_primask);
 
-      if (imu_valid != 0u)
-      {
-        printf("Yaw:%.2f,%.2f,%.2f\r\n",
-              euler_snapshot.yaw,
-              euler_snapshot.pitch,
-              euler_snapshot.roll);
-      }
-      else
-      {
-        /* 本帧姿态无效时输出占位符，不能把保留值当成实时测量。 */
-        printf("Yaw:-- Pitch:-- Roll:--\r\n");
-      }
+      // if (imu_valid != 0u)
+      // {
+      //   printf("Yaw:%.2f,%.2f,%.2f\r\n",
+      //         euler_snapshot.yaw,
+      //         euler_snapshot.pitch,
+      //         euler_snapshot.roll);
+      // }
+      // else
+      // {
+      //   /* 本帧姿态无效时输出占位符，不能把保留值当成实时测量。 */
+      //   printf("Yaw:-- Pitch:-- Roll:--\r\n");
+      // }
     }
 
     /* USER CODE END WHILE */
